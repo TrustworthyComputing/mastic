@@ -3,11 +3,10 @@ use core::arch::x86_64::{
 };
 
 use aes::{ Aes128, Block, 
-    cipher::{ BlockEncrypt, KeyInit, 
+    cipher::{ BlockEncrypt, KeyInit, KeyIvInit, StreamCipher,
         generic_array::{GenericArray, typenum::{U8}}
     }
 };
-use aes::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
 
 use rand::Rng;
 

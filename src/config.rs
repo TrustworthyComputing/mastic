@@ -56,8 +56,7 @@ pub fn get_config(filename: &str) -> Config {
 pub fn get_args(name: &str, get_server_id: bool, get_n_reqs: bool) -> (Config, i8, usize) {
     let mut flags = App::new(name)
         .version("0.1")
-        .author("Henry Corrigan-Gibbs <henrycg@csail.mit.edu>")
-        .about("Prototype of privacy-preserving heavy hitters scheme.")
+        .about("Privacy-preserving heavy-hitters for location data.")
         .arg(
             Arg::with_name("config")
                 .short("c")

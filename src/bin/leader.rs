@@ -26,7 +26,6 @@ use rayon::prelude::*;
 use tarpc::{
     client,
     context,
-    //server::{self, Channel},
 };
 
 use rand::distributions::Alphanumeric;

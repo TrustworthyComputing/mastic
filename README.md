@@ -29,17 +29,26 @@ $ cargo test
 
 You should now be set to run the code. In one shell, run the following command:
 
-```
+```bash
 $ cargo run --release --bin server -- --config src/bin/config.json --server_id 0
 ```
 
 This starts one server process with ID `0` using the config file located at `src/bin/config.json`. In a second shell, you can start the second server process:
 
-```
+
+```bash
 $ cargo run --release --bin server -- --config src/bin/config.json --server_id 1
 ```
 
+Now, the servers should be ready to process client requests. In a third shell, run the following command to send 100 client requests to the servers (this will take some time):
+
+
+```bash
+$ cargo run --release --bin leader -- --config src/bin/config.json -n 100
+```
+
 You should see lots of output...
+
 
 ## The config file
 
