@@ -10,6 +10,18 @@ pub mod prg;
 pub mod rpc;
 pub mod sketch;
 
+extern crate geo;
+
+mod consts;
+mod private;
+
+mod codearea;
+pub use codearea::CodeArea;
+
+mod interface;
+pub use interface::{decode, encode, is_full, is_short, is_valid, recover_nearest, shorten};
+
+
 #[macro_use]
 extern crate lazy_static;
 

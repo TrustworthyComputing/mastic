@@ -1,7 +1,7 @@
-use locationdpf::collect::*;
-use locationdpf::prg;
-use locationdpf::sketch::*;
-use locationdpf::*;
+use dpf_codes::collect::*;
+use dpf_codes::prg;
+use dpf_codes::sketch::*;
+use dpf_codes::*;
 
 #[test]
 fn collect_test_eval() {

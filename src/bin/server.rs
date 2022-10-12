@@ -1,7 +1,7 @@
 // Starter code from:
 //   https://github.com/google/tarpc/blob/master/example-service/src/server.rs
 
-use locationdpf::{
+use dpf_codes::{
     collect, config,
     FieldElm,
     fastfield::FE,

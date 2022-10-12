@@ -1,8 +1,8 @@
 /*
-use locationdpf::prg::PrgSeed;
-use locationdpf::sketch::*;
-use locationdpf::Group;
-use locationdpf::*;
+use dpf_codes::prg::PrgSeed;
+use dpf_codes::sketch::*;
+use dpf_codes::Group;
+use dpf_codes::*;
 
 use std::collections::HashMap;
 use std::collections::VecDeque;

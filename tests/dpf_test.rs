@@ -1,5 +1,5 @@
-use locationdpf::dpf::*;
-use locationdpf::*;
+use dpf_codes::dpf::*;
+use dpf_codes::*;
 
 #[test]
 fn dpf_complete() {

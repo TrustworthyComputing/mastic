@@ -1,4 +1,4 @@
-use locationdpf::{
+use dpf_codes::{
     FieldElm,
     collect, config, fastfield, mpc,
     rpc::{
@@ -71,8 +71,8 @@ fn generate_keys(cfg: &config::Config) -> (Vec<SketchKey>, Vec<SketchKey>) {
 }
 
 async fn reset_servers(
-    client0: &mut locationdpf::CollectorClient,
-    client1: &mut locationdpf::CollectorClient,
+    client0: &mut dpf_codes::CollectorClient,
+    client1: &mut dpf_codes::CollectorClient,
 ) -> io::Result<()> {
     let req = ResetRequest {};
     let response0 = client0.reset(long_context(), req.clone());
@@ -83,8 +83,8 @@ async fn reset_servers(
 }
 
 async fn tree_init(
-    client0: &mut locationdpf::CollectorClient,
-    client1: &mut locationdpf::CollectorClient,
+    client0: &mut dpf_codes::CollectorClient,
+    client1: &mut dpf_codes::CollectorClient,
 ) -> io::Result<()> {
     let req = TreeInitRequest {};
     let response0 = client0.tree_init(long_context(), req.clone());
@@ -96,8 +96,8 @@ async fn tree_init(
 
 async fn add_keys(
     cfg: &config::Config,
-    mut client0: locationdpf::CollectorClient,
-    mut client1: locationdpf::CollectorClient,
+    mut client0: dpf_codes::CollectorClient,
+    mut client1: dpf_codes::CollectorClient,
     keys0: &[sketch::SketchDPFKey<fastfield::FE,FieldElm>],
     keys1: &[sketch::SketchDPFKey<fastfield::FE,FieldElm>],
     nreqs: usize,
@@ -127,8 +127,8 @@ async fn add_keys(
 }
 
 async fn verify_sketches(
-    client0: &mut locationdpf::CollectorClient,
-    client1: &mut locationdpf::CollectorClient,
+    client0: &mut dpf_codes::CollectorClient,
+    client1: &mut dpf_codes::CollectorClient,
     level: usize,
     start: usize,
     end: usize,
@@ -150,8 +150,8 @@ async fn verify_sketches(
 }
 
 async fn verify_sketches_last(
-    client0: &mut locationdpf::CollectorClient,
-    client1: &mut locationdpf::CollectorClient,
+    client0: &mut dpf_codes::CollectorClient,
+    client1: &mut dpf_codes::CollectorClient,
     start: usize,
     end: usize,
 ) -> io::Result<Vec<bool>> {
@@ -173,8 +173,8 @@ async fn verify_sketches_last(
 
 async fn run_level(
     cfg: &config::Config,
-    client0: &mut locationdpf::CollectorClient,
-    client1: &mut locationdpf::CollectorClient,
+    client0: &mut dpf_codes::CollectorClient,
+    client1: &mut dpf_codes::CollectorClient,
     level: usize,
     nreqs: usize,
     start_time: Instant,
@@ -245,8 +245,8 @@ async fn run_level(
 
 async fn run_level_last(
     cfg: &config::Config,
-    client0: &mut locationdpf::CollectorClient,
-    client1: &mut locationdpf::CollectorClient,
+    client0: &mut dpf_codes::CollectorClient,
+    client1: &mut dpf_codes::CollectorClient,
     nreqs: usize,
     start_time: Instant,
 ) -> io::Result<usize> {
@@ -311,8 +311,8 @@ async fn run_level_last(
 }
 
 async fn final_shares(
-    client0: &mut locationdpf::CollectorClient,
-    client1: &mut locationdpf::CollectorClient,
+    client0: &mut dpf_codes::CollectorClient,
+    client1: &mut dpf_codes::CollectorClient,
 ) -> io::Result<()> {
     // Final shares
     let req = FinalSharesRequest {};
@@ -359,9 +359,9 @@ async fn main() -> io::Result<()> {
     //let transport0 = tarpc::serde_transport::tcp::connect(cfg.server0, Bincode::default()).await?;
 
     let mut client0 =
-        locationdpf::CollectorClient::new(client::Config::default(), transport0).spawn()?;
+        dpf_codes::CollectorClient::new(client::Config::default(), transport0).spawn()?;
     let mut client1 =
-        locationdpf::CollectorClient::new(client::Config::default(), transport1).spawn()?;
+        dpf_codes::CollectorClient::new(client::Config::default(), transport1).spawn()?;
 
     let start = Instant::now();
     let (keys0, keys1) = generate_keys(&cfg);

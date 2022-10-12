@@ -1,14 +1,6 @@
-use locationdpf::collect;
-use locationdpf::fastfield::FE;
-use locationdpf::mpc;
-use locationdpf::prg;
-use locationdpf::sketch;
-//use locationdpf::FieldElm;
-//use rand_core::RngCore;
-//use crypto::util;
-
+use dpf_codes::{collect, fastfield::FE, mpc, prg, sketch, encode};
+use geo::Point;
 use std::env;
-//use rand::random;
 
 fn verify_sketches(
     col0: &mut collect::KeyCollection<FE,FE>,
@@ -71,6 +63,18 @@ fn verify_sketches(
 }
 
 fn main() {
+
+    let lat = 20.3700625;
+    let lng = 2.7821875;
+    println!();
+    println!("Testing Plus Codes");
+    println!("plus_code = {}",  encode(Point::new(lng, lat), 2));
+    println!("plus_code = {}",  encode(Point::new(lng, lat), 4));
+    println!("plus_code = {}",  encode(Point::new(lng, lat), 6));
+    println!("plus_code = {}",  encode(Point::new(lng, lat), 8));
+    println!("plus_code = {}",  encode(Point::new(lng, lat), 10));
+    println!();
+
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
@@ -87,7 +91,7 @@ fn main() {
         client_strings.push(format!("{:016}{:016}", v1, v2));
     }
 
-    let strlen = locationdpf::string_to_bits(&client_strings[0]).len();
+    let strlen = dpf_codes::string_to_bits(&client_strings[0]).len();
 
     let seed = prg::PrgSeed::random();
     let mut col0 = collect::KeyCollection::<FE,FE>::new(&seed, strlen);
@@ -155,7 +159,7 @@ fn main() {
 
     for res in &collect::KeyCollection::<FE,FE>::final_values(&s0, &s1) {
         println!("Path = {:?}", res.path);
-        let s = locationdpf::bits_to_string(&res.path);
+        let s = dpf_codes::bits_to_string(&res.path);
         println!("Value: {:?} = {:?}", s, res.value.value());
     }
 }
