@@ -1,4 +1,4 @@
-use dpf_codes::{collect, fastfield::FE, mpc, prg, sketch, encode};
+use dpf_codes::{collect, fastfield::FE, mpc, prg, sketch, encode, to_bit_string, from_bit_string};
 use geo::Point;
 use std::env;
 
@@ -74,6 +74,17 @@ fn main() {
     println!("plus_code = {}",  encode(Point::new(lng, lat), 8));
     println!("plus_code = {}",  encode(Point::new(lng, lat), 10));
     println!();
+
+    let bv = to_bit_string(&encode(Point::new(lng, lat), 2));
+    println!("bv = {}", bv);
+    let code = from_bit_string(&bv);
+    println!("code = {}", code);
+
+    let bv = to_bit_string(&encode(Point::new(lng, lat), 10));
+    println!("bv = {}", bv);
+    let code = from_bit_string(&bv);
+    println!("code = {}", code);
+
 
     let args: Vec<String> = env::args().collect();
 

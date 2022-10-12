@@ -1,5 +1,6 @@
 use geo::Point;
 use std::cmp;
+use bitvec::prelude::*;
 
 use crate::codearea::CodeArea;
 
@@ -225,6 +226,33 @@ pub fn decode(code: &str) -> Result<CodeArea, String> {
         (lng + lng_place_val) as f64 / (ENCODING_BASE.pow(3) * GRID_COLUMNS.pow(5)) as f64;
     Ok(CodeArea::new(lat_lo, lng_lo, lat_hi, lng_hi, code.len()))
 }
+
+// Convert a Plus code to a bitstring
+pub fn to_bit_string(code: &str) -> BitVec {
+    let mut bv = bitvec![];
+    for ch in code.chars() {
+        let v = code_value(ch) as u8;
+        bv.extend(&v.view_bits::<Lsb0>()[..5]);
+    }
+
+    bv
+}
+
+// Convert a bitstring to a plus code
+pub fn from_bit_string(bv: &BitVec) -> String {
+    let mut code = String::new();
+    for b in bv.chunks(5) {
+        let v = b.load::<usize>();
+        if v == 21 {
+            code.push(SEPARATOR);
+        } else {
+            code.push(CODE_ALPHABET[v]);
+        }
+    }
+
+    code
+}
+
 
 /// Remove characters from the start of an OLC code.
 ///

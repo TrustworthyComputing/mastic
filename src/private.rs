@@ -7,6 +7,9 @@ use crate::interface::encode;
 use geo::Point;
 
 pub fn code_value(chr: char) -> usize {
+    if chr == '+' {
+        return 21;
+    }
     // We assume this function is only called by other functions that have
     // already ensured that the characters in the passed-in code are all valid
     // and have all been "treated" (upper-cased, padding and '+' stripped)

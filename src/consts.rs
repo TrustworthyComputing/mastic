@@ -11,7 +11,7 @@ pub const PADDING_CHAR_STR: &str = "0";
 // The character set used to encode the values.
 pub const CODE_ALPHABET: [char; 20] = [
     '2', '3', '4', '5', '6', '7', '8', '9',
-    'C', 'F', 'G', 'H', 'J', 'M', 'P', 'Q', 'R', 'V', 'W', 'X',
+    'C', 'F', 'G', 'H', 'J', 'M', 'P', 'Q', 'R', 'V', 'W', 'X'
 ];
 
 // The base to use to convert numbers to/from.
