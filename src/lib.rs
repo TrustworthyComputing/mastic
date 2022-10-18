@@ -1,5 +1,7 @@
 // extern crate cpuprofiler;
 
+pub mod codearea;
+pub mod consts;
 pub mod collect;
 pub mod config;
 pub mod dpf;
@@ -12,10 +14,8 @@ pub mod sketch;
 
 extern crate geo;
 
-mod consts;
 mod private;
 
-mod codearea;
 pub use codearea::CodeArea;
 
 mod interface;

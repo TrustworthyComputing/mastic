@@ -92,10 +92,11 @@ fn main() {
         panic!("Usage: {:?} <nclients>", args[0]);
     }
 
-    let nclients = args[1].parse().unwrap();
+    println!("args: {:?}", args);
+    let nclients = args[2].parse().unwrap();
 
     let mut client_strings = vec![];
-    for i in 0..100 {
+    for i in 0..nclients {
         let v1 = rand::random::<u32>();
         let v2 = rand::random::<u32>();
         println!("String[{:?}] = {:?}{:?}", i, v1, v2);
@@ -152,9 +153,9 @@ fn main() {
             vals0[0] += 123123;
         }*/
 
-        println!("Starting to sketch");
+        // println!("Starting to sketch");
         verify_sketches(&mut col0, &mut col1, level);
-        println!("Done");
+        // println!("Done");
 
         let keep = collect::KeyCollection::<FE,FE>::keep_values(nclients, &threshold, &vals0, &vals1);
 
@@ -167,7 +168,6 @@ fn main() {
 
     let s0 = col0.final_shares();
     let s1 = col1.final_shares();
-
     for res in &collect::KeyCollection::<FE,FE>::final_values(&s0, &s1) {
         println!("Path = {:?}", res.path);
         let s = dpf_codes::bits_to_string(&res.path);

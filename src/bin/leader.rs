@@ -1,26 +1,24 @@
 use dpf_codes::{
     FieldElm,
-    collect, config, fastfield, mpc,
+    collect, config, fastfield,
     rpc::{
         AddKeysRequest, FinalSharesRequest, ResetRequest, 
         TreeInitRequest,
         TreeCrawlRequest, 
         TreeCrawlLastRequest, 
-        TreeOutSharesRequest, 
-        TreeOutSharesLastRequest, 
         TreePruneRequest, 
         TreePruneLastRequest, 
-        TreeSketchFrontierRequest,
-        TreeSketchFrontierLastRequest,
     },
     sketch,
+    bits_to_string,
+    encode,
 };
 
 use std::time::Instant;
+use geo::Point;
 
 use futures::try_join;
 use std::io;
-
 use rand::Rng;
 use rayon::prelude::*;
 use tarpc::{
@@ -44,7 +42,7 @@ fn long_context() -> context::Context {
     ctx
 }
 
-fn sample_string(len: usize) -> String {
+fn _sample_string(len: usize) -> String {
     let mut rng = rand::thread_rng();
     std::iter::repeat(())
         .map(|()| rng.sample(Alphanumeric) as char)
@@ -52,11 +50,22 @@ fn sample_string(len: usize) -> String {
         .collect()
 }
 
+fn sample_location() -> (f64, f64) {
+    let mut rng = rand::thread_rng();
+    (rng.gen_range(-180.0..180.0) as f64, rng.gen_range(-90.0..90.0) as f64)
+}
+
 fn generate_keys(cfg: &config::Config) -> (Vec<SketchKey>, Vec<SketchKey>) {
+    println!("data_len = {}\n", cfg.data_len);
+
     let (keys0, keys1): (Vec<SketchKey>, Vec<SketchKey>) = rayon::iter::repeat(0)
         .take(cfg.num_sites)
         .map(|_| {
-            let data_string = sample_string(cfg.data_len);
+            let loc = sample_location();
+            let data_string = encode(Point::new(loc.0, loc.1), 8);
+        
+            println!("data_string = {}", data_string);
+            
             let keys = sketch::SketchDPFKey::gen_from_str(&data_string);
 
             // XXX remove these clones
@@ -126,51 +135,6 @@ async fn add_keys(
     Ok(())
 }
 
-async fn verify_sketches(
-    client0: &mut dpf_codes::CollectorClient,
-    client1: &mut dpf_codes::CollectorClient,
-    level: usize,
-    start: usize,
-    end: usize,
-) -> io::Result<Vec<bool>> {
-    // Cor shares
-    let req = TreeSketchFrontierRequest { level, start, end };
-    let response0 = client0.tree_sketch_frontier(long_context(), req.clone());
-    let response1 = client1.tree_sketch_frontier(long_context(), req);
-    let (cor_shares0, cor_shares1) = try_join!(response0, response1).unwrap();
-    let cor = mpc::ManyMulState::cors(&cor_shares0, &cor_shares1);
-
-    // Out shares
-    let req = TreeOutSharesRequest { cor };
-    let response0 = client0.tree_out_shares(long_context(), req.clone());
-    let response1 = client1.tree_out_shares(long_context(), req);
-    let (out_shares0, out_shares1) = try_join!(response0, response1).unwrap();
-
-    Ok(mpc::ManyMulState::verify(&out_shares0, &out_shares1))
-}
-
-async fn verify_sketches_last(
-    client0: &mut dpf_codes::CollectorClient,
-    client1: &mut dpf_codes::CollectorClient,
-    start: usize,
-    end: usize,
-) -> io::Result<Vec<bool>> {
-    // Cor shares
-    let req = TreeSketchFrontierLastRequest { start, end };
-    let response0 = client0.tree_sketch_frontier_last(long_context(), req.clone());
-    let response1 = client1.tree_sketch_frontier_last(long_context(), req);
-    let (cor_shares0, cor_shares1) = try_join!(response0, response1).unwrap();
-    let cor = mpc::ManyMulState::cors(&cor_shares0, &cor_shares1);
-
-    // Out shares
-    let req = TreeOutSharesLastRequest { cor };
-    let response0 = client0.tree_out_shares_last(long_context(), req.clone());
-    let response1 = client1.tree_out_shares_last(long_context(), req);
-    let (out_shares0, out_shares1) = try_join!(response0, response1).unwrap();
-
-    Ok(mpc::ManyMulState::verify(&out_shares0, &out_shares1))
-}
-
 async fn run_level(
     cfg: &config::Config,
     client0: &mut dpf_codes::CollectorClient,
@@ -198,35 +162,6 @@ async fn run_level(
         level,
         "-",
         start_time.elapsed().as_secs_f64()
-    );
-
-    println!(
-        "SketchStart {:?} {:?} {:?}",
-        level,
-        "-",
-        start_time.elapsed().as_secs_f64()
-    );
-
-    let sketch_start = Instant::now();
-
-    // Run sketching in chunks of cfg.sketch_batch_size to avoid having huge RPC messages.
-    let mut start = 0;
-    while start < nreqs {
-        let end = std::cmp::min(nreqs, start + cfg.sketch_batch_size);
-        let out = verify_sketches(client0, client1, level, start, end).await?;
-        start += cfg.sketch_batch_size;
-
-        for v in out {
-            assert!(v);
-        }
-    }
-
-    println!(
-        "SketchDone {:?} {:?} {:?} rate={:?}",
-        level,
-        "-",
-        start_time.elapsed().as_secs_f64(),
-        (nreqs as f64) / sketch_start.elapsed().as_secs_f64()
     );
 
     assert_eq!(vals0.len(), vals1.len());
@@ -269,33 +204,6 @@ async fn run_level_last(
         start_time.elapsed().as_secs_f64()
     );
 
-    println!(
-        "SketchStart last {:?} {:?}",
-        "-",
-        start_time.elapsed().as_secs_f64()
-    );
-
-    let sketch_start = Instant::now();
-
-    // Run sketching in chunks of cfg.sketch_batch_size to avoid having huge RPC messages.
-    let mut start = 0;
-    while start < nreqs {
-        let end = std::cmp::min(nreqs, start + cfg.sketch_batch_size_last);
-        let out = verify_sketches_last(client0, client1, start, end).await?;
-        start += cfg.sketch_batch_size_last;
-
-        for v in out {
-            assert!(v);
-        }
-    }
-
-    println!(
-        "SketchDone last {:?} {:?} rate={:?}",
-        "-",
-        start_time.elapsed().as_secs_f64(),
-        (nreqs as f64) / sketch_start.elapsed().as_secs_f64()
-    );
-
     assert_eq!(vals0.len(), vals1.len());
     let keep = collect::KeyCollection::<fastfield::FE,FieldElm>::keep_values_last(nreqs, &threshold, &vals0, &vals1);
     //println!("Keep: {:?}", keep);
@@ -318,14 +226,13 @@ async fn final_shares(
     let req = FinalSharesRequest {};
     let response0 = client0.final_shares(long_context(), req.clone());
     let response1 = client1.final_shares(long_context(), req);
-    try_join!(response0, response1).unwrap();
+    let (out_shares0, out_shares1) = try_join!(response0, response1).unwrap();
 
-    /*
-    for res in &collect::KeyCollection::<fastfield::FE,FieldElm>::final_values(&vals0, &vals1) {
-        println!("Path = {:?}", res.path);
+    for res in &collect::KeyCollection::<fastfield::FE,FieldElm>::final_values(&out_shares0, &out_shares1) {
+        // println!("Path = {:?}", res.path);
         let s = crate::bits_to_string(&res.path);
         println!("Value: {:?} = {:?}", s, res.value);
-    }*/
+    }
 
     Ok(())
 }
