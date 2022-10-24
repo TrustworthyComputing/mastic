@@ -1,8 +1,8 @@
 use crate::collect;
+use crate::dpf;
 use crate::FieldElm;
 use crate::fastfield::FE;
-use crate::mpc::{ManyCor, ManyCorShare, ManyOutShare};
-use crate::sketch::SketchDPFKey;
+// use crate::mpc::{ManyCor, ManyOutShare};
 
 use serde::Deserialize;
 use serde::Serialize;
@@ -12,7 +12,7 @@ pub struct ResetRequest {}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AddKeysRequest {
-    pub keys: Vec<SketchDPFKey<FE,FieldElm>>,
+    pub keys: Vec<dpf::DPFKey<FE,FieldElm>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -35,29 +35,6 @@ pub struct TreePruneLastRequest {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TreeSketchFrontierRequest {
-    pub level: usize,
-    pub start: usize,
-    pub end: usize,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TreeSketchFrontierLastRequest {
-    pub start: usize,
-    pub end: usize,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TreeOutSharesRequest {
-    pub cor: ManyCor<FE>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TreeOutSharesLastRequest {
-    pub cor: ManyCor<FieldElm>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FinalSharesRequest {}
 
 #[tarpc::service]
@@ -69,9 +46,5 @@ pub trait Collector {
     async fn tree_crawl_last(req: TreeCrawlLastRequest) -> Vec<FieldElm>;
     async fn tree_prune(req: TreePruneRequest) -> String;
     async fn tree_prune_last(req: TreePruneLastRequest) -> String;
-    async fn tree_sketch_frontier(req: TreeSketchFrontierRequest) -> ManyCorShare<FE>;
-    async fn tree_sketch_frontier_last(req: TreeSketchFrontierLastRequest) -> ManyCorShare<FieldElm>;
-    async fn tree_out_shares(req: TreeOutSharesRequest) -> ManyOutShare<FE>;
-    async fn tree_out_shares_last(req: TreeOutSharesLastRequest) -> ManyOutShare<FieldElm>;
     async fn final_shares(req: FinalSharesRequest) -> Vec<collect::Result<FieldElm>>;
 }

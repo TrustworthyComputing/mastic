@@ -7,10 +7,8 @@ pub mod config;
 pub mod dpf;
 pub mod fastfield;
 mod field;
-pub mod mpc;
 pub mod prg;
 pub mod rpc;
-pub mod sketch;
 
 extern crate geo;
 
@@ -104,6 +102,19 @@ pub fn bits_to_string(bits: &[bool]) -> String {
         let byte = &bits[8 * b..8 * (b + 1)];
         let ubyte = bits_to_u8(&byte);
         out.push_str(std::str::from_utf8(&[ubyte]).unwrap());
+    }
+
+    out
+}
+
+pub fn bits_to_bitstring(bits: &[bool]) -> String {
+    let mut out: String = "".to_string();
+    for b in bits {
+        if *b {
+            out.push_str("1" );
+        } else {
+            out.push_str("0" );
+        }
     }
 
     out

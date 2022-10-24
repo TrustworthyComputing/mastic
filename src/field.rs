@@ -38,6 +38,10 @@ impl FieldElm {
     pub fn to_vec(&self, len: usize) -> Vec<FieldElm> {
         std::iter::repeat(self.clone()).take(len).collect()
     }
+
+    pub fn value(&self) -> BigUint {
+        return self.value.clone();
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

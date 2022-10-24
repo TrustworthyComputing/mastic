@@ -9,7 +9,7 @@ use dpf_codes::{
         TreePruneRequest, 
         TreePruneLastRequest, 
     },
-    sketch,
+    dpf,
     bits_to_string,
     encode,
 };
@@ -32,7 +32,7 @@ use tokio_serde::formats::Bincode;
 
 use std::time::{Duration, SystemTime};
 
-type SketchKey = sketch::SketchDPFKey<fastfield::FE,FieldElm>;
+type Key = dpf::DPFKey<fastfield::FE,FieldElm>;
 
 fn long_context() -> context::Context {
     let mut ctx = context::current();
@@ -55,10 +55,10 @@ fn sample_location() -> (f64, f64) {
     (rng.gen_range(-180.0..180.0) as f64, rng.gen_range(-90.0..90.0) as f64)
 }
 
-fn generate_keys(cfg: &config::Config) -> (Vec<SketchKey>, Vec<SketchKey>) {
+fn generate_keys(cfg: &config::Config) -> (Vec<Key>, Vec<Key>) {
     println!("data_len = {}\n", cfg.data_len);
 
-    let (keys0, keys1): (Vec<SketchKey>, Vec<SketchKey>) = rayon::iter::repeat(0)
+    let (keys0, keys1): (Vec<Key>, Vec<Key>) = rayon::iter::repeat(0)
         .take(cfg.num_sites)
         .map(|_| {
             let loc = sample_location();
@@ -66,10 +66,7 @@ fn generate_keys(cfg: &config::Config) -> (Vec<SketchKey>, Vec<SketchKey>) {
         
             println!("data_string = {}", data_string);
             
-            let keys = sketch::SketchDPFKey::gen_from_str(&data_string);
-
-            // XXX remove these clones
-            (keys[0].clone(), keys[1].clone())
+            dpf::DPFKey::gen_from_str(&data_string)
         })
         .unzip();
 
@@ -107,8 +104,8 @@ async fn add_keys(
     cfg: &config::Config,
     mut client0: dpf_codes::CollectorClient,
     mut client1: dpf_codes::CollectorClient,
-    keys0: &[sketch::SketchDPFKey<fastfield::FE,FieldElm>],
-    keys1: &[sketch::SketchDPFKey<fastfield::FE,FieldElm>],
+    keys0: &[dpf::DPFKey<fastfield::FE,FieldElm>],
+    keys1: &[dpf::DPFKey<fastfield::FE,FieldElm>],
     nreqs: usize,
 ) -> io::Result<()> {
     use rand::distributions::Distribution;

@@ -76,3 +76,9 @@ The parameters are:
 * `*_batch_size`: The number of each type of RPC request to bundle together. The underlying RPC library has an annoying limit on the size of each RPC request, so you cannot set these values too large.
 * `num_sites` and `zipf_exponent`: Each simulated client samples its private string from a Zipf distribution over strings with parameter `zipf_exponent` and support `num_sites`.
 
+
+
+Local testing:
+```bash
+$ cargo run --release --bin dpf_codes -- --config src/bin/test.json
+```

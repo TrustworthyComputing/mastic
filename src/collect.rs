@@ -1,16 +1,17 @@
 use crate::dpf;
 use crate::prg;
-use crate::sketch;
+// use crate::fastfield::FE;
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+// use std::any::Any;
 
 #[derive(Clone)]
 struct TreeNode<T> {
     path: Vec<bool>,
     value: T,
     key_states: Vec<dpf::EvalState>,
-    key_values: Vec<(T, T)>,
+    key_values: Vec<T>,
 }
 
 unsafe impl<T> Send for TreeNode<T> {}
@@ -19,11 +20,9 @@ unsafe impl<T> Sync for TreeNode<T> {}
 #[derive(Clone)]
 pub struct KeyCollection<T,U> {
     depth: usize,
-    pub keys: Vec<(bool, sketch::SketchDPFKey<T,U>)>,
+    pub keys: Vec<(bool, dpf::DPFKey<T,U>)>,
     frontier: Vec<TreeNode<T>>,
     frontier_last: Vec<TreeNode<U>>,
-
-    rand_stream: prg::PrgStream,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,7 +38,8 @@ where
         + std::cmp::PartialOrd
         + std::convert::From<u32>
         + Send
-        + Sync,
+        + Sync
+        + 'static,
     U: crate::Share
         + std::fmt::Debug
         + std::cmp::PartialOrd
@@ -47,19 +47,16 @@ where
         + Send
         + Sync,
 {
-    pub fn new(seed: &prg::PrgSeed, depth: usize) -> KeyCollection<T,U> {
+    pub fn new(_seed: &prg::PrgSeed, depth: usize) -> KeyCollection<T,U> {
         KeyCollection::<T,U> {
             depth,
             keys: vec![],
             frontier: vec![],
             frontier_last: vec![],
-            rand_stream: seed.to_rng(),
         }
     }
 
-    pub fn add_key(&mut self, key: sketch::SketchDPFKey<T,U>) {
-        assert_eq!(key.triples.len(), sketch::TRIPLES_PER_LEVEL * (self.depth-1));
-        assert_eq!(key.triples_last.len(), sketch::TRIPLES_PER_LEVEL); 
+    pub fn add_key(&mut self, key: dpf::DPFKey<T,U>) {
         self.keys.push((true, key));
     }
 
@@ -73,7 +70,7 @@ where
 
         for k in &self.keys {
             root.key_states.push(k.1.eval_init());
-            root.key_values.push((T::zero(), T::zero()));
+            root.key_values.push(T::zero());
         }
 
         self.frontier.clear();
@@ -82,13 +79,14 @@ where
     }
 
     fn make_tree_node(&self, parent: &TreeNode<T>, dir: bool) -> TreeNode<T> {
-        let (key_states, key_values): (Vec<dpf::EvalState>, Vec<(T, T)>) = self
+        let (key_states, key_values): (Vec<dpf::EvalState>, Vec<T>) = self
             .keys
             .par_iter()
             .enumerate()
             .map(|(i, key)| {
-                let (st, out0, out1) = key.1.eval_bit(&parent.key_states[i], dir);
-                (st, (out0, out1))
+                // let (st, out0, out1) = key.1.eval_bit(&parent.key_states[i], dir);
+                let (st, out0) = key.1.eval_bit(&parent.key_states[i], dir);
+                (st, out0)
             })
             .unzip();
 
@@ -96,7 +94,7 @@ where
         for (i, v) in key_values.iter().enumerate() {
             // Add in only live values
             if self.keys[i].0 {
-                child_val.add_lazy(&v.0);
+                child_val.add_lazy(&v);
             }
         }
         child_val.reduce();
@@ -115,13 +113,13 @@ where
     }
 
     fn make_tree_node_last(&self, parent: &TreeNode<T>, dir: bool) -> TreeNode<U> {
-        let (key_states, key_values): (Vec<dpf::EvalState>, Vec<(U, U)>) = self
+        let (key_states, key_values): (Vec<dpf::EvalState>, Vec<U>) = self
             .keys
             .par_iter()
             .enumerate()
             .map(|(i, key)| {
-                let (st, out0, out1) = key.1.eval_bit_last(&parent.key_states[i], dir);
-                (st, (out0, out1))
+                let (st, out) = key.1.eval_bit_last(&parent.key_states[i], dir);
+                (st, out)
             })
             .unzip();
 
@@ -129,7 +127,7 @@ where
         for (i, v) in key_values.iter().enumerate() {
             // Add in only live values
             if self.keys[i].0 {
-                child_val.add_lazy(&v.0);
+                child_val.add_lazy(&v);
             }
         }
         child_val.reduce();
@@ -148,7 +146,6 @@ where
     }
 
     pub fn tree_crawl(&mut self) -> Vec<T> {
-        println!("Crawl");
         let next_frontier = self
             .frontier
             .par_iter()
@@ -166,14 +163,12 @@ where
             .iter()
             .map(|node| node.value.clone())
             .collect::<Vec<T>>();
-        println!("...done");
 
         self.frontier = next_frontier;
         values
     }
 
     pub fn tree_crawl_last(&mut self) -> Vec<U> {
-        println!("Crawl");
         let next_frontier = self
             .frontier
             .par_iter()
@@ -191,101 +186,9 @@ where
             .iter()
             .map(|node| node.value.clone())
             .collect::<Vec<U>>();
-        println!("...done");
 
         self.frontier_last = next_frontier;
         values
-    }
-
-    pub fn tree_sketch_frontier(
-        &mut self,
-        start: usize,
-        end: usize,
-    ) -> Vec<sketch::SketchOutput<T>> {
-        println!("Sketching frontier {:?} to {:?}", start, end);
-        // sketch_vectors[i][j] = { j'th value expanded from i'th key }
-
-        assert!(start < end);
-        assert!(end <= self.keys.len());
-
-        let mut sketch_vectors = Vec::with_capacity(end - start);
-        for _ in &self.keys[start..end] {
-            sketch_vectors.push(Vec::with_capacity(self.frontier.len()));
-        }
-
-        for node in &self.frontier {
-            for (i, vec) in sketch_vectors.iter_mut().enumerate() {
-                vec.push(node.key_values[start + i].clone());
-            }
-        }
-
-        //use cpuprofiler::PROFILER;
-        //PROFILER.lock().unwrap().start("./sketch.profile").unwrap();
-
-        let out = self
-            .keys[start..end]
-            .par_iter()
-            .enumerate()
-            .map(|(i, k)| {
-                let mut stream = self.rand_stream.clone();
-                k.1.sketch_at(&sketch_vectors[i], &mut stream)
-            })
-            .collect::<Vec<sketch::SketchOutput<T>>>();
-
-        //PROFILER.lock().unwrap().stop().unwrap();
-        println!("... Done");
-
-        out
-    }
-
-    pub fn tree_sketch_frontier_last(
-        &mut self,
-        start: usize,
-        end: usize,
-    ) -> Vec<sketch::SketchOutput<U>> {
-        println!("Sketching frontier {:?} to {:?}", start, end);
-        // sketch_vectors[i][j] = { j'th value expanded from i'th key }
-
-        assert!(start < end);
-        assert!(end <= self.keys.len());
-
-        let mut sketch_vectors = Vec::with_capacity(end - start);
-        for _ in &self.keys[start..end] {
-            sketch_vectors.push(Vec::with_capacity(self.frontier_last.len()));
-        }
-
-        for node in &self.frontier_last {
-            for (i, vec) in sketch_vectors.iter_mut().enumerate() {
-                vec.push(node.key_values[start + i].clone());
-            }
-        }
-
-        //use cpuprofiler::PROFILER;
-        //PROFILER.lock().unwrap().start("./sketch.profile").unwrap();
-
-        let out = self
-            .keys[start..end]
-            .par_iter()
-            .enumerate()
-            .map(|(i, k)| {
-                let mut stream = self.rand_stream.clone();
-                k.1.sketch_at_last(&sketch_vectors[i], &mut stream)
-            })
-            .collect::<Vec<sketch::SketchOutput<U>>>();
-
-        //PROFILER.lock().unwrap().stop().unwrap();
-        println!("... Done");
-
-        out
-    }
-
-    pub fn apply_sketch_results(&mut self, res: &[bool]) {
-        assert_eq!(res.len(), self.keys.len());
-
-        // Remove invalid keys
-        for (i, alive) in res.iter().enumerate() {
-            self.keys[i].0 &= alive;
-        }
     }
 
     pub fn tree_prune(&mut self, alive_vals: &[bool]) {
@@ -314,18 +217,25 @@ where
         //println!("Size of frontier: {:?}", self.frontier.len());
     }
 
-    pub fn keep_values(nclients: usize, threshold: &T, vals0: &[T], vals1: &[T]) -> Vec<bool> {
+    pub fn keep_values(_nclients: usize, threshold: &T, vals0: &[T], vals1: &[T]) -> Vec<bool> {
         assert_eq!(vals0.len(), vals1.len());
 
-        let nclients = T::from(nclients as u32);
+        // let nclients = T::from(_nclients as u32);
         let mut keep = vec![];
         for i in 0..vals0.len() {
             let mut v = T::zero();
             v.add(&vals0[i]);
             v.add(&vals1[i]);
-            //println!("-> {:?} {:?} {:?}", v, *threshold, nclients);
 
-            debug_assert!(v <= nclients);
+            // let v_any = &v as &dyn Any;
+            // if let Some(v_fe) = v_any.downcast_ref::<FE>() {
+            //     println!("-> Sum: {:?} {:?} {:?}", v_fe.value(), *threshold, nclients);
+            // } else {
+            //     // Generic path, pretend this is expensive
+            //     println!("-> {:?} {:?} {:?}", v, *threshold, nclients);
+            // }
+
+            // debug_assert!(v <= nclients);
 
             // Keep nodes that are above threshold
             keep.push(v >= *threshold);
@@ -334,10 +244,10 @@ where
         keep
     }
 
-    pub fn keep_values_last(nclients: usize, threshold: &U, vals0: &[U], vals1: &[U]) -> Vec<bool> {
+    pub fn keep_values_last(_nclients: usize, threshold: &U, vals0: &[U], vals1: &[U]) -> Vec<bool> {
         assert_eq!(vals0.len(), vals1.len());
 
-        let nclients = U::from(nclients as u32);
+        // let nclients = U::from(_nclients as u32);
         let mut keep = vec![];
         for i in 0..vals0.len() {
             let mut v = U::zero();
@@ -345,7 +255,7 @@ where
             v.add(&vals1[i]);
             //println!("-> {:?} {:?} {:?}", v, *threshold, nclients);
 
-            debug_assert!(v <= nclients);
+            // debug_assert!(v <= nclients);
 
             // Keep nodes that are above threshold
             keep.push(v >= *threshold);
@@ -362,8 +272,7 @@ where
                 path: n.path.clone(),
                 value: n.value.clone(),
             });
-
-            println!("Final {:?}, value={:?}", n.path, n.value);
+            // println!("Final {:?}, value={:?}", n.path, n.value);
         }
 
         alive

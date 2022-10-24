@@ -5,8 +5,6 @@ use std::{fs, net::SocketAddr};
 pub struct Config {
     pub data_len: usize,
     pub addkey_batch_size: usize,
-    pub sketch_batch_size: usize,
-    pub sketch_batch_size_last: usize,
     pub num_sites: usize,
     pub threshold: f64,
     pub zipf_exponent: f64,
@@ -26,12 +24,6 @@ pub fn get_config(filename: &str) -> Config {
     let addkey_batch_size: usize = v["addkey_batch_size"]
         .as_u64()
         .expect("Can't parse addkey_batch_size") as usize;
-    let sketch_batch_size: usize = v["sketch_batch_size"]
-        .as_u64()
-        .expect("Can't parse sketch_batch_size") as usize;
-    let sketch_batch_size_last: usize = v["sketch_batch_size_last"]
-        .as_u64()
-        .expect("Can't parse sketch_batch_size_last") as usize;
     let num_sites: usize = v["num_sites"].as_u64().expect("Can't parse num_sites") as usize;
     let threshold = v["threshold"].as_f64().expect("Can't parse threshold");
     let zipf_exponent = v["zipf_exponent"]
@@ -43,8 +35,6 @@ pub fn get_config(filename: &str) -> Config {
     Config {
         data_len,
         addkey_batch_size,
-        sketch_batch_size,
-        sketch_batch_size_last,
         num_sites,
         threshold,
         zipf_exponent,
