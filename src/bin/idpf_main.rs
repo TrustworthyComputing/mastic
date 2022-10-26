@@ -1,4 +1,12 @@
-use dpf_codes::{collect, FieldElm, fastfield::FE, prg, dpf, encode, config};
+use dpf_codes::{
+    collect, 
+    config,
+    dpf,
+    encode, 
+    fastfield::FE, 
+    FieldElm, 
+    prg, 
+};
 use geo::Point;
 use rand::Rng;
 use rayon::prelude::*;
@@ -15,7 +23,7 @@ fn generate_keys(cfg: &config::Config) -> (Vec<Key>, Vec<Key>) {
     println!("data_len = {}\n", cfg.data_len);
 
     let (keys0, keys1): (Vec<Key>, Vec<Key>) = rayon::iter::repeat(0)
-        .take(cfg.num_sites)
+        .take(cfg.num_inputs)
         .map(|_| {
             let loc = sample_location();
             let data_string = encode(Point::new(loc.0, loc.1), cfg.data_len);
@@ -59,7 +67,7 @@ fn main() {
     col0.tree_init();
     col1.tree_init();
 
-    let threshold = 2u32;
+    let threshold = cfg.threshold as u32;
     let threshold_fe = FE::from(threshold);
     let threshold_fieldelm = FieldElm::from(threshold);
     for _ in 0..bitlen-1 {

@@ -1,6 +1,6 @@
 {
-    "data_len": 2,
-    "threshold": 2,
+    "data_len": 1,
+    "threshold": 0,
     "server0": "0.0.0.0:8000",
     "server1": "0.0.0.0:8001",
     "addkey_batch_size": 100,

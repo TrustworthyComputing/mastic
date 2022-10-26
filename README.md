@@ -27,27 +27,44 @@ $ cargo test
 ... lots of output ...
 ```
 
-You should now be set to run the code. In one shell, run the following command:
+## iDPF with Malicious sketching checkout to branch "sketches"
+## iDPF without Malicious sketching
 
+Server 0:
 ```bash
 $ cargo run --release --bin server -- --config src/bin/config.json --server_id 0
 ```
 
-This starts one server process with ID `0` using the config file located at `src/bin/config.json`. In a second shell, you can start the second server process:
-
-
+Server 1:
 ```bash
 $ cargo run --release --bin server -- --config src/bin/config.json --server_id 1
 ```
 
 Now, the servers should be ready to process client requests. In a third shell, run the following command to send 100 client requests to the servers (this will take some time):
 
-
+Clients:
 ```bash
 $ cargo run --release --bin leader -- --config src/bin/config.json -n 100
 ```
 
-You should see lots of output...
+## Histogram
+
+Server 0:
+```bash
+$ cargo run --release --bin histogram_server -- --config src/bin/histogram.json --server_id 0
+```
+
+Server 1:
+```bash
+$ cargo run --release --bin histogram_server -- --config src/bin/histogram.json --server_id 1
+```
+
+Now, the servers should be ready to process client requests. In a third shell, run the following command to send 100 client requests to the servers (this will take some time):
+
+Clients:
+```bash
+$ cargo run --release --bin histogram_leader -- --config src/bin/histogram.json -n 100
+```
 
 
 ## The config file
@@ -56,29 +73,29 @@ The client and servers use a common configuration file, which contains the param
 
 ```
 {
-  "data_len": 512,
+  "data_len": 512, // in iDPF this is #bits, in Histograms this is #bytes
   "threshold": 0.001,
   "server0": "0.0.0.0:8000",
   "server1": "0.0.0.0:8001",
   "addkey_batch_size": 100,
   "sketch_batch_size": 100000,
   "sketch_batch_size_last": 25000,
-  "num_sites": 10000,
+  "num_inputs": 10000,
   "zipf_exponent": 1.03
 }
 ```
 
 The parameters are:
 
-* `data_len`: The bitlength of each client's private string.
+* `data_len`: The bitlength of each client's private string. In iDPF this is #bits, in Histograms this is #bytes
 * `threshold`: The servers will output the collection of strings that more than a `threshold` of clients hold.
 * `server0` and `server1`: The `IP:port` of tuple for the two servers. The servers can run on different IP addresses, but these IPs must be publicly addressable.
 * `*_batch_size`: The number of each type of RPC request to bundle together. The underlying RPC library has an annoying limit on the size of each RPC request, so you cannot set these values too large.
-* `num_sites` and `zipf_exponent`: Each simulated client samples its private string from a Zipf distribution over strings with parameter `zipf_exponent` and support `num_sites`.
-
+* `num_inputs` and `zipf_exponent`: Each simulated client samples its private string from a Zipf distribution over strings with parameter `zipf_exponent` and support `num_inputs`.
 
 
 Local testing:
 ```bash
-$ cargo run --release --bin dpf_codes -- --config src/bin/test.json
+$ cargo run --release --bin idpf_main -- --config src/bin/test.json
+$ cargo run --release --bin hist_main -- --config src/bin/histogram.json
 ```

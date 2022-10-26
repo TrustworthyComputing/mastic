@@ -6,16 +6,12 @@ use dpf_codes::{
         TreeInitRequest,
         TreeCrawlRequest, 
         TreeCrawlLastRequest, 
-        TreePruneRequest, 
-        TreePruneLastRequest, 
     },
     dpf,
-    bits_to_string,
-    encode,
+    bits_to_bitstring,
 };
 
 use std::time::Instant;
-use geo::Point;
 
 use futures::try_join;
 use std::io;
@@ -42,7 +38,8 @@ fn long_context() -> context::Context {
     ctx
 }
 
-fn _sample_string(len: usize) -> String {
+
+fn sample_string(len: usize) -> String {
     let mut rng = rand::thread_rng();
     std::iter::repeat(())
         .map(|()| rng.sample(Alphanumeric) as char)
@@ -50,21 +47,16 @@ fn _sample_string(len: usize) -> String {
         .collect()
 }
 
-fn sample_location() -> (f64, f64) {
-    let mut rng = rand::thread_rng();
-    (rng.gen_range(-180.0..180.0) as f64, rng.gen_range(-90.0..90.0) as f64)
-}
-
 fn generate_keys(cfg: &config::Config) -> (Vec<Key>, Vec<Key>) {
     println!("data_len = {}\n", cfg.data_len);
 
     let (keys0, keys1): (Vec<Key>, Vec<Key>) = rayon::iter::repeat(0)
         .take(cfg.num_inputs)
-        .map(|_| {
-            let loc = sample_location();
-            let data_string = encode(Point::new(loc.0, loc.1), 8);
+        .enumerate()
+        .map(|(i, _)| {
+            let data_string = sample_string(cfg.data_len * 8);
         
-            println!("data_string = {}", data_string);
+            println!("Client({}) \t input \"{}\"", i, data_string);
             
             dpf::DPFKey::gen_from_str(&data_string)
         })
@@ -162,15 +154,15 @@ async fn run_level(
     );
 
     assert_eq!(vals0.len(), vals1.len());
-    let keep = collect::KeyCollection::<fastfield::FE,FieldElm>::keep_values(nreqs, &threshold, &vals0, &vals1);
+    // let keep = collect::KeyCollection::<fastfield::FE,FieldElm>::keep_values(nreqs, &threshold, &vals0, &vals1);
     //println!("Keep: {:?}", keep);
     //println!("KeepLen: {:?}", keep.len());
 
     // Tree prune
-    let req = TreePruneRequest { keep };
-    let response0 = client0.tree_prune(long_context(), req.clone());
-    let response1 = client1.tree_prune(long_context(), req);
-    try_join!(response0, response1).unwrap();
+    // let req = TreePruneRequest { keep };
+    // let response0 = client0.tree_prune(long_context(), req.clone());
+    // let response1 = client1.tree_prune(long_context(), req);
+    // try_join!(response0, response1).unwrap();
 
     Ok(vals0.len())
 }
@@ -202,15 +194,15 @@ async fn run_level_last(
     );
 
     assert_eq!(vals0.len(), vals1.len());
-    let keep = collect::KeyCollection::<fastfield::FE,FieldElm>::keep_values_last(nreqs, &threshold, &vals0, &vals1);
+    // let keep = collect::KeyCollection::<fastfield::FE,FieldElm>::keep_values_last(nreqs, &threshold, &vals0, &vals1);
     //println!("Keep: {:?}", keep);
     //println!("KeepLen: {:?}", keep.len());
 
     // Tree prune
-    let req = TreePruneLastRequest { keep };
-    let response0 = client0.tree_prune_last(long_context(), req.clone());
-    let response1 = client1.tree_prune_last(long_context(), req);
-    try_join!(response0, response1).unwrap();
+    // let req = TreePruneLastRequest { keep };
+    // let response0 = client0.tree_prune_last(long_context(), req.clone());
+    // let response1 = client1.tree_prune_last(long_context(), req);
+    // try_join!(response0, response1).unwrap();
 
     Ok(vals0.len())
 }
@@ -226,9 +218,8 @@ async fn final_shares(
     let (out_shares0, out_shares1) = try_join!(response0, response1).unwrap();
 
     for res in &collect::KeyCollection::<fastfield::FE,FieldElm>::final_values(&out_shares0, &out_shares1) {
-        // println!("Path = {:?}", res.path);
-        let s = crate::bits_to_string(&res.path);
-        println!("Value: {:?} = {:?}", s, res.value);
+        let bits = crate::bits_to_bitstring(&res.path);
+        println!("Value ({}) \t Count: {:?}", bits, res.value.value());
     }
 
     Ok(())
@@ -241,7 +232,6 @@ async fn main() -> io::Result<()> {
 
     env_logger::init();
     let (cfg, _, nreqs) = config::get_args("Leader", false, true);
-    debug_assert_eq!(cfg.data_len % 8, 0);
 
     let mut builder = native_tls::TlsConnector::builder();
     // XXX THERE IS NO CERTIFICATE VALIDATION HERE!!!
@@ -308,7 +298,8 @@ async fn main() -> io::Result<()> {
     tree_init(&mut client0, &mut client1).await?;
 
     let start = Instant::now();
-    for level in 0..cfg.data_len-1 {
+    let bitlen = cfg.data_len * 8; // bits
+    for level in 0..bitlen-1 {
         let active_paths = run_level(&cfg, &mut client0, &mut client1, level, nreqs, start).await?;
 
         println!(
@@ -322,7 +313,7 @@ async fn main() -> io::Result<()> {
     let active_paths = run_level_last(&cfg, &mut client0, &mut client1, nreqs, start).await?;
     println!(
         "Level {:?} active_paths={:?} {:?}",
-        cfg.data_len,
+        bitlen,
         active_paths,
         start.elapsed().as_secs_f64()
     );
