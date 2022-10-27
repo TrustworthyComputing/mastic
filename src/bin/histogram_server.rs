@@ -35,7 +35,6 @@ use tokio_serde::formats::Bincode;
 struct CollectorServer {
     seed: prg::PrgSeed,
     data_len: usize,
-    server_idx: u16,
     arc: Arc<Mutex<collect::KeyCollection<FE,FieldElm>>>,
 }
 
@@ -82,15 +81,11 @@ impl Collector for CollectorServer {
         future::ready(coll.tree_crawl_last())
     }
 
-    fn tree_prune(self, _: context::Context, req: TreePruneRequest) -> Self::TreePruneFut {
-        // let mut coll = self.arc.lock().unwrap();
-        // coll.tree_prune(&req.keep);
+    fn tree_prune(self, _: context::Context, _req: TreePruneRequest) -> Self::TreePruneFut {
         future::ready("Done".to_string())
     }
 
-    fn tree_prune_last(self, _: context::Context, req: TreePruneLastRequest) -> Self::TreePruneLastFut {
-        // let mut coll = self.arc.lock().unwrap();
-        // coll.tree_prune_last(&req.keep);
+    fn tree_prune_last(self, _: context::Context, _req: TreePruneLastRequest) -> Self::TreePruneLastFut {
         future::ready("Done".to_string())
     }
 
@@ -112,7 +107,7 @@ async fn main() -> io::Result<()> {
         _ => panic!("Oh no!"),
     };
 
-    let server_idx = match sid {
+    _ = match sid {
         0 => 0,
         1 => 1,
         _ => panic!("Oh no!"),
@@ -142,7 +137,6 @@ async fn main() -> io::Result<()> {
             let tls_acceptor = tls_acceptor.clone();
             let socket = tls_acceptor.accept(channel).await.unwrap();
             let coll_server = CollectorServer {
-                server_idx,
                 seed: seed.clone(),
                 data_len: cfg.data_len * 8,
                 arc: arc.clone(),

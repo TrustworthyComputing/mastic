@@ -1,6 +1,7 @@
 use crate::prg;
 use crate::Group;
 
+// use sha2::{Sha256, Digest};
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -122,6 +123,10 @@ fn gen_cor_word<W>(bit: bool, value: W, bits: &mut (bool, bool), seeds: &mut (pr
     if bits.1 {
         cw.word.negate();
     }
+
+    // let mut hasher = Sha256::new();
+    // hasher.update(b"hello world");
+    // let result = hasher.finalize();
 
     seeds.0 = converted.0.seed;
     seeds.1 = converted.1.seed;

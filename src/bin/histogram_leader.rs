@@ -125,16 +125,11 @@ async fn add_keys(
 }
 
 async fn run_level(
-    cfg: &config::Config,
     client0: &mut dpf_codes::CollectorClient,
     client1: &mut dpf_codes::CollectorClient,
     level: usize,
-    nreqs: usize,
     start_time: Instant,
 ) -> io::Result<usize> {
-    // let threshold64 = core::cmp::max(1, (cfg.threshold * (nreqs as f64)) as u64);
-    let threshold = fastfield::FE::new(cfg.threshold as u64);
-
     // Tree crawl
     println!(
         "TreeCrawlStart {:?} {:?} {:?}",
@@ -154,29 +149,14 @@ async fn run_level(
     );
 
     assert_eq!(vals0.len(), vals1.len());
-    // let keep = collect::KeyCollection::<fastfield::FE,FieldElm>::keep_values(nreqs, &threshold, &vals0, &vals1);
-    //println!("Keep: {:?}", keep);
-    //println!("KeepLen: {:?}", keep.len());
-
-    // Tree prune
-    // let req = TreePruneRequest { keep };
-    // let response0 = client0.tree_prune(long_context(), req.clone());
-    // let response1 = client1.tree_prune(long_context(), req);
-    // try_join!(response0, response1).unwrap();
-
     Ok(vals0.len())
 }
 
 async fn run_level_last(
-    cfg: &config::Config,
     client0: &mut dpf_codes::CollectorClient,
     client1: &mut dpf_codes::CollectorClient,
-    nreqs: usize,
     start_time: Instant,
 ) -> io::Result<usize> {
-    // let threshold64 = core::cmp::max(1, (cfg.threshold * (nreqs as f64)) as u32);
-    let threshold = FieldElm::from(cfg.threshold as u32);
-
     // Tree crawl
     println!(
         "TreeCrawlStart last {:?} {:?}",
@@ -194,15 +174,6 @@ async fn run_level_last(
     );
 
     assert_eq!(vals0.len(), vals1.len());
-    // let keep = collect::KeyCollection::<fastfield::FE,FieldElm>::keep_values_last(nreqs, &threshold, &vals0, &vals1);
-    //println!("Keep: {:?}", keep);
-    //println!("KeepLen: {:?}", keep.len());
-
-    // Tree prune
-    // let req = TreePruneLastRequest { keep };
-    // let response0 = client0.tree_prune_last(long_context(), req.clone());
-    // let response1 = client1.tree_prune_last(long_context(), req);
-    // try_join!(response0, response1).unwrap();
 
     Ok(vals0.len())
 }
@@ -300,7 +271,7 @@ async fn main() -> io::Result<()> {
     let start = Instant::now();
     let bitlen = cfg.data_len * 8; // bits
     for level in 0..bitlen-1 {
-        let active_paths = run_level(&cfg, &mut client0, &mut client1, level, nreqs, start).await?;
+        let active_paths = run_level(&mut client0, &mut client1, level, start).await?;
 
         println!(
             "Level {:?} active_paths={:?} {:?}",
@@ -310,7 +281,7 @@ async fn main() -> io::Result<()> {
         );
     }
 
-    let active_paths = run_level_last(&cfg, &mut client0, &mut client1, nreqs, start).await?;
+    let active_paths = run_level_last(&mut client0, &mut client1, start).await?;
     println!(
         "Level {:?} active_paths={:?} {:?}",
         bitlen,

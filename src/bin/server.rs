@@ -35,7 +35,6 @@ use tokio_serde::formats::Bincode;
 struct CollectorServer {
     seed: prg::PrgSeed,
     data_len: usize,
-    server_idx: u16,
     arc: Arc<Mutex<collect::KeyCollection<FE,FieldElm>>>,
 }
 
@@ -112,7 +111,7 @@ async fn main() -> io::Result<()> {
         _ => panic!("Oh no!"),
     };
 
-    let server_idx = match sid {
+    let _server_idx = match sid {
         0 => 0,
         1 => 1,
         _ => panic!("Oh no!"),
@@ -142,7 +141,6 @@ async fn main() -> io::Result<()> {
             let tls_acceptor = tls_acceptor.clone();
             let socket = tls_acceptor.accept(channel).await.unwrap();
             let coll_server = CollectorServer {
-                server_idx,
                 seed: seed.clone(),
                 data_len: cfg.data_len,
                 arc: arc.clone(),

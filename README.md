@@ -32,38 +32,38 @@ $ cargo test
 
 Server 0:
 ```bash
-$ cargo run --release --bin server -- --config src/bin/config.json --server_id 0
+$ cargo run --release --bin idpf-server -- --config src/bin/config.json --server_id 0
 ```
 
 Server 1:
 ```bash
-$ cargo run --release --bin server -- --config src/bin/config.json --server_id 1
+$ cargo run --release --bin idpf-server -- --config src/bin/config.json --server_id 1
 ```
 
 Now, the servers should be ready to process client requests. In a third shell, run the following command to send 100 client requests to the servers (this will take some time):
 
 Clients:
 ```bash
-$ cargo run --release --bin leader -- --config src/bin/config.json -n 100
+$ cargo run --release --bin idpf-leader -- --config src/bin/config.json -n 100
 ```
 
 ## Histogram
 
 Server 0:
 ```bash
-$ cargo run --release --bin histogram_server -- --config src/bin/histogram.json --server_id 0
+$ cargo run --release --bin histogram-server -- --config src/bin/histogram.json --server_id 0
 ```
 
 Server 1:
 ```bash
-$ cargo run --release --bin histogram_server -- --config src/bin/histogram.json --server_id 1
+$ cargo run --release --bin histogram-server -- --config src/bin/histogram.json --server_id 1
 ```
 
 Now, the servers should be ready to process client requests. In a third shell, run the following command to send 100 client requests to the servers (this will take some time):
 
 Clients:
 ```bash
-$ cargo run --release --bin histogram_leader -- --config src/bin/histogram.json -n 100
+$ cargo run --release --bin histogram-leader -- --config src/bin/histogram.json -n 100
 ```
 
 
