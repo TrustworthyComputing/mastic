@@ -59,7 +59,7 @@ fn generate_keys(cfg: &config::Config) -> (Vec<Key>, Vec<Key>) {
     println!("data_len = {}\n", cfg.data_len);
 
     let (keys0, keys1): (Vec<Key>, Vec<Key>) = rayon::iter::repeat(0)
-        .take(cfg.num_inputs)
+        .take(cfg.unique_buckets)
         .map(|_| {
             let loc = sample_location();
             let data_string = encode(Point::new(loc.0, loc.1), 8);
@@ -110,7 +110,7 @@ async fn add_keys(
 ) -> io::Result<()> {
     use rand::distributions::Distribution;
     let mut rng = rand::thread_rng();
-    let zipf = zipf::ZipfDistribution::new(cfg.num_inputs, cfg.zipf_exponent).unwrap();
+    let zipf = zipf::ZipfDistribution::new(cfg.unique_buckets, cfg.zipf_exponent).unwrap();
 
     let mut addkey0 = Vec::with_capacity(nreqs);
     let mut addkey1 = Vec::with_capacity(nreqs);

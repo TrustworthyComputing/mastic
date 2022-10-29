@@ -4,7 +4,7 @@
     "server0": "0.0.0.0:8000",
     "server1": "0.0.0.0:8001",
     "addkey_batch_size": 100,
-    "num_inputs": 200,
+    "unique_buckets": 200,
     "zipf_exponent": 1.03
   }
   

@@ -51,12 +51,14 @@ fn generate_keys(cfg: &config::Config) -> (Vec<Key>, Vec<Key>) {
     println!("data_len = {}\n", cfg.data_len);
 
     let (keys0, keys1): (Vec<Key>, Vec<Key>) = rayon::iter::repeat(0)
-        .take(cfg.num_inputs)
+        .take(cfg.unique_buckets)
         .enumerate()
         .map(|(i, _)| {
             let data_string = sample_string(cfg.data_len * 8);
-        
-            println!("Client({}) \t input \"{}\"", i, data_string);
+            let bit_str = dpf_codes::bits_to_bitstring(
+                dpf_codes::string_to_bits(&data_string).as_slice()
+            );
+            println!("Client({}) \t input \"{}\" ({})", i, data_string, bit_str);
             
             dpf::DPFKey::gen_from_str(&data_string)
         })
@@ -102,15 +104,15 @@ async fn add_keys(
 ) -> io::Result<()> {
     use rand::distributions::Distribution;
     let mut rng = rand::thread_rng();
-    let zipf = zipf::ZipfDistribution::new(cfg.num_inputs, cfg.zipf_exponent).unwrap();
+    let zipf = zipf::ZipfDistribution::new(cfg.unique_buckets, cfg.zipf_exponent).unwrap();
 
     let mut addkey0 = Vec::with_capacity(nreqs);
     let mut addkey1 = Vec::with_capacity(nreqs);
 
-    for _j in 0..nreqs {
-        let sample = zipf.sample(&mut rng) - 1;
-        addkey0.push(keys0[sample].clone());
-        addkey1.push(keys1[sample].clone());
+    for _ in 0..nreqs {
+        let idx = zipf.sample(&mut rng) - 1;
+        addkey0.push(keys0[idx].clone());
+        addkey1.push(keys1[idx].clone());
     }
 
     let req0 = AddKeysRequest { keys: addkey0 };

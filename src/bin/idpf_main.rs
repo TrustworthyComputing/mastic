@@ -23,7 +23,7 @@ fn generate_keys(cfg: &config::Config) -> (Vec<Key>, Vec<Key>) {
     println!("data_len = {}\n", cfg.data_len);
 
     let (keys0, keys1): (Vec<Key>, Vec<Key>) = rayon::iter::repeat(0)
-        .take(cfg.num_inputs)
+        .take(cfg.unique_buckets)
         .map(|_| {
             let loc = sample_location();
             let data_string = encode(Point::new(loc.0, loc.1), cfg.data_len);

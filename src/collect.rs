@@ -1,10 +1,13 @@
 use crate::dpf;
 use crate::prg;
+use crate::xor_vec;
+use itertools::Itertools;
 // use crate::fastfield::FE;
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 // use std::any::Any;
+use sha2::{Sha256, Digest};
 
 #[derive(Clone)]
 struct TreeNode<T> {
@@ -12,6 +15,7 @@ struct TreeNode<T> {
     value: T,
     key_states: Vec<dpf::EvalState>,
     key_values: Vec<T>,
+    hashes: Vec<Vec<u8>>,
 }
 
 unsafe impl<T> Send for TreeNode<T> {}
@@ -66,6 +70,7 @@ where
             value: T::zero(),
             key_states: vec![],
             key_values: vec![],
+            hashes: vec![],
         };
 
         for k in &self.keys {
@@ -104,6 +109,7 @@ where
             value: child_val,
             key_states,
             key_values,
+            hashes: vec![],
         };
 
         child.path.push(dir);
@@ -123,6 +129,29 @@ where
             })
             .unzip();
 
+        // Construct path: parent.path | bit
+        // pi_b = H(x | seed_b)
+        let mut bit_str = crate::bits_to_bitstring(parent.path.as_slice());
+        bit_str.push(if dir {'1'} else {'0'});
+
+        let mut hashes = vec![];
+        let mut hasher = Sha256::new();
+        for (i, ks) in key_states.iter().enumerate() {
+            // pre_image = x | seed_b
+            let mut pre_image = bit_str.clone();
+            pre_image.push_str(&String::from_utf8_lossy(&ks.seed.key));
+
+            hasher.update(pre_image);
+            let mut pi_prime = hasher.finalize_reset().to_vec();
+    
+            // Correction operation
+            if ks.bit {
+                pi_prime = xor_vec(&pi_prime, &self.keys[i].1.cs);
+            }
+            hashes.push(pi_prime);    
+        }
+
+        // TODO(@jimouris): First verify hashes and then add.
         let mut child_val = U::zero();
         for (i, v) in key_values.iter().enumerate() {
             // Add in only live values
@@ -137,6 +166,7 @@ where
             value: child_val,
             key_states,
             key_values,
+            hashes: hashes,
         };
 
         child.path.push(dir);
@@ -187,9 +217,63 @@ where
             .map(|node| node.value.clone())
             .collect::<Vec<U>>();
 
+        let mut final_hashes = vec![vec![0u8; 32]; next_frontier[0].hashes.len()];
+        for node in next_frontier.iter() {
+            final_hashes = final_hashes
+                .iter_mut()
+                .zip_eq(node.hashes.clone())
+                .map(|(v1, v2)| xor_vec(&v1, &v2))
+                .collect();
+        }
+        let hashes_str = final_hashes
+            .iter()
+            .map(|h| hex::encode(h))
+            .collect::<Vec<String>>();
+        println!("final_hashes: {:?}", hashes_str);
+            
         self.frontier_last = next_frontier;
         values
     }
+
+    pub fn histogram_tree_crawl_leaves(&mut self) -> (Vec<Result<U>>, Vec<Vec<u8>>) {
+        let next_frontier = self
+            .frontier
+            .par_iter()
+            .map(|node| {
+                assert!(node.path.len() <= self.depth);
+                let child0 = self.make_tree_node_last(node, false);
+                let child1 = self.make_tree_node_last(node, true);
+
+                vec![child0, child1]
+            })
+            .flatten()
+            .collect::<Vec<TreeNode<U>>>();
+
+        let result = next_frontier
+            .iter()
+            .map(|node| Result::<U> {
+                path: node.path.clone(),
+                value: node.value.clone(),
+            })
+            .collect::<Vec<Result<U>>>();
+
+        let mut final_hashes = vec![vec![0u8; 32]; next_frontier[0].hashes.len()];
+        for node in next_frontier.iter() {
+            final_hashes = final_hashes
+                .iter_mut()
+                .zip_eq(node.hashes.clone())
+                .map(|(v1, v2)| xor_vec(&v1, &v2))
+                .collect();
+        }
+        // let hashes_str = final_hashes
+        //     .iter()
+        //     .map(|h| hex::encode(h))
+        //     .collect::<Vec<String>>();
+        // println!("final_hashes: {:?}", hashes_str);
+            
+        (result, final_hashes)
+    }
+
 
     pub fn tree_prune(&mut self, alive_vals: &[bool]) {
         assert_eq!(alive_vals.len(), self.frontier.len());
@@ -264,7 +348,6 @@ where
         keep
     }
 
-
     pub fn final_shares(&self) -> Vec<Result<U>> {
         let mut alive = vec![];
         for n in &self.frontier_last {
@@ -278,6 +361,7 @@ where
         alive
     }
 
+    // Reconstruct counters based on shares
     pub fn final_values(res0: &[Result<U>], res1: &[Result<U>]) -> Vec<Result<U>> {
         assert_eq!(res0.len(), res1.len());
 

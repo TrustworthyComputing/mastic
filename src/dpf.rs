@@ -1,7 +1,8 @@
 use crate::prg;
 use crate::Group;
+use crate::bits_to_bitstring;
 
-// use sha2::{Sha256, Digest};
+use sha2::{Sha256, Digest};
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -14,17 +15,19 @@ struct CorWord<T> {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DPFKey<T,U> {
-    key_idx: bool,
+    pub key_idx: bool,
     root_seed: prg::PrgSeed,
     cor_words: Vec<CorWord<T>>,
     cor_word_last: CorWord<U>,
+    pub pi: Vec<u8>,
+    pub cs: Vec<u8>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct EvalState {
     level: usize,
-    seed: prg::PrgSeed,
-    bit: bool,
+    pub seed: prg::PrgSeed,
+    pub bit: bool,
 }
 
 trait TupleMapToExt<T, U> {
@@ -124,10 +127,6 @@ fn gen_cor_word<W>(bit: bool, value: W, bits: &mut (bool, bool), seeds: &mut (pr
         cw.word.negate();
     }
 
-    // let mut hasher = Sha256::new();
-    // hasher.update(b"hello world");
-    // let result = hasher.finalize();
-
     seeds.0 = converted.0.seed;
     seeds.1 = converted.1.seed;
 
@@ -152,30 +151,49 @@ where
         let mut bits = root_bits;
 
         let mut cor_words: Vec<CorWord<T>> = Vec::new();
-        let mut last_cor_word: Vec<CorWord<U>> = Vec::new();
-
-        for (i, &bit) in alpha_bits.iter().enumerate() {
-            let is_last_word = i == values.len();
-            if is_last_word {
-                last_cor_word.push(gen_cor_word::<U>(bit, value_last.clone(), &mut bits, &mut seeds));
-            } else {
-                let cw = gen_cor_word::<T>(bit, values[i].clone(), &mut bits, &mut seeds);
-                cor_words.push(cw);
-            }
+        for i in 0..(alpha_bits.len()-1) {
+            let bit = alpha_bits[i];
+            let cw = gen_cor_word::<T>(bit, values[i].clone(), &mut bits, &mut seeds);
+            cor_words.push(cw);
         }
+        let last_cor_word: CorWord<U> = gen_cor_word::<U>(
+            alpha_bits[values.len()], value_last.clone(), &mut bits, &mut seeds);
+
+        let mut bit_str_0 = bits_to_bitstring(alpha_bits);
+        let mut bit_str_1 = bit_str_0.clone();
+        bit_str_0.push_str(&String::from_utf8_lossy(&seeds.0.key));
+        bit_str_1.push_str(&String::from_utf8_lossy(&seeds.1.key));
+        
+        let mut hasher = Sha256::new();
+        hasher.update(bit_str_0);
+        let pi_0 = hasher.finalize_reset().to_vec();
+
+        hasher.update(bit_str_1);
+        let pi_1 = hasher.finalize().to_vec();
+        let pi = crate::xor_vec(&pi_0, &pi_1);
+
+        // println!("CW(n) {:?}", last_cor_word);
+        // println!("pi_0(n) {:?}", pi_0);
+        // println!("pi_1(n) {:?}", pi_1);
+        // println!("pi(n) {:?}", pi);
+        // println!();
 
         (
             DPFKey::<T,U> {
                 key_idx: false,
                 root_seed: root_seeds.0,
                 cor_words: cor_words.clone(),
-                cor_word_last: last_cor_word[0].clone(),
+                cor_word_last: last_cor_word.clone(),
+                pi: pi.clone(),
+                cs: pi.clone(),
             },
             DPFKey::<T,U> {
                 key_idx: true,
                 root_seed: root_seeds.1,
                 cor_words,
-                cor_word_last: last_cor_word[0].clone(),
+                cor_word_last: last_cor_word,
+                pi: pi.clone(),
+                cs: pi,
             },
         )
     }

@@ -8,6 +8,7 @@ use serde::Serialize;
 use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::u32;
+use sha2::{Sha256, Digest};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct FieldElm {
@@ -118,6 +119,13 @@ impl crate::Group for Dummy {
     fn negate(&mut self) {
         self.value = MODULUS_DUMMY.value - self.value;
     }
+
+    fn hash(&self) -> Vec<u8> {
+        let mut hasher = Sha256::new();
+        hasher.update( self.value.to_string());
+        hasher.finalize().to_vec()
+    }
+
 }
 
 impl crate::prg::FromRng for Dummy {
@@ -188,6 +196,12 @@ impl crate::Group for u64 {
         *self = MODULUS_64 - *self;
         *self %= MODULUS_64;
     }
+
+    fn hash(&self) -> Vec<u8> {
+        let mut hasher = Sha256::new();
+        hasher.update( self.to_string());
+        hasher.finalize().to_vec()
+    }
 }
 
 impl crate::prg::FromRng for u64 {
@@ -248,6 +262,12 @@ impl crate::Group for FE {
     fn negate(&mut self) {
         use std::ops::Neg;
         *self = self.neg();
+    }
+
+    fn hash(&self) -> Vec<u8> {
+        let mut hasher = Sha256::new();
+        hasher.update( self.to_string());
+        hasher.finalize().to_vec()
     }
 }
 
@@ -365,6 +385,12 @@ impl crate::Group for FieldElm {
     fn negate(&mut self) {
         self.value = &MODULUS.value - &self.value;
     }
+
+    fn hash(&self) -> Vec<u8> {
+        let mut hasher = Sha256::new();
+        hasher.update( self.value.to_string());
+        hasher.finalize().to_vec()
+    }
 }
 
 impl crate::prg::FromRng for FieldElm {
@@ -434,6 +460,13 @@ where
         inv1.negate();
         self.0.add(&inv0);
         self.1.add(&inv1);
+    }
+
+    fn hash(&self) -> Vec<u8> {
+        // let mut hasher = Sha256::new();
+        // hasher.update( "self.0".to_string());
+        // hasher.finalize().to_vec()
+        vec![]
     }
 }
 

@@ -10,6 +10,7 @@ use rand::Rng;
 use rand::distributions::Alphanumeric;
 use rayon::prelude::*;
 use std::time::Instant;
+use itertools::Itertools;
 type Key = dpf::DPFKey<FE, FieldElm>;
 
 
@@ -25,11 +26,14 @@ fn generate_keys(cfg: &config::Config) -> (Vec<Key>, Vec<Key>) {
     println!("data_len = {}\n", cfg.data_len);
 
     let (keys0, keys1): (Vec<Key>, Vec<Key>) = rayon::iter::repeat(0)
-        .take(cfg.num_inputs)
+        .take(cfg.unique_buckets)
         .enumerate()
         .map(|(i, _)| {
             let data_string = sample_string(cfg.data_len * 8);
-            println!("Client({}) \t input \"{}\"", i, data_string);
+            let bit_str = dpf_codes::bits_to_bitstring(
+                dpf_codes::string_to_bits(&data_string).as_slice()
+            );
+            println!("Client({}) \t input \"{}\" ({})", i, data_string, bit_str);
             
             dpf::DPFKey::gen_from_str(&data_string)
         })
@@ -42,13 +46,13 @@ fn generate_keys(cfg: &config::Config) -> (Vec<Key>, Vec<Key>) {
 }
 
 fn main() {
-    let (cfg, _, n_reqs) = config::get_args("main", false, false);
+    let (cfg, _, nreqs) = config::get_args("histogram-main", false, true);
 
     let start = Instant::now();
     let (keys0, keys1) = generate_keys(&cfg);
     let delta = start.elapsed().as_secs_f64();
     println!(
-        "Generated {:?} keys in {:?} seconds ({:?} sec/key)",
+        "Generated {:?} unique keys in {:?} seconds ({:?} sec/key)",
         keys0.len(),
         delta,
         delta / (keys0.len() as f64)
@@ -59,31 +63,34 @@ fn main() {
     let mut col0 = collect::KeyCollection::<FE, FieldElm>::new(&seed, bitlen);
     let mut col1 = collect::KeyCollection::<FE, FieldElm>::new(&seed, bitlen);
 
-    for i in 0..keys0.len() {
-        col0.add_key(keys0[i].clone());
-        col1.add_key(keys1[i].clone());
+    println!("Running with {} clients", nreqs);
+    use rand::distributions::Distribution;
+    let mut rng = rand::thread_rng();
+    let zipf = zipf::ZipfDistribution::new(cfg.unique_buckets, cfg.zipf_exponent).unwrap();
+    for _ in 0..nreqs {
+        let idx = zipf.sample(&mut rng) - 1;
+        col0.add_key(keys0[idx].clone());
+        col1.add_key(keys1[idx].clone());
     }
 
     col0.tree_init();
     col1.tree_init();
 
-    let threshold = cfg.threshold as u32;
-    let threshold_fieldelm = FieldElm::from(threshold);
     for _ in 0..bitlen-1 {
         let _vals0 = col0.tree_crawl();
         let _vals1 = col1.tree_crawl();
-
-        // assert_eq!(vals0.len(), vals1.len());
     }
 
-    let vals0 = col0.tree_crawl_last();
-    let vals1 = col1.tree_crawl_last();
-    let keep = collect::KeyCollection::<FE, FieldElm>::keep_values_last(n_reqs, &threshold_fieldelm, &vals0, &vals1);
-    col0.tree_prune_last(&keep);
-    col1.tree_prune_last(&keep);
+    let (s0, hashes0) = col0.histogram_tree_crawl_leaves();
+    let (s1, hashes1) = col1.histogram_tree_crawl_leaves();
 
-    let s0 = col0.final_shares();
-    let s1 = col1.final_shares();
+    for ((i, h0), h1) in hashes0.iter().enumerate().zip_eq(hashes1) {
+        let matching = h0.iter().zip(h1.iter()).filter(|&(h0, h1)| h0 == h1).count();
+        if h0.len() != matching {
+            println!("Client {}, {} != {}", i, hex::encode(h0), hex::encode(h1));
+        }
+    }
+
     for res in &collect::KeyCollection::<FE, FieldElm>::final_values(&s0, &s1) {
         let bits = dpf_codes::bits_to_bitstring(&res.path);
         println!("Value ({}) \t Count: {:?}", bits, res.value.value());

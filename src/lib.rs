@@ -26,6 +26,7 @@ extern crate lazy_static;
 pub use crate::field::Dummy;
 pub use crate::field::FieldElm;
 pub use crate::rpc::CollectorClient;
+use itertools::Itertools;
 
 // Additive group, such as (Z_n, +)
 pub trait Group {
@@ -38,6 +39,7 @@ pub trait Group {
     fn mul(&mut self, other: &Self);
     fn mul_lazy(&mut self, other: &Self);
     fn sub(&mut self, other: &Self);
+    fn hash(&self) -> Vec<u8>;
 }
 
 pub trait Share: Group + prg::FromRng + Clone {
@@ -119,6 +121,10 @@ pub fn bits_to_bitstring(bits: &[bool]) -> String {
     }
 
     out
+}
+
+pub fn xor_vec(v1: &Vec<u8>, v2: &Vec<u8>) -> Vec<u8> {
+    v1.iter().zip_eq(v2.iter()).map(|(&x1, &x2)| x1 ^ x2).collect()
 }
 
 #[cfg(test)]
