@@ -215,11 +215,16 @@ where
     }
 
     // Adds values for "path" accross multiple clients.
-    fn histogram_add_leaf_values(&self, key_values: Vec<U>, path: Vec<bool>) -> TreeNode<U> {
+    fn histogram_add_leaf_values(&self,
+        key_values: Vec<U>,
+        path: Vec<bool>,
+        verified: &Vec<bool>
+    ) -> TreeNode<U> {
         let mut child_val = U::zero();
+
         for (i, v) in key_values.iter().enumerate() {
             // Add in only live values
-            if self.keys[i].0 {
+            if self.keys[i].0 && verified[i] {
                 child_val.add_lazy(&v);
             }
         }
@@ -311,7 +316,7 @@ where
         values
     }
 
-    pub fn histogram_tree_crawl_last(&mut self) -> Vec<Vec<u8>> {
+    pub fn histogram_tree_crawl_last(&mut self) -> (Vec<Vec<u8>>, Vec<U>) {
         self.frontier_intermediate = self
             .frontier
             .par_iter()
@@ -342,6 +347,7 @@ where
         // XOR all the leaves for each client. Note: between all the leaves of 
         // each client, not between clients.
         let mut final_hashes = vec![vec![0u8; 32]; self.frontier_intermediate[0].0.hashes.len()];
+        let mut tau_vals = vec![U::zero(); self.frontier_intermediate[0].0.key_values.len()];
         for node in self.frontier_intermediate.iter() {
             final_hashes = final_hashes
                 .iter_mut()
@@ -352,19 +358,30 @@ where
                     xor_vec(&t, &v3)
                 })
                 .collect();
+
+            tau_vals = tau_vals
+                .iter_mut()
+                .zip_eq(node.0.key_values.clone())
+                .zip_eq(node.1.key_values.clone())
+                .map(|((t, v0), v1)| {
+                    t.add(&v0);
+                    t.add(&v1);
+                    t.clone()
+                })
+                .collect();
         }
 
-        final_hashes
+        (final_hashes, tau_vals)
     }
 
-    pub fn histogram_add_leaves_between_clients(&mut self) -> Vec<Result<U>> {
+    pub fn histogram_add_leaves_between_clients(&mut self, verified: &Vec<bool>) -> Vec<Result<U>> {
         let next_frontier = self.frontier_intermediate
             .par_iter()
             .map(|node| {
                 let child_l = self.histogram_add_leaf_values(
-                    node.0.key_values.clone(), node.0.path.clone());
+                    node.0.key_values.clone(), node.0.path.clone(), verified);
                 let child_r = self.histogram_add_leaf_values(
-                    node.1.key_values.clone(), node.1.path.clone());
+                    node.1.key_values.clone(), node.1.path.clone(), verified);
 
                 vec![child_l, child_r]
             })
@@ -469,6 +486,21 @@ where
         alive
     }
 
+    // Reconstruct counters based on shares
+    pub fn reconstruct_shares(res0: &[U], res1: &[U]) -> Vec<U> {
+        assert_eq!(res0.len(), res1.len());
+
+        res0.par_iter()
+            .zip_eq(res1)
+            .map(|(v1, v2)| {
+                let mut v = U::zero();
+                v.add(&v1);
+                v.add(&v2);
+                v
+            })
+            .collect()
+    }
+    
     // Reconstruct counters based on shares
     pub fn final_values(res0: &[Result<U>], res1: &[Result<U>]) -> Vec<Result<U>> {
         assert_eq!(res0.len(), res1.len());

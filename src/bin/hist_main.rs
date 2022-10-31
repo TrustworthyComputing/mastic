@@ -6,13 +6,13 @@ use dpf_codes::{
     FieldElm, 
     prg, 
 };
+use num_traits::cast::ToPrimitive;
 use rand::Rng;
 use rand::distributions::Alphanumeric;
 use rayon::prelude::*;
 use std::time::Instant;
 use itertools::Itertools;
 type Key = dpf::DPFKey<FE, FieldElm>;
-
 
 fn sample_string(len: usize) -> String {
     let mut rng = rand::thread_rng();
@@ -43,6 +43,32 @@ fn generate_keys(cfg: &config::Config) -> (Vec<Key>, Vec<Key>) {
     println!("Key size: {:?} bytes", encoded.len());
 
     (keys0, keys1)
+}
+
+
+pub fn verify_clients_histogram(
+    hashes0: &Vec<Vec<u8>>, hashes1: &Vec<Vec<u8>>,
+    tau_vals0: &Vec<FieldElm>, tau_vals1: &Vec<FieldElm>
+) -> Vec<bool> {
+    assert_eq!(hashes0.len(), hashes1.len());
+    assert_eq!(tau_vals0.len(), tau_vals1.len());
+    assert_eq!(hashes0.len(), tau_vals0.len());
+
+    let mut verified = vec![true; hashes0.len()];
+
+    let tau_vals = &collect::KeyCollection::<FE, FieldElm>::reconstruct_shares(
+        tau_vals0, tau_vals1
+    );
+
+    for ((i, h0), h1) in hashes0.iter().enumerate().zip_eq(hashes1) {
+        let matching = h0.iter().zip(h1.iter()).filter(|&(h0, h1)| h0 == h1).count();
+        if h0.len() != matching || tau_vals[i].value().to_u32().unwrap() != 1 {
+            println!("Client {}, {} != {}", i, hex::encode(h0), hex::encode(h1));
+            verified[i] = false;
+        }
+    }
+
+    verified
 }
 
 fn main() {
@@ -81,18 +107,13 @@ fn main() {
         col1.histogram_tree_crawl();
     }
 
-    let hashes0 = col0.histogram_tree_crawl_last();
-    let hashes1 = col1.histogram_tree_crawl_last();
+    let (hashes0, tau_vals0) = col0.histogram_tree_crawl_last();
+    let (hashes1, tau_vals1) = col1.histogram_tree_crawl_last();
 
-    for ((i, h0), h1) in hashes0.iter().enumerate().zip_eq(hashes1) {
-        let matching = h0.iter().zip(h1.iter()).filter(|&(h0, h1)| h0 == h1).count();
-        if h0.len() != matching {
-            println!("Client {}, {} != {}", i, hex::encode(h0), hex::encode(h1));
-        }
-    }
+    let verified = verify_clients_histogram(&hashes0, &hashes1, &tau_vals0, &tau_vals1);
 
-    let s0 = col0.histogram_add_leaves_between_clients();
-    let s1 = col1.histogram_add_leaves_between_clients();
+    let s0 = col0.histogram_add_leaves_between_clients(&verified);
+    let s1 = col1.histogram_add_leaves_between_clients(&verified);
 
     for res in &collect::KeyCollection::<FE, FieldElm>::final_values(&s0, &s1) {
         let bits = dpf_codes::bits_to_bitstring(&res.path);

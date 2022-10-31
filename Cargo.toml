@@ -23,6 +23,7 @@ lazy_static = "1.4"
 native-tls = "0.2.10"
 num = "0.4.0"
 num-bigint = { version = "0.4.3", features = ["rand", "serde"] }
+num-traits = "0.2.15"
 primal = "0.3.1"
 rand = "0.8.5"
 rand_core = "0.6.4"
