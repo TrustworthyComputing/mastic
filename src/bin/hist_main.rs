@@ -77,12 +77,12 @@ fn main() {
     col1.tree_init();
 
     for _ in 0..bitlen-1 {
-        let _vals0 = col0.tree_crawl();
-        let _vals1 = col1.tree_crawl();
+        col0.histogram_tree_crawl();
+        col1.histogram_tree_crawl();
     }
 
-    let (s0, hashes0) = col0.histogram_tree_crawl_leaves();
-    let (s1, hashes1) = col1.histogram_tree_crawl_leaves();
+    let hashes0 = col0.histogram_tree_crawl_last();
+    let hashes1 = col1.histogram_tree_crawl_last();
 
     for ((i, h0), h1) in hashes0.iter().enumerate().zip_eq(hashes1) {
         let matching = h0.iter().zip(h1.iter()).filter(|&(h0, h1)| h0 == h1).count();
@@ -90,6 +90,9 @@ fn main() {
             println!("Client {}, {} != {}", i, hex::encode(h0), hex::encode(h1));
         }
     }
+
+    let s0 = col0.histogram_add_leaves_between_clients();
+    let s1 = col1.histogram_add_leaves_between_clients();
 
     for res in &collect::KeyCollection::<FE, FieldElm>::final_values(&s0, &s1) {
         let bits = dpf_codes::bits_to_bitstring(&res.path);

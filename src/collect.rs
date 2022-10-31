@@ -27,6 +27,7 @@ pub struct KeyCollection<T,U> {
     pub keys: Vec<(bool, dpf::DPFKey<T,U>)>,
     frontier: Vec<TreeNode<T>>,
     frontier_last: Vec<TreeNode<U>>,
+    frontier_intermediate: Vec<(TreeNode<U>, TreeNode<U>)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,6 +58,7 @@ where
             keys: vec![],
             frontier: vec![],
             frontier_last: vec![],
+            frontier_intermediate: vec![],
         }
     }
 
@@ -80,6 +82,7 @@ where
 
         self.frontier.clear();
         self.frontier_last.clear();
+        self.frontier_intermediate.clear();
         self.frontier.push(root);
     }
 
@@ -151,7 +154,6 @@ where
             hashes.push(pi_prime);    
         }
 
-        // TODO(@jimouris): First verify hashes and then add.
         let mut child_val = U::zero();
         for (i, v) in key_values.iter().enumerate() {
             // Add in only live values
@@ -168,10 +170,69 @@ where
             key_values,
             hashes: hashes,
         };
-
         child.path.push(dir);
 
-        //println!("{:?} - Child value: {:?}", child.path, child.value);
+        child
+    }
+
+    fn histogram_make_tree_node_last(&self, parent: &TreeNode<T>, dir: bool) -> (Vec<U>, Vec<Vec<u8>>, Vec<bool>) {
+        let (key_states, key_values): (Vec<dpf::EvalState>, Vec<U>) = self
+            .keys
+            .par_iter()
+            .enumerate()
+            .map(|(i, key)| {
+                let (st, out) = key.1.eval_bit_last(&parent.key_states[i], dir);
+                (st, out)
+            })
+            .unzip();
+
+        // Construct path: parent.path | bit
+        // pi_b = H(x | seed_b)
+        let mut bit_str = crate::bits_to_bitstring(parent.path.as_slice());
+        bit_str.push(if dir {'1'} else {'0'});
+
+        let mut hashes = vec![];
+        let mut hasher = Sha256::new();
+        for (i, ks) in key_states.iter().enumerate() {
+            // pre_image = x | seed_b
+            let mut pre_image = bit_str.clone();
+            pre_image.push_str(&String::from_utf8_lossy(&ks.seed.key));
+
+            hasher.update(pre_image);
+            let mut pi_prime = hasher.finalize_reset().to_vec();
+    
+            // Correction operation
+            if ks.bit {
+                pi_prime = xor_vec(&pi_prime, &self.keys[i].1.cs);
+            }
+            hashes.push(pi_prime);    
+        }
+
+        let mut path = parent.path.clone();
+        path.push(dir);
+
+        (key_values, hashes, path)
+    }
+
+    // Adds values for "path" accross multiple clients.
+    fn histogram_add_leaf_values(&self, key_values: Vec<U>, path: Vec<bool>) -> TreeNode<U> {
+        let mut child_val = U::zero();
+        for (i, v) in key_values.iter().enumerate() {
+            // Add in only live values
+            if self.keys[i].0 {
+                child_val.add_lazy(&v);
+            }
+        }
+        child_val.reduce();
+
+        let child = TreeNode::<U> {
+            path: path.clone(),
+            value: child_val,
+            key_states: vec![],
+            key_values: vec![],
+            hashes: vec![],
+        };
+
         child
     }
 
@@ -196,6 +257,21 @@ where
 
         self.frontier = next_frontier;
         values
+    }
+
+    pub fn histogram_tree_crawl(&mut self) {
+        self.frontier = self
+            .frontier
+            .par_iter()
+            .map(|node| {
+                assert!(node.path.len() <= self.depth);
+                let child0 = self.make_tree_node(node, false);
+                let child1 = self.make_tree_node(node, true);
+
+                vec![child0, child1]
+            })
+            .flatten()
+            .collect::<Vec<TreeNode<T>>>();
     }
 
     pub fn tree_crawl_last(&mut self) -> Vec<U> {
@@ -235,16 +311,62 @@ where
         values
     }
 
-    pub fn histogram_tree_crawl_leaves(&mut self) -> (Vec<Result<U>>, Vec<Vec<u8>>) {
-        let next_frontier = self
+    pub fn histogram_tree_crawl_last(&mut self) -> Vec<Vec<u8>> {
+        self.frontier_intermediate = self
             .frontier
             .par_iter()
             .map(|node| {
                 assert!(node.path.len() <= self.depth);
-                let child0 = self.make_tree_node_last(node, false);
-                let child1 = self.make_tree_node_last(node, true);
+                let (key_values_l, hashes_l, path_l) = self.
+                    histogram_make_tree_node_last(node, false);
+                let (key_values_r, hashes_r, path_r) = self.
+                    histogram_make_tree_node_last(node, true);
 
-                vec![child0, child1]
+                (TreeNode::<U> {
+                    path: path_l,
+                    value: U::zero(),
+                    key_states: vec![],
+                    key_values: key_values_l,
+                    hashes: hashes_l,
+                },
+                TreeNode::<U> {
+                    path: path_r,
+                    value: U::zero(),
+                    key_states: vec![],
+                    key_values: key_values_r,
+                    hashes: hashes_r,
+                })
+            })
+            .collect::<Vec<(TreeNode<U>, TreeNode<U>)>>();
+
+        // XOR all the leaves for each client. Note: between all the leaves of 
+        // each client, not between clients.
+        let mut final_hashes = vec![vec![0u8; 32]; self.frontier_intermediate[0].0.hashes.len()];
+        for node in self.frontier_intermediate.iter() {
+            final_hashes = final_hashes
+                .iter_mut()
+                .zip_eq(node.0.hashes.clone())
+                .zip_eq(node.1.hashes.clone())
+                .map(|((v1, v2), v3)| {
+                    let t = xor_vec(&v1, &v2);
+                    xor_vec(&t, &v3)
+                })
+                .collect();
+        }
+
+        final_hashes
+    }
+
+    pub fn histogram_add_leaves_between_clients(&mut self) -> Vec<Result<U>> {
+        let next_frontier = self.frontier_intermediate
+            .par_iter()
+            .map(|node| {
+                let child_l = self.histogram_add_leaf_values(
+                    node.0.key_values.clone(), node.0.path.clone());
+                let child_r = self.histogram_add_leaf_values(
+                    node.1.key_values.clone(), node.1.path.clone());
+
+                vec![child_l, child_r]
             })
             .flatten()
             .collect::<Vec<TreeNode<U>>>();
@@ -257,21 +379,7 @@ where
             })
             .collect::<Vec<Result<U>>>();
 
-        let mut final_hashes = vec![vec![0u8; 32]; next_frontier[0].hashes.len()];
-        for node in next_frontier.iter() {
-            final_hashes = final_hashes
-                .iter_mut()
-                .zip_eq(node.hashes.clone())
-                .map(|(v1, v2)| xor_vec(&v1, &v2))
-                .collect();
-        }
-        // let hashes_str = final_hashes
-        //     .iter()
-        //     .map(|h| hex::encode(h))
-        //     .collect::<Vec<String>>();
-        // println!("final_hashes: {:?}", hashes_str);
-            
-        (result, final_hashes)
+        result
     }
 
 
