@@ -6,12 +6,12 @@ use dpf_codes::{
     FieldElm,
     fastfield::FE,
     prg,
-    rpc::Collector,
-    rpc::{
-        AddKeysRequest, FinalSharesRequest, ResetRequest, TreeCrawlRequest, 
-        TreeCrawlLastRequest, TreeInitRequest,
-        TreePruneRequest, 
-        TreePruneLastRequest, 
+    idpf_rpc::Collector,
+    idpf_rpc::{
+        IdpfAddKeysRequest, IdpfFinalSharesRequest, IdpfResetRequest, IdpfTreeCrawlRequest, 
+        IdpfTreeCrawlLastRequest, IdpfTreeInitRequest,
+        IdpfTreePruneRequest, 
+        IdpfTreePruneLastRequest, 
     },
 };
 
@@ -48,14 +48,14 @@ impl Collector for CollectorServer {
     type FinalSharesFut = Ready<Vec<collect::Result<FieldElm>>>;
     type ResetFut = Ready<String>;
 
-    fn reset(self, _: context::Context, _rst: ResetRequest) -> Self::ResetFut {
+    fn reset(self, _: context::Context, _rst: IdpfResetRequest) -> Self::ResetFut {
         let mut coll = self.arc.lock().unwrap();
         *coll = collect::KeyCollection::new(&self.seed, self.data_len);
 
         future::ready("Done".to_string())
     }
 
-    fn add_keys(self, _: context::Context, add: AddKeysRequest) -> Self::AddKeysFut {
+    fn add_keys(self, _: context::Context, add: IdpfAddKeysRequest) -> Self::AddKeysFut {
         let mut coll = self.arc.lock().unwrap();
         for k in add.keys {
             coll.add_key(k);
@@ -65,35 +65,35 @@ impl Collector for CollectorServer {
         future::ready("".to_string())
     }
 
-    fn tree_init(self, _: context::Context, _req: TreeInitRequest) -> Self::TreeInitFut {
+    fn tree_init(self, _: context::Context, _req: IdpfTreeInitRequest) -> Self::TreeInitFut {
         let mut coll = self.arc.lock().unwrap();
         coll.tree_init();
         future::ready("Done".to_string())
     }
 
-    fn tree_crawl(self, _: context::Context, _req: TreeCrawlRequest) -> Self::TreeCrawlFut {
+    fn tree_crawl(self, _: context::Context, _req: IdpfTreeCrawlRequest) -> Self::TreeCrawlFut {
         let mut coll = self.arc.lock().unwrap();
         future::ready(coll.tree_crawl())
     }
 
-    fn tree_crawl_last(self, _: context::Context, _req: TreeCrawlLastRequest) -> Self::TreeCrawlLastFut {
+    fn tree_crawl_last(self, _: context::Context, _req: IdpfTreeCrawlLastRequest) -> Self::TreeCrawlLastFut {
         let mut coll = self.arc.lock().unwrap();
         future::ready(coll.tree_crawl_last())
     }
 
-    fn tree_prune(self, _: context::Context, req: TreePruneRequest) -> Self::TreePruneFut {
+    fn tree_prune(self, _: context::Context, req: IdpfTreePruneRequest) -> Self::TreePruneFut {
         let mut coll = self.arc.lock().unwrap();
         coll.tree_prune(&req.keep);
         future::ready("Done".to_string())
     }
 
-    fn tree_prune_last(self, _: context::Context, req: TreePruneLastRequest) -> Self::TreePruneLastFut {
+    fn tree_prune_last(self, _: context::Context, req: IdpfTreePruneLastRequest) -> Self::TreePruneLastFut {
         let mut coll = self.arc.lock().unwrap();
         coll.tree_prune_last(&req.keep);
         future::ready("Done".to_string())
     }
 
-    fn final_shares(self, _: context::Context, _req: FinalSharesRequest) -> Self::FinalSharesFut {
+    fn final_shares(self, _: context::Context, _req: IdpfFinalSharesRequest) -> Self::FinalSharesFut {
         let coll = self.arc.lock().unwrap();
         let out = coll.final_shares();
         future::ready(out)

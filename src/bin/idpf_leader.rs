@@ -1,13 +1,15 @@
 use dpf_codes::{
     FieldElm,
     collect, config, fastfield,
-    rpc::{
-        AddKeysRequest, FinalSharesRequest, ResetRequest, 
-        TreeInitRequest,
-        TreeCrawlRequest, 
-        TreeCrawlLastRequest, 
-        TreePruneRequest, 
-        TreePruneLastRequest, 
+    idpf_rpc::{
+        IdpfAddKeysRequest,
+        IdpfFinalSharesRequest,
+        IdpfResetRequest, 
+        IdpfTreeInitRequest,
+        IdpfTreeCrawlRequest, 
+        IdpfTreeCrawlLastRequest, 
+        IdpfTreePruneRequest, 
+        IdpfTreePruneLastRequest, 
     },
     dpf,
     bits_to_string,
@@ -77,10 +79,10 @@ fn generate_keys(cfg: &config::Config) -> (Vec<Key>, Vec<Key>) {
 }
 
 async fn reset_servers(
-    client0: &mut dpf_codes::CollectorClient,
-    client1: &mut dpf_codes::CollectorClient,
+    client0: &mut dpf_codes::IdpfCollectorClient,
+    client1: &mut dpf_codes::IdpfCollectorClient,
 ) -> io::Result<()> {
-    let req = ResetRequest {};
+    let req = IdpfResetRequest {};
     let response0 = client0.reset(long_context(), req.clone());
     let response1 = client1.reset(long_context(), req);
     try_join!(response0, response1).unwrap();
@@ -89,10 +91,10 @@ async fn reset_servers(
 }
 
 async fn tree_init(
-    client0: &mut dpf_codes::CollectorClient,
-    client1: &mut dpf_codes::CollectorClient,
+    client0: &mut dpf_codes::IdpfCollectorClient,
+    client1: &mut dpf_codes::IdpfCollectorClient,
 ) -> io::Result<()> {
-    let req = TreeInitRequest {};
+    let req = IdpfTreeInitRequest {};
     let response0 = client0.tree_init(long_context(), req.clone());
     let response1 = client1.tree_init(long_context(), req);
     try_join!(response0, response1).unwrap();
@@ -102,8 +104,8 @@ async fn tree_init(
 
 async fn add_keys(
     cfg: &config::Config,
-    mut client0: dpf_codes::CollectorClient,
-    mut client1: dpf_codes::CollectorClient,
+    mut client0: dpf_codes::IdpfCollectorClient,
+    mut client1: dpf_codes::IdpfCollectorClient,
     keys0: &[dpf::DPFKey<fastfield::FE,FieldElm>],
     keys1: &[dpf::DPFKey<fastfield::FE,FieldElm>],
     nreqs: usize,
@@ -121,8 +123,8 @@ async fn add_keys(
         addkey1.push(keys1[sample].clone());
     }
 
-    let req0 = AddKeysRequest { keys: addkey0 };
-    let req1 = AddKeysRequest { keys: addkey1 };
+    let req0 = IdpfAddKeysRequest { keys: addkey0 };
+    let req1 = IdpfAddKeysRequest { keys: addkey1 };
 
     let response0 = client0.add_keys(long_context(), req0.clone());
     let response1 = client1.add_keys(long_context(), req1.clone());
@@ -134,8 +136,8 @@ async fn add_keys(
 
 async fn run_level(
     cfg: &config::Config,
-    client0: &mut dpf_codes::CollectorClient,
-    client1: &mut dpf_codes::CollectorClient,
+    client0: &mut dpf_codes::IdpfCollectorClient,
+    client1: &mut dpf_codes::IdpfCollectorClient,
     level: usize,
     nreqs: usize,
     start_time: Instant,
@@ -150,7 +152,7 @@ async fn run_level(
         "-",
         start_time.elapsed().as_secs_f64()
     );
-    let req = TreeCrawlRequest {};
+    let req = IdpfTreeCrawlRequest {};
     let response0 = client0.tree_crawl(long_context(), req.clone());
     let response1 = client1.tree_crawl(long_context(), req);
     let (vals0, vals1) = try_join!(response0, response1).unwrap();
@@ -167,7 +169,7 @@ async fn run_level(
     //println!("KeepLen: {:?}", keep.len());
 
     // Tree prune
-    let req = TreePruneRequest { keep };
+    let req = IdpfTreePruneRequest { keep };
     let response0 = client0.tree_prune(long_context(), req.clone());
     let response1 = client1.tree_prune(long_context(), req);
     try_join!(response0, response1).unwrap();
@@ -177,8 +179,8 @@ async fn run_level(
 
 async fn run_level_last(
     cfg: &config::Config,
-    client0: &mut dpf_codes::CollectorClient,
-    client1: &mut dpf_codes::CollectorClient,
+    client0: &mut dpf_codes::IdpfCollectorClient,
+    client1: &mut dpf_codes::IdpfCollectorClient,
     nreqs: usize,
     start_time: Instant,
 ) -> io::Result<usize> {
@@ -191,7 +193,7 @@ async fn run_level_last(
         "-",
         start_time.elapsed().as_secs_f64()
     );
-    let req = TreeCrawlLastRequest {};
+    let req = IdpfTreeCrawlLastRequest {};
     let response0 = client0.tree_crawl_last(long_context(), req.clone());
     let response1 = client1.tree_crawl_last(long_context(), req);
     let (vals0, vals1) = try_join!(response0, response1).unwrap();
@@ -207,7 +209,7 @@ async fn run_level_last(
     //println!("KeepLen: {:?}", keep.len());
 
     // Tree prune
-    let req = TreePruneLastRequest { keep };
+    let req = IdpfTreePruneLastRequest { keep };
     let response0 = client0.tree_prune_last(long_context(), req.clone());
     let response1 = client1.tree_prune_last(long_context(), req);
     try_join!(response0, response1).unwrap();
@@ -216,11 +218,11 @@ async fn run_level_last(
 }
 
 async fn final_shares(
-    client0: &mut dpf_codes::CollectorClient,
-    client1: &mut dpf_codes::CollectorClient,
+    client0: &mut dpf_codes::IdpfCollectorClient,
+    client1: &mut dpf_codes::IdpfCollectorClient,
 ) -> io::Result<()> {
     // Final shares
-    let req = FinalSharesRequest {};
+    let req = IdpfFinalSharesRequest {};
     let response0 = client0.final_shares(long_context(), req.clone());
     let response1 = client1.final_shares(long_context(), req);
     let (out_shares0, out_shares1) = try_join!(response0, response1).unwrap();
@@ -263,9 +265,9 @@ async fn main() -> io::Result<()> {
     //let transport0 = tarpc::serde_transport::tcp::connect(cfg.server0, Bincode::default()).await?;
 
     let mut client0 =
-        dpf_codes::CollectorClient::new(client::Config::default(), transport0).spawn()?;
+        dpf_codes::IdpfCollectorClient::new(client::Config::default(), transport0).spawn()?;
     let mut client1 =
-        dpf_codes::CollectorClient::new(client::Config::default(), transport1).spawn()?;
+        dpf_codes::IdpfCollectorClient::new(client::Config::default(), transport1).spawn()?;
 
     let start = Instant::now();
     let (keys0, keys1) = generate_keys(&cfg);

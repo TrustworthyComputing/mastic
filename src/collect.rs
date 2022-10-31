@@ -426,10 +426,10 @@ where
         //println!("Size of frontier: {:?}", self.frontier.len());
     }
 
-    pub fn keep_values(_nclients: usize, threshold: &T, vals0: &[T], vals1: &[T]) -> Vec<bool> {
+    pub fn keep_values(nclients: usize, threshold: &T, vals0: &[T], vals1: &[T]) -> Vec<bool> {
         assert_eq!(vals0.len(), vals1.len());
 
-        // let nclients = T::from(_nclients as u32);
+        let nclients = T::from(nclients as u32);
         let mut keep = vec![];
         for i in 0..vals0.len() {
             let mut v = T::zero();
@@ -444,7 +444,7 @@ where
             //     println!("-> {:?} {:?} {:?}", v, *threshold, nclients);
             // }
 
-            // debug_assert!(v <= nclients);
+            debug_assert!(v <= nclients);
 
             // Keep nodes that are above threshold
             keep.push(v >= *threshold);

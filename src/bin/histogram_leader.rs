@@ -1,11 +1,13 @@
 use dpf_codes::{
     FieldElm,
     collect, config, fastfield,
-    rpc::{
-        AddKeysRequest, FinalSharesRequest, ResetRequest, 
-        TreeInitRequest,
-        TreeCrawlRequest, 
-        TreeCrawlLastRequest, 
+    histogram_rpc::{
+        HistogramAddKeysRequest,
+        HistogramFinalSharesRequest,
+        HistogramResetRequest, 
+        HistogramTreeInitRequest,
+        HistogramTreeCrawlRequest, 
+        HistogramTreeCrawlLastRequest, 
     },
     dpf,
     bits_to_bitstring,
@@ -74,7 +76,7 @@ async fn reset_servers(
     client0: &mut dpf_codes::CollectorClient,
     client1: &mut dpf_codes::CollectorClient,
 ) -> io::Result<()> {
-    let req = ResetRequest {};
+    let req = HistogramResetRequest {};
     let response0 = client0.reset(long_context(), req.clone());
     let response1 = client1.reset(long_context(), req);
     try_join!(response0, response1).unwrap();
@@ -86,7 +88,7 @@ async fn tree_init(
     client0: &mut dpf_codes::CollectorClient,
     client1: &mut dpf_codes::CollectorClient,
 ) -> io::Result<()> {
-    let req = TreeInitRequest {};
+    let req = HistogramTreeInitRequest {};
     let response0 = client0.tree_init(long_context(), req.clone());
     let response1 = client1.tree_init(long_context(), req);
     try_join!(response0, response1).unwrap();
@@ -115,8 +117,8 @@ async fn add_keys(
         addkey1.push(keys1[idx].clone());
     }
 
-    let req0 = AddKeysRequest { keys: addkey0 };
-    let req1 = AddKeysRequest { keys: addkey1 };
+    let req0 = HistogramAddKeysRequest { keys: addkey0 };
+    let req1 = HistogramAddKeysRequest { keys: addkey1 };
 
     let response0 = client0.add_keys(long_context(), req0.clone());
     let response1 = client1.add_keys(long_context(), req1.clone());
@@ -139,7 +141,7 @@ async fn run_level(
         "-",
         start_time.elapsed().as_secs_f64()
     );
-    let req = TreeCrawlRequest {};
+    let req = HistogramTreeCrawlRequest {};
     let response0 = client0.tree_crawl(long_context(), req.clone());
     let response1 = client1.tree_crawl(long_context(), req);
     let (vals0, vals1) = try_join!(response0, response1).unwrap();
@@ -165,7 +167,7 @@ async fn run_level_last(
         "-",
         start_time.elapsed().as_secs_f64()
     );
-    let req = TreeCrawlLastRequest {};
+    let req = HistogramTreeCrawlLastRequest {};
     let response0 = client0.tree_crawl_last(long_context(), req.clone());
     let response1 = client1.tree_crawl_last(long_context(), req);
     let (vals0, vals1) = try_join!(response0, response1).unwrap();
@@ -185,7 +187,7 @@ async fn final_shares(
     client1: &mut dpf_codes::CollectorClient,
 ) -> io::Result<()> {
     // Final shares
-    let req = FinalSharesRequest {};
+    let req = HistogramFinalSharesRequest {};
     let response0 = client0.final_shares(long_context(), req.clone());
     let response1 = client1.final_shares(long_context(), req);
     let (out_shares0, out_shares1) = try_join!(response0, response1).unwrap();

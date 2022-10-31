@@ -6,12 +6,12 @@ use dpf_codes::{
     FieldElm,
     fastfield::FE,
     prg,
-    rpc::Collector,
-    rpc::{
-        AddKeysRequest, FinalSharesRequest, ResetRequest, TreeCrawlRequest, 
-        TreeCrawlLastRequest, TreeInitRequest,
-        TreePruneRequest, 
-        TreePruneLastRequest, 
+    histogram_rpc::Collector,
+    histogram_rpc::{
+        HistogramAddKeysRequest, HistogramFinalSharesRequest, HistogramResetRequest, HistogramTreeCrawlRequest, 
+        HistogramTreeCrawlLastRequest, HistogramTreeInitRequest,
+        HistogramTreePruneRequest, 
+        HistogramTreePruneLastRequest, 
     },
 };
 
@@ -48,14 +48,14 @@ impl Collector for CollectorServer {
     type FinalSharesFut = Ready<Vec<collect::Result<FieldElm>>>;
     type ResetFut = Ready<String>;
 
-    fn reset(self, _: context::Context, _rst: ResetRequest) -> Self::ResetFut {
+    fn reset(self, _: context::Context, _rst: HistogramResetRequest) -> Self::ResetFut {
         let mut coll = self.arc.lock().unwrap();
         *coll = collect::KeyCollection::new(&self.seed, self.data_len * 8);
 
         future::ready("Done".to_string())
     }
 
-    fn add_keys(self, _: context::Context, add: AddKeysRequest) -> Self::AddKeysFut {
+    fn add_keys(self, _: context::Context, add: HistogramAddKeysRequest) -> Self::AddKeysFut {
         let mut coll = self.arc.lock().unwrap();
         for k in add.keys {
             coll.add_key(k);
@@ -65,31 +65,31 @@ impl Collector for CollectorServer {
         future::ready("".to_string())
     }
 
-    fn tree_init(self, _: context::Context, _req: TreeInitRequest) -> Self::TreeInitFut {
+    fn tree_init(self, _: context::Context, _req: HistogramTreeInitRequest) -> Self::TreeInitFut {
         let mut coll = self.arc.lock().unwrap();
         coll.tree_init();
         future::ready("Done".to_string())
     }
 
-    fn tree_crawl(self, _: context::Context, _req: TreeCrawlRequest) -> Self::TreeCrawlFut {
+    fn tree_crawl(self, _: context::Context, _req: HistogramTreeCrawlRequest) -> Self::TreeCrawlFut {
         let mut coll = self.arc.lock().unwrap();
         future::ready(coll.tree_crawl())
     }
 
-    fn tree_crawl_last(self, _: context::Context, _req: TreeCrawlLastRequest) -> Self::TreeCrawlLastFut {
+    fn tree_crawl_last(self, _: context::Context, _req: HistogramTreeCrawlLastRequest) -> Self::TreeCrawlLastFut {
         let mut coll = self.arc.lock().unwrap();
         future::ready(coll.tree_crawl_last())
     }
 
-    fn tree_prune(self, _: context::Context, _req: TreePruneRequest) -> Self::TreePruneFut {
+    fn tree_prune(self, _: context::Context, _req: HistogramTreePruneRequest) -> Self::TreePruneFut {
         future::ready("Done".to_string())
     }
 
-    fn tree_prune_last(self, _: context::Context, _req: TreePruneLastRequest) -> Self::TreePruneLastFut {
+    fn tree_prune_last(self, _: context::Context, _req: HistogramTreePruneLastRequest) -> Self::TreePruneLastFut {
         future::ready("Done".to_string())
     }
 
-    fn final_shares(self, _: context::Context, _req: FinalSharesRequest) -> Self::FinalSharesFut {
+    fn final_shares(self, _: context::Context, _req: HistogramFinalSharesRequest) -> Self::FinalSharesFut {
         let coll = self.arc.lock().unwrap();
         let out = coll.final_shares();
         future::ready(out)

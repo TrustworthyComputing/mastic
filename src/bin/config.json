@@ -1,5 +1,5 @@
 {
-  "data_len": 64,
+  "data_len": 256,
   "threshold": 0.001,
   "server0": "0.0.0.0:8000",
   "server1": "0.0.0.0:8001",

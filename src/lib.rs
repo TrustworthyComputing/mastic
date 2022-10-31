@@ -8,7 +8,8 @@ pub mod dpf;
 pub mod fastfield;
 mod field;
 pub mod prg;
-pub mod rpc;
+pub mod histogram_rpc;
+pub mod idpf_rpc;
 
 extern crate geo;
 
@@ -25,7 +26,8 @@ extern crate lazy_static;
 
 pub use crate::field::Dummy;
 pub use crate::field::FieldElm;
-pub use crate::rpc::CollectorClient;
+pub use crate::histogram_rpc::CollectorClient;
+pub use crate::idpf_rpc::CollectorClient as IdpfCollectorClient;
 use itertools::Itertools;
 
 // Additive group, such as (Z_n, +)

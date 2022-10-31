@@ -40,11 +40,11 @@ zipf = "7.0.0"
 
 [[bin]]
 name = "idpf-server"
-path = "src/bin/server.rs"
+path = "src/bin/idpf_server.rs"
 
 [[bin]]
 name = "idpf-leader"
-path = "src/bin/leader.rs"
+path = "src/bin/idpf_leader.rs"
 
 [[bin]]
 name = "idpf-main"
