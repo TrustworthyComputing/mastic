@@ -26,7 +26,7 @@ extern crate lazy_static;
 
 pub use crate::field::Dummy;
 pub use crate::field::FieldElm;
-pub use crate::histogram_rpc::CollectorClient;
+pub use crate::histogram_rpc::CollectorClient as HistogramCollectorClient;
 pub use crate::idpf_rpc::CollectorClient as IdpfCollectorClient;
 use itertools::Itertools;
 

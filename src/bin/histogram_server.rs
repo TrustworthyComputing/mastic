@@ -8,10 +8,12 @@ use dpf_codes::{
     prg,
     histogram_rpc::Collector,
     histogram_rpc::{
-        HistogramAddKeysRequest, HistogramFinalSharesRequest, HistogramResetRequest, HistogramTreeCrawlRequest, 
-        HistogramTreeCrawlLastRequest, HistogramTreeInitRequest,
-        HistogramTreePruneRequest, 
-        HistogramTreePruneLastRequest, 
+        HistogramAddKeysRequest,
+        HistogramTreeInitRequest,
+        HistogramResetRequest,
+        HistogramTreeCrawlRequest, 
+        HistogramTreeCrawlLastRequest,
+        HistogramAddLeavesBetweenClientsRequest,
     },
 };
 
@@ -41,21 +43,23 @@ struct CollectorServer {
 impl Collector for CollectorServer {
     type AddKeysFut = Ready<String>;
     type TreeInitFut = Ready<String>;
-    type TreeCrawlFut = Ready<Vec<FE>>;
-    type TreeCrawlLastFut = Ready<Vec<FieldElm>>;
-    type TreePruneFut = Ready<String>;
-    type TreePruneLastFut = Ready<String>;
-    type FinalSharesFut = Ready<Vec<collect::Result<FieldElm>>>;
+    type HistogramTreeCrawlFut = Ready<String>;
+    type HistogramTreeCrawlLastFut = Ready<(Vec<Vec<u8>>, Vec<FieldElm>)>;
+    type HistogramAddLeavesBetweenClientsFut = Ready<Vec<collect::Result<FieldElm>>>;
     type ResetFut = Ready<String>;
 
-    fn reset(self, _: context::Context, _rst: HistogramResetRequest) -> Self::ResetFut {
+    fn reset(self,
+         _: context::Context, _rst: HistogramResetRequest
+    ) -> Self::ResetFut {
         let mut coll = self.arc.lock().unwrap();
         *coll = collect::KeyCollection::new(&self.seed, self.data_len * 8);
 
         future::ready("Done".to_string())
     }
 
-    fn add_keys(self, _: context::Context, add: HistogramAddKeysRequest) -> Self::AddKeysFut {
+    fn add_keys(self,
+         _: context::Context, add: HistogramAddKeysRequest
+    ) -> Self::AddKeysFut {
         let mut coll = self.arc.lock().unwrap();
         for k in add.keys {
             coll.add_key(k);
@@ -65,35 +69,36 @@ impl Collector for CollectorServer {
         future::ready("".to_string())
     }
 
-    fn tree_init(self, _: context::Context, _req: HistogramTreeInitRequest) -> Self::TreeInitFut {
+    fn tree_init(self,
+        _: context::Context, _req: HistogramTreeInitRequest
+    ) -> Self::TreeInitFut {
         let mut coll = self.arc.lock().unwrap();
         coll.tree_init();
         future::ready("Done".to_string())
     }
 
-    fn tree_crawl(self, _: context::Context, _req: HistogramTreeCrawlRequest) -> Self::TreeCrawlFut {
+    fn histogram_tree_crawl(self, 
+        _: context::Context, _req: HistogramTreeCrawlRequest
+    ) -> Self::HistogramTreeCrawlFut {
         let mut coll = self.arc.lock().unwrap();
-        future::ready(coll.tree_crawl())
-    }
-
-    fn tree_crawl_last(self, _: context::Context, _req: HistogramTreeCrawlLastRequest) -> Self::TreeCrawlLastFut {
-        let mut coll = self.arc.lock().unwrap();
-        future::ready(coll.tree_crawl_last())
-    }
-
-    fn tree_prune(self, _: context::Context, _req: HistogramTreePruneRequest) -> Self::TreePruneFut {
+        coll.histogram_tree_crawl();
         future::ready("Done".to_string())
     }
 
-    fn tree_prune_last(self, _: context::Context, _req: HistogramTreePruneLastRequest) -> Self::TreePruneLastFut {
-        future::ready("Done".to_string())
+    fn histogram_tree_crawl_last(self, 
+        _: context::Context, _req: HistogramTreeCrawlLastRequest
+    ) -> Self::HistogramTreeCrawlLastFut {
+        let mut coll = self.arc.lock().unwrap();
+        future::ready(coll.histogram_tree_crawl_last())
     }
 
-    fn final_shares(self, _: context::Context, _req: HistogramFinalSharesRequest) -> Self::FinalSharesFut {
-        let coll = self.arc.lock().unwrap();
-        let out = coll.final_shares();
-        future::ready(out)
+    fn histogram_add_leaves_between_clients(self, 
+        _: context::Context, req: HistogramAddLeavesBetweenClientsRequest
+    ) -> Self::HistogramAddLeavesBetweenClientsFut {
+        let mut coll = self.arc.lock().unwrap();
+        future::ready(coll.histogram_add_leaves_between_clients(&req.verified))
     }
+
 }
 
 #[tokio::main]

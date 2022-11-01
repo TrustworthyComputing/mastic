@@ -24,26 +24,16 @@ pub struct HistogramTreeCrawlRequest {}
 pub struct HistogramTreeCrawlLastRequest {}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct HistogramTreePruneRequest {
-    pub keep: Vec<bool>,
+pub struct HistogramAddLeavesBetweenClientsRequest {
+    pub verified: Vec<bool>,
 }
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct HistogramTreePruneLastRequest {
-    pub keep: Vec<bool>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct HistogramFinalSharesRequest {}
 
 #[tarpc::service]
 pub trait Collector {
     async fn reset(rst: HistogramResetRequest) -> String;
     async fn add_keys(add: HistogramAddKeysRequest) -> String;
     async fn tree_init(req: HistogramTreeInitRequest) -> String;
-    async fn tree_crawl(req: HistogramTreeCrawlRequest) -> Vec<FE>;
-    async fn tree_crawl_last(req: HistogramTreeCrawlLastRequest) -> Vec<FieldElm>;
-    async fn tree_prune(req: HistogramTreePruneRequest) -> String;
-    async fn tree_prune_last(req: HistogramTreePruneLastRequest) -> String;
-    async fn final_shares(req: HistogramFinalSharesRequest) -> Vec<collect::Result<FieldElm>>;
+    async fn histogram_tree_crawl(req: HistogramTreeCrawlRequest) -> String;
+    async fn histogram_tree_crawl_last(req: HistogramTreeCrawlLastRequest) -> (Vec<Vec<u8>>, Vec<FieldElm>);
+    async fn histogram_add_leaves_between_clients(req: HistogramAddLeavesBetweenClientsRequest) -> Vec<collect::Result<FieldElm>>;
 }

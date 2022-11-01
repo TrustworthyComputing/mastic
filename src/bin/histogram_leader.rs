@@ -3,14 +3,13 @@ use dpf_codes::{
     collect, config, fastfield,
     histogram_rpc::{
         HistogramAddKeysRequest,
-        HistogramFinalSharesRequest,
         HistogramResetRequest, 
         HistogramTreeInitRequest,
         HistogramTreeCrawlRequest, 
         HistogramTreeCrawlLastRequest, 
+        HistogramAddLeavesBetweenClientsRequest
     },
     dpf,
-    bits_to_bitstring,
 };
 
 use std::time::Instant;
@@ -20,6 +19,8 @@ use std::io;
 use rand::Rng;
 use rand::distributions::Alphanumeric;
 use rayon::prelude::*;
+use itertools::Itertools;
+use num_traits::cast::ToPrimitive;
 use tarpc::{
     client,
     context,
@@ -73,8 +74,8 @@ fn generate_keys(cfg: &config::Config) -> (Vec<Key>, Vec<Key>) {
 }
 
 async fn reset_servers(
-    client0: &mut dpf_codes::CollectorClient,
-    client1: &mut dpf_codes::CollectorClient,
+    client0: &mut dpf_codes::HistogramCollectorClient,
+    client1: &mut dpf_codes::HistogramCollectorClient,
 ) -> io::Result<()> {
     let req = HistogramResetRequest {};
     let response0 = client0.reset(long_context(), req.clone());
@@ -85,8 +86,8 @@ async fn reset_servers(
 }
 
 async fn tree_init(
-    client0: &mut dpf_codes::CollectorClient,
-    client1: &mut dpf_codes::CollectorClient,
+    client0: &mut dpf_codes::HistogramCollectorClient,
+    client1: &mut dpf_codes::HistogramCollectorClient,
 ) -> io::Result<()> {
     let req = HistogramTreeInitRequest {};
     let response0 = client0.tree_init(long_context(), req.clone());
@@ -98,8 +99,8 @@ async fn tree_init(
 
 async fn add_keys(
     cfg: &config::Config,
-    mut client0: dpf_codes::CollectorClient,
-    mut client1: dpf_codes::CollectorClient,
+    mut client0: dpf_codes::HistogramCollectorClient,
+    mut client1: dpf_codes::HistogramCollectorClient,
     keys0: &[dpf::DPFKey<fastfield::FE,FieldElm>],
     keys1: &[dpf::DPFKey<fastfield::FE,FieldElm>],
     nreqs: usize,
@@ -129,8 +130,8 @@ async fn add_keys(
 }
 
 async fn run_level(
-    client0: &mut dpf_codes::CollectorClient,
-    client1: &mut dpf_codes::CollectorClient,
+    client0: &mut dpf_codes::HistogramCollectorClient,
+    client1: &mut dpf_codes::HistogramCollectorClient,
     level: usize,
     start_time: Instant,
 ) -> io::Result<usize> {
@@ -142,8 +143,8 @@ async fn run_level(
         start_time.elapsed().as_secs_f64()
     );
     let req = HistogramTreeCrawlRequest {};
-    let response0 = client0.tree_crawl(long_context(), req.clone());
-    let response1 = client1.tree_crawl(long_context(), req);
+    let response0 = client0.histogram_tree_crawl(long_context(), req.clone());
+    let response1 = client1.histogram_tree_crawl(long_context(), req);
     let (vals0, vals1) = try_join!(response0, response1).unwrap();
     println!(
         "TreeCrawlDone {:?} {:?} {:?}",
@@ -157,8 +158,8 @@ async fn run_level(
 }
 
 async fn run_level_last(
-    client0: &mut dpf_codes::CollectorClient,
-    client1: &mut dpf_codes::CollectorClient,
+    client0: &mut dpf_codes::HistogramCollectorClient,
+    client1: &mut dpf_codes::HistogramCollectorClient,
     start_time: Instant,
 ) -> io::Result<usize> {
     // Tree crawl
@@ -168,36 +169,43 @@ async fn run_level_last(
         start_time.elapsed().as_secs_f64()
     );
     let req = HistogramTreeCrawlLastRequest {};
-    let response0 = client0.tree_crawl_last(long_context(), req.clone());
-    let response1 = client1.tree_crawl_last(long_context(), req);
-    let (vals0, vals1) = try_join!(response0, response1).unwrap();
+    let response0 = client0.histogram_tree_crawl_last(long_context(), req.clone());
+    let response1 = client1.histogram_tree_crawl_last(long_context(), req);
+    let ((hashes0, tau_vals0), (hashes1, tau_vals1)) = try_join!(response0, response1).unwrap();
     println!(
         "TreeCrawlDone last {:?} {:?}",
         "-",
         start_time.elapsed().as_secs_f64()
     );
 
-    assert_eq!(vals0.len(), vals1.len());
+    assert_eq!(hashes0.len(), hashes1.len());
+    let mut verified = vec![true; hashes0.len()];
 
-    Ok(vals0.len())
-}
+    let tau_vals = &collect::KeyCollection::<fastfield::FE, FieldElm>::reconstruct_shares(
+        &tau_vals0, &tau_vals1
+    );
 
-async fn final_shares(
-    client0: &mut dpf_codes::CollectorClient,
-    client1: &mut dpf_codes::CollectorClient,
-) -> io::Result<()> {
-    // Final shares
-    let req = HistogramFinalSharesRequest {};
-    let response0 = client0.final_shares(long_context(), req.clone());
-    let response1 = client1.final_shares(long_context(), req);
-    let (out_shares0, out_shares1) = try_join!(response0, response1).unwrap();
+    for ((i, h0), h1) in hashes0.iter().enumerate().zip_eq(hashes1) {
+        let matching = h0.iter().zip(h1.iter()).filter(|&(h0, h1)| h0 == h1).count();
+        if h0.len() != matching || tau_vals[i].value().to_u32().unwrap() != 1 {
+            println!("Client {}, {} != {}", i, hex::encode(h0), hex::encode(h1));
+            verified[i] = false;
+        }
+    }
 
-    for res in &collect::KeyCollection::<fastfield::FE,FieldElm>::final_values(&out_shares0, &out_shares1) {
-        let bits = crate::bits_to_bitstring(&res.path);
+    let req = HistogramAddLeavesBetweenClientsRequest { verified: verified };
+    let response0 = client0.histogram_add_leaves_between_clients(long_context(), req.clone());
+    let response1 = client1.histogram_add_leaves_between_clients(long_context(), req);
+    let (s0, s1) = try_join!(response0, response1).unwrap();
+
+    for res in &collect::KeyCollection::<fastfield::FE, FieldElm>::final_values(
+        &s0, &s1
+    ) {
+        let bits = dpf_codes::bits_to_bitstring(&res.path);
         println!("Value ({}) \t Count: {:?}", bits, res.value.value());
     }
 
-    Ok(())
+    Ok(hashes0.len())
 }
 
 #[tokio::main]
@@ -228,9 +236,9 @@ async fn main() -> io::Result<()> {
     //let transport0 = tarpc::serde_transport::tcp::connect(cfg.server0, Bincode::default()).await?;
 
     let mut client0 =
-        dpf_codes::CollectorClient::new(client::Config::default(), transport0).spawn()?;
+        dpf_codes::HistogramCollectorClient::new(client::Config::default(), transport0).spawn()?;
     let mut client1 =
-        dpf_codes::CollectorClient::new(client::Config::default(), transport1).spawn()?;
+        dpf_codes::HistogramCollectorClient::new(client::Config::default(), transport1).spawn()?;
 
     let start = Instant::now();
     let (keys0, keys1) = generate_keys(&cfg);
@@ -292,8 +300,6 @@ async fn main() -> io::Result<()> {
         active_paths,
         start.elapsed().as_secs_f64()
     );
-
-    final_shares(&mut client0, &mut client1).await?;
 
     Ok(())
 }
