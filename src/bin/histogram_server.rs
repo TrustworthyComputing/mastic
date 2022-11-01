@@ -1,13 +1,10 @@
-// Starter code from:
-//   https://github.com/google/tarpc/blob/master/example-service/src/server.rs
-
 use dpf_codes::{
-    collect, config,
+    collect,
+    config,
     FieldElm,
     fastfield::FE,
-    prg,
-    histogram_rpc::Collector,
     histogram_rpc::{
+        Collector,
         HistogramAddKeysRequest,
         HistogramTreeInitRequest,
         HistogramResetRequest,
@@ -15,23 +12,17 @@ use dpf_codes::{
         HistogramTreeCrawlLastRequest,
         HistogramAddLeavesBetweenClientsRequest,
     },
+    prg,
 };
 
-use futures::{
-    future::{self, Ready},
-    prelude::*,
-};
-use std::{
-    io,
-    sync::{Arc, Mutex},
-};
+use futures::{future::{self, Ready}, prelude::*,};
+use std::{io, sync::{Arc, Mutex},};
 use tarpc::{
     context,
     server::{self, Channel},
+    tokio_serde::formats::Json,
+    serde_transport::tcp,
 };
-
-use tokio::net::TcpListener;
-use tokio_serde::formats::Bincode;
 
 #[derive(Clone)]
 struct CollectorServer {
@@ -106,7 +97,7 @@ async fn main() -> io::Result<()> {
     env_logger::init();
 
     let (cfg, sid, _) = config::get_args("Server", true, false);
-    let server_addr = match sid {
+    let mut server_addr = match sid {
         0 => cfg.server0,
         1 => cfg.server1,
         _ => panic!("Oh no!"),
@@ -118,51 +109,33 @@ async fn main() -> io::Result<()> {
         _ => panic!("Oh no!"),
     };
 
-    // XXX This is bogus
     let seed = prg::PrgSeed { key: [1u8; 16] };
-
-    let der = include_bytes!("identity.p12");
-    // XXX This password is also bogus.
-    let cert = native_tls::Identity::from_pkcs12(der, "mypass").unwrap();
-
-    let acc = native_tls::TlsAcceptor::builder(cert).build().unwrap();
-    let tls_acceptor = tokio_native_tls::TlsAcceptor::from(acc);
 
     let coll = collect::KeyCollection::new(&seed, cfg.data_len * 8);
     let arc = Arc::new(Mutex::new(coll));
 
-    let mut server_addr = server_addr;
     // Listen on any IP
     server_addr.set_ip("0.0.0.0".parse().expect("Could not parse"));
-    TcpListener::bind(&server_addr)
-        .await?
+    let listener = tcp::listen(&server_addr, Json::default).await?;
+    listener
         // Ignore accept errors.
         .filter_map(|r| future::ready(r.ok()))
-        .map(|channel| async {
-            let tls_acceptor = tls_acceptor.clone();
-            let socket = tls_acceptor.accept(channel).await.unwrap();
-            let coll_server = CollectorServer {
+        .map(server::BaseChannel::with_defaults)
+        // Limit channels to 1 per IP.
+        // .max_channels_per_key(1, |t| t.transport().peer_addr().unwrap().ip())
+        .map(|channel| {
+            let server = CollectorServer {
                 seed: seed.clone(),
                 data_len: cfg.data_len * 8,
                 arc: arc.clone(),
             };
 
-            let socket = tarpc::serde_transport::Transport::from((socket, Bincode::default()));
-            let server = server::BaseChannel::with_defaults(socket);
-            let (tx, rx) = futures::channel::oneshot::channel();
-            tokio::spawn(async move {
-                server.respond_with(coll_server.serve()).execute().await;
-                //assert!(tx.send(()).is_ok());
-                print!("Sending");
-                tx.send(()).unwrap();
-            });
-            let a = rx.await;
-            print!("Received");
-            a
+            channel.execute(server.serve())
         })
-        .buffer_unordered(100)
+        // Max 10 channels.
+        .buffer_unordered(10)
         .for_each(|_| async {})
         .await;
-
+        
     Ok(())
 }

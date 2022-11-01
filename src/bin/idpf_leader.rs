@@ -1,6 +1,11 @@
 use dpf_codes::{
+    bits_to_string,
+    collect,
+    config,
+    dpf,
+    encode,
     FieldElm,
-    collect, config, fastfield,
+    fastfield,
     idpf_rpc::{
         IdpfAddKeysRequest,
         IdpfFinalSharesRequest,
@@ -11,28 +16,16 @@ use dpf_codes::{
         IdpfTreePruneRequest, 
         IdpfTreePruneLastRequest, 
     },
-    dpf,
-    bits_to_string,
-    encode,
 };
 
-use std::time::Instant;
 use geo::Point;
 
 use futures::try_join;
-use std::io;
-use rand::Rng;
-use rand::distributions::Alphanumeric;
+use rand::{Rng, distributions::Alphanumeric,};
 use rayon::prelude::*;
-use tarpc::{
-    client,
-    context,
-};
+use std::{io, time::{Duration, SystemTime, Instant},};
+use tarpc::{client, context, tokio_serde::formats::Json,};
 
-use tokio::net::TcpStream;
-use tokio_serde::formats::Bincode;
-
-use std::time::{Duration, SystemTime};
 
 type Key = dpf::DPFKey<fastfield::FE,FieldElm>;
 
@@ -64,7 +57,7 @@ fn generate_keys(cfg: &config::Config) -> (Vec<Key>, Vec<Key>) {
         .take(cfg.unique_buckets)
         .map(|_| {
             let loc = sample_location();
-            let data_string = encode(Point::new(loc.0, loc.1), 8);
+            let data_string = encode(Point::new(loc.0, loc.1), cfg.data_len * 8);
         
             println!("data_string = {}", data_string);
             
@@ -104,8 +97,8 @@ async fn tree_init(
 
 async fn add_keys(
     cfg: &config::Config,
-    mut client0: dpf_codes::IdpfCollectorClient,
-    mut client1: dpf_codes::IdpfCollectorClient,
+    client0: dpf_codes::IdpfCollectorClient,
+    client1: dpf_codes::IdpfCollectorClient,
     keys0: &[dpf::DPFKey<fastfield::FE,FieldElm>],
     keys1: &[dpf::DPFKey<fastfield::FE,FieldElm>],
     nreqs: usize,
@@ -142,8 +135,8 @@ async fn run_level(
     nreqs: usize,
     start_time: Instant,
 ) -> io::Result<usize> {
-    // let threshold64 = core::cmp::max(1, (cfg.threshold * (nreqs as f64)) as u64);
-    let threshold = fastfield::FE::new(cfg.threshold as u64);
+    let threshold64 = core::cmp::max(1, (cfg.threshold * (nreqs as f64)) as u64);
+    let threshold = fastfield::FE::new(threshold64 as u64);
 
     // Tree crawl
     println!(
@@ -184,8 +177,8 @@ async fn run_level_last(
     nreqs: usize,
     start_time: Instant,
 ) -> io::Result<usize> {
-    // let threshold64 = core::cmp::max(1, (cfg.threshold * (nreqs as f64)) as u32);
-    let threshold = FieldElm::from(cfg.threshold as u32);
+    let threshold64 = core::cmp::max(1, (cfg.threshold * (nreqs as f64)) as u32);
+    let threshold = FieldElm::from(threshold64 as u32);
 
     // Tree crawl
     println!(
@@ -245,29 +238,15 @@ async fn main() -> io::Result<()> {
     let (cfg, _, nreqs) = config::get_args("Leader", false, true);
     debug_assert_eq!(cfg.data_len % 8, 0);
 
-    let mut builder = native_tls::TlsConnector::builder();
-    // XXX THERE IS NO CERTIFICATE VALIDATION HERE!!!
-    // This is just for benchmarking purposes. A real implementation would
-    // have pinned certificates for the two servers and use those to encrypt.
-    builder.danger_accept_invalid_certs(true);
+    let transport0 = tarpc::serde_transport::tcp::connect(cfg.server0, Json::default);
+    let transport1 = tarpc::serde_transport::tcp::connect(cfg.server1, Json::default);
 
-    let cx = builder.build().unwrap();
-    let cx = tokio_native_tls::TlsConnector::from(cx);
-
-    let tcp0 = TcpStream::connect(cfg.server0).await?;
-    let io0 = cx.connect("server0", tcp0).await.unwrap();
-    let transport0 = tarpc::serde_transport::Transport::from((io0, Bincode::default()));
-
-    let tcp1 = TcpStream::connect(cfg.server1).await?;
-    let io1 = cx.connect("server1", tcp1).await.unwrap();
-    let transport1 = tarpc::serde_transport::Transport::from((io1, Bincode::default()));
-
-    //let transport0 = tarpc::serde_transport::tcp::connect(cfg.server0, Bincode::default()).await?;
-
-    let mut client0 =
-        dpf_codes::IdpfCollectorClient::new(client::Config::default(), transport0).spawn()?;
-    let mut client1 =
-        dpf_codes::IdpfCollectorClient::new(client::Config::default(), transport1).spawn()?;
+    let mut client0 = dpf_codes::IdpfCollectorClient::new(
+        client::Config::default(), transport0.await?
+    ).spawn();
+    let mut client1 = dpf_codes::IdpfCollectorClient::new(
+        client::Config::default(), transport1.await?
+    ).spawn();
 
     let start = Instant::now();
     let (keys0, keys1) = generate_keys(&cfg);
@@ -310,7 +289,8 @@ async fn main() -> io::Result<()> {
     tree_init(&mut client0, &mut client1).await?;
 
     let start = Instant::now();
-    for level in 0..cfg.data_len-1 {
+    let bitlen = cfg.data_len * 8; // bits
+    for level in 0..bitlen-1 {
         let active_paths = run_level(&cfg, &mut client0, &mut client1, level, nreqs, start).await?;
 
         println!(
@@ -324,7 +304,7 @@ async fn main() -> io::Result<()> {
     let active_paths = run_level_last(&cfg, &mut client0, &mut client1, nreqs, start).await?;
     println!(
         "Level {:?} active_paths={:?} {:?}",
-        cfg.data_len,
+        bitlen,
         active_paths,
         start.elapsed().as_secs_f64()
     );

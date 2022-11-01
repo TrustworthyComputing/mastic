@@ -132,28 +132,6 @@ where
             })
             .unzip();
 
-        // Construct path: parent.path | bit
-        // pi_b = H(x | seed_b)
-        let mut bit_str = crate::bits_to_bitstring(parent.path.as_slice());
-        bit_str.push(if dir {'1'} else {'0'});
-
-        let mut hashes = vec![];
-        let mut hasher = Sha256::new();
-        for (i, ks) in key_states.iter().enumerate() {
-            // pre_image = x | seed_b
-            let mut pre_image = bit_str.clone();
-            pre_image.push_str(&String::from_utf8_lossy(&ks.seed.key));
-
-            hasher.update(pre_image);
-            let mut pi_prime = hasher.finalize_reset().to_vec();
-    
-            // Correction operation
-            if ks.bit {
-                pi_prime = xor_vec(&pi_prime, &self.keys[i].1.cs);
-            }
-            hashes.push(pi_prime);    
-        }
-
         let mut child_val = U::zero();
         for (i, v) in key_values.iter().enumerate() {
             // Add in only live values
@@ -168,7 +146,7 @@ where
             value: child_val,
             key_states,
             key_values,
-            hashes: hashes,
+            hashes: vec![],
         };
         child.path.push(dir);
 
@@ -297,20 +275,6 @@ where
             .iter()
             .map(|node| node.value.clone())
             .collect::<Vec<U>>();
-
-        let mut final_hashes = vec![vec![0u8; 32]; next_frontier[0].hashes.len()];
-        for node in next_frontier.iter() {
-            final_hashes = final_hashes
-                .iter_mut()
-                .zip_eq(node.hashes.clone())
-                .map(|(v1, v2)| xor_vec(&v1, &v2))
-                .collect();
-        }
-        let hashes_str = final_hashes
-            .iter()
-            .map(|h| hex::encode(h))
-            .collect::<Vec<String>>();
-        println!("final_hashes: {:?}", hashes_str);
             
         self.frontier_last = next_frontier;
         values

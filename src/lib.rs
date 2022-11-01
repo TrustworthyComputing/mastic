@@ -98,9 +98,8 @@ fn bits_to_u8(bits: &[bool]) -> u8 {
 }
 
 pub fn bits_to_string(bits: &[bool]) -> String {
-    assert!(bits.len() % 8 == 0);
+    assert_eq!(bits.len() % 8, 0);
 
-    println!("converting {:?}", bits);
     let mut out: String = "".to_string();
     let byte_len = bits.len() / 8;
     for b in 0..byte_len {

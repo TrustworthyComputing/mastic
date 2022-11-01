@@ -1,6 +1,9 @@
 use dpf_codes::{
     FieldElm,
-    collect, config, fastfield,
+    collect,
+    config,
+    dpf,
+    fastfield,
     histogram_rpc::{
         HistogramAddKeysRequest,
         HistogramResetRequest, 
@@ -9,27 +12,15 @@ use dpf_codes::{
         HistogramTreeCrawlLastRequest, 
         HistogramAddLeavesBetweenClientsRequest
     },
-    dpf,
 };
-
-use std::time::Instant;
 
 use futures::try_join;
-use std::io;
-use rand::Rng;
-use rand::distributions::Alphanumeric;
-use rayon::prelude::*;
 use itertools::Itertools;
 use num_traits::cast::ToPrimitive;
-use tarpc::{
-    client,
-    context,
-};
-
-use tokio::net::TcpStream;
-use tokio_serde::formats::Bincode;
-
-use std::time::{Duration, SystemTime};
+use rand::{Rng, distributions::Alphanumeric,};
+use rayon::prelude::*;
+use std::{io, time::{Duration, SystemTime, Instant},};
+use tarpc::{client, context, tokio_serde::formats::Json,};
 
 type Key = dpf::DPFKey<fastfield::FE,FieldElm>;
 
@@ -99,8 +90,8 @@ async fn tree_init(
 
 async fn add_keys(
     cfg: &config::Config,
-    mut client0: dpf_codes::HistogramCollectorClient,
-    mut client1: dpf_codes::HistogramCollectorClient,
+    client0: dpf_codes::HistogramCollectorClient,
+    client1: dpf_codes::HistogramCollectorClient,
     keys0: &[dpf::DPFKey<fastfield::FE,FieldElm>],
     keys1: &[dpf::DPFKey<fastfield::FE,FieldElm>],
     nreqs: usize,
@@ -216,29 +207,15 @@ async fn main() -> io::Result<()> {
     env_logger::init();
     let (cfg, _, nreqs) = config::get_args("Leader", false, true);
 
-    let mut builder = native_tls::TlsConnector::builder();
-    // XXX THERE IS NO CERTIFICATE VALIDATION HERE!!!
-    // This is just for benchmarking purposes. A real implementation would
-    // have pinned certificates for the two servers and use those to encrypt.
-    builder.danger_accept_invalid_certs(true);
+    let transport0 = tarpc::serde_transport::tcp::connect(cfg.server0, Json::default);
+    let transport1 = tarpc::serde_transport::tcp::connect(cfg.server1, Json::default);
 
-    let cx = builder.build().unwrap();
-    let cx = tokio_native_tls::TlsConnector::from(cx);
-
-    let tcp0 = TcpStream::connect(cfg.server0).await?;
-    let io0 = cx.connect("server0", tcp0).await.unwrap();
-    let transport0 = tarpc::serde_transport::Transport::from((io0, Bincode::default()));
-
-    let tcp1 = TcpStream::connect(cfg.server1).await?;
-    let io1 = cx.connect("server1", tcp1).await.unwrap();
-    let transport1 = tarpc::serde_transport::Transport::from((io1, Bincode::default()));
-
-    //let transport0 = tarpc::serde_transport::tcp::connect(cfg.server0, Bincode::default()).await?;
-
-    let mut client0 =
-        dpf_codes::HistogramCollectorClient::new(client::Config::default(), transport0).spawn()?;
-    let mut client1 =
-        dpf_codes::HistogramCollectorClient::new(client::Config::default(), transport1).spawn()?;
+    let mut client0 = dpf_codes::HistogramCollectorClient::new(
+        client::Config::default(), transport0.await?
+    ).spawn();
+    let mut client1 = dpf_codes::HistogramCollectorClient::new(
+        client::Config::default(), transport1.await?
+    ).spawn();
 
     let start = Instant::now();
     let (keys0, keys1) = generate_keys(&cfg);

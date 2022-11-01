@@ -15,12 +15,11 @@ bitvec = "1.0.1"
 clap = "2.0"
 ctr = "0.9.2"
 env_logger = "0.9.1"
-futures = "0.3.24"
+futures = "0.3.25"
 geo = "0.16.0"
 hex = "0.4.3"
 itertools = "0.10.5"
 lazy_static = "1.4"
-native-tls = "0.2.10"
 num = "0.4.0"
 num-bigint = { version = "0.4.3", features = ["rand", "serde"] }
 num-traits = "0.2.15"
@@ -31,10 +30,8 @@ rayon = "1.5.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10.6"
-tarpc = { version = "0.21", features = ["full", "serde-transport", "tcp"]  }
-tokio = { version = "0.2", features = ["full"] }
-tokio-native-tls = "0.1"
-tokio-serde = {version = "0.6.1", features = ["json", "bincode"]}
+tarpc = { version = "0.30.0", features = ["full", "serde-transport", "tcp", "tokio1"]  }
+tokio = { version = "1.0", features = ["full", "macros"] }
 zipf = "7.0.0"
 
 
