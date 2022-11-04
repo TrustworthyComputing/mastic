@@ -238,8 +238,8 @@ async fn main() -> io::Result<()> {
     let (cfg, _, nreqs) = config::get_args("Leader", false, true);
     debug_assert_eq!(cfg.data_len % 8, 0);
 
-    let transport0 = tarpc::serde_transport::tcp::connect(cfg.server0, Json::default);
-    let transport1 = tarpc::serde_transport::tcp::connect(cfg.server1, Json::default);
+    let transport0 = tarpc::serde_transport::tcp::connect(cfg.server_0, Json::default);
+    let transport1 = tarpc::serde_transport::tcp::connect(cfg.server_1, Json::default);
 
     let mut client0 = dpf_codes::IdpfCollectorClient::new(
         client::Config::default(), transport0.await?

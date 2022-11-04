@@ -32,19 +32,19 @@ $ cargo test
 
 Server 0:
 ```bash
-$ cargo run --release --bin idpf-server -- --config src/bin/config.json --server_id 0
+$ cargo run --release --bin idpf-server -- --config src/bin/test.json --server_id 0
 ```
 
 Server 1:
 ```bash
-$ cargo run --release --bin idpf-server -- --config src/bin/config.json --server_id 1
+$ cargo run --release --bin idpf-server -- --config src/bin/test.json --server_id 1
 ```
 
 Now, the servers should be ready to process client requests. In a third shell, run the following command to send 100 client requests to the servers (this will take some time):
 
 Clients:
 ```bash
-$ cargo run --release --bin idpf-leader -- --config src/bin/config.json -n 100
+$ cargo run --release --bin idpf-leader -- --config src/bin/test.json -n 100
 ```
 
 ## Histogram
@@ -69,7 +69,7 @@ $ cargo run --release --bin histogram-leader -- --config src/bin/histogram.json 
 
 ## The config file
 
-The client and servers use a common configuration file, which contains the parameters for the system. An example of one such file is in `src/bin/config.json`. The contents of that file are here:
+The client and servers use a common configuration file, which contains the parameters for the system. An example of one such file is in `src/bin/test.json`. The contents of that file are here:
 
 ```
 {

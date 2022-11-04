@@ -15,7 +15,7 @@ use dpf_codes::{
     prg,
 };
 
-use futures::{future::{self, Ready}, prelude::*,};
+use futures::{future, prelude::*,};
 use std::{io, sync::{Arc, Mutex},};
 use tarpc::{
     context,
@@ -31,63 +31,75 @@ struct CollectorServer {
     arc: Arc<Mutex<collect::KeyCollection<FE,FieldElm>>>,
 }
 
-impl Collector for CollectorServer {
-    type AddKeysFut = Ready<String>;
-    type TreeInitFut = Ready<String>;
-    type HistogramTreeCrawlFut = Ready<String>;
-    type HistogramTreeCrawlLastFut = Ready<(Vec<Vec<u8>>, Vec<FieldElm>)>;
-    type HistogramAddLeavesBetweenClientsFut = Ready<Vec<collect::Result<FieldElm>>>;
-    type ResetFut = Ready<String>;
+#[derive(Clone)]
+struct BatchCollectorServer {
+    cs: Vec<CollectorServer>,
+}
 
-    fn reset(self,
-         _: context::Context, _rst: HistogramResetRequest
-    ) -> Self::ResetFut {
-        let mut coll = self.arc.lock().unwrap();
-        *coll = collect::KeyCollection::new(&self.seed, self.data_len * 8);
+#[tarpc::server]
+impl Collector for BatchCollectorServer {
 
-        future::ready("Done".to_string())
+    async fn reset(self,
+         _: context::Context, req: HistogramResetRequest
+    ) -> String {
+        let client_idx = req.client_idx as usize;
+        assert!(client_idx == 0 || client_idx == 1);
+        let mut coll = self.cs[client_idx].arc.lock().unwrap();
+        *coll = collect::KeyCollection::new(&self.cs[client_idx].seed, self.cs[client_idx].data_len * 8);
+
+        "Done".to_string()
     }
 
-    fn add_keys(self,
-         _: context::Context, add: HistogramAddKeysRequest
-    ) -> Self::AddKeysFut {
-        let mut coll = self.arc.lock().unwrap();
-        for k in add.keys {
+    async fn add_keys(self,
+         _: context::Context, req: HistogramAddKeysRequest
+    ) -> String {
+        let client_idx = req.client_idx as usize;
+        assert!(client_idx == 0 || client_idx == 1);
+        let mut coll = self.cs[client_idx].arc.lock().unwrap();
+        for k in req.keys {
             coll.add_key(k);
         }
         println!("Number of keys: {:?}", coll.keys.len());
 
-        future::ready("".to_string())
+        "".to_string()
     }
 
-    fn tree_init(self,
-        _: context::Context, _req: HistogramTreeInitRequest
-    ) -> Self::TreeInitFut {
-        let mut coll = self.arc.lock().unwrap();
+    async fn tree_init(self,
+        _: context::Context, req: HistogramTreeInitRequest
+    ) -> String {
+        let client_idx = req.client_idx as usize;
+        assert!(client_idx == 0 || client_idx == 1);
+        let mut coll = self.cs[client_idx].arc.lock().unwrap();
         coll.tree_init();
-        future::ready("Done".to_string())
+        "Done".to_string()
     }
 
-    fn histogram_tree_crawl(self, 
-        _: context::Context, _req: HistogramTreeCrawlRequest
-    ) -> Self::HistogramTreeCrawlFut {
-        let mut coll = self.arc.lock().unwrap();
+    async fn histogram_tree_crawl(self, 
+        _: context::Context, req: HistogramTreeCrawlRequest
+    ) -> String {
+        let client_idx = req.client_idx as usize;
+        assert!(client_idx == 0 || client_idx == 1);
+        let mut coll = self.cs[client_idx].arc.lock().unwrap();
         coll.histogram_tree_crawl();
-        future::ready("Done".to_string())
+        "Done".to_string()
     }
 
-    fn histogram_tree_crawl_last(self, 
-        _: context::Context, _req: HistogramTreeCrawlLastRequest
-    ) -> Self::HistogramTreeCrawlLastFut {
-        let mut coll = self.arc.lock().unwrap();
-        future::ready(coll.histogram_tree_crawl_last())
+    async fn histogram_tree_crawl_last(self, 
+        _: context::Context, req: HistogramTreeCrawlLastRequest
+    ) -> (Vec<Vec<u8>>, Vec<FieldElm>) {
+        let client_idx = req.client_idx as usize;
+        assert!(client_idx == 0 || client_idx == 1);
+        let mut coll = self.cs[client_idx].arc.lock().unwrap();
+        coll.histogram_tree_crawl_last()
     }
 
-    fn histogram_add_leaves_between_clients(self, 
+    async fn histogram_add_leaves_between_clients(self, 
         _: context::Context, req: HistogramAddLeavesBetweenClientsRequest
-    ) -> Self::HistogramAddLeavesBetweenClientsFut {
-        let mut coll = self.arc.lock().unwrap();
-        future::ready(coll.histogram_add_leaves_between_clients(&req.verified))
+    ) -> Vec<collect::Result<FieldElm>> {
+        let client_idx = req.client_idx as usize;
+        assert!(client_idx == 0 || client_idx == 1);
+        let mut coll = self.cs[client_idx].arc.lock().unwrap();
+        coll.histogram_add_leaves_between_clients(&req.verified)
     }
 
 }
@@ -97,37 +109,41 @@ async fn main() -> io::Result<()> {
     env_logger::init();
 
     let (cfg, sid, _) = config::get_args("Server", true, false);
-    let mut server_addr = match sid {
-        0 => cfg.server0,
-        1 => cfg.server1,
-        _ => panic!("Oh no!"),
-    };
-
-    _ = match sid {
-        0 => 0,
-        1 => 1,
+    let server_addr = match sid {
+        0 => cfg.server_0,
+        1 => cfg.server_1,
+        2 => cfg.server_2,
         _ => panic!("Oh no!"),
     };
 
     let seed = prg::PrgSeed { key: [1u8; 16] };
 
     let coll = collect::KeyCollection::new(&seed, cfg.data_len * 8);
+    let coll2 = collect::KeyCollection::new(&seed, cfg.data_len * 8);
     let arc = Arc::new(Mutex::new(coll));
+    let arc2 = Arc::new(Mutex::new(coll2));
 
+    println!("Server {} running at {:?}", sid, server_addr);
     // Listen on any IP
-    server_addr.set_ip("0.0.0.0".parse().expect("Could not parse"));
     let listener = tcp::listen(&server_addr, Json::default).await?;
     listener
         // Ignore accept errors.
         .filter_map(|r| future::ready(r.ok()))
         .map(server::BaseChannel::with_defaults)
         // Limit channels to 1 per IP.
-        // .max_channels_per_key(1, |t| t.transport().peer_addr().unwrap().ip())
         .map(|channel| {
-            let server = CollectorServer {
+            let local = CollectorServer {
                 seed: seed.clone(),
                 data_len: cfg.data_len * 8,
                 arc: arc.clone(),
+            };
+            let local2 = CollectorServer {
+                seed: seed.clone(),
+                data_len: cfg.data_len * 8,
+                arc: arc2.clone(),
+            };
+            let server = BatchCollectorServer {
+                cs: vec![local.clone(), local2],
             };
 
             channel.execute(server.serve())

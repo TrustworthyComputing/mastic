@@ -8,8 +8,9 @@ pub struct Config {
     pub unique_buckets: usize,
     pub threshold: f64,
     pub zipf_exponent: f64,
-    pub server0: SocketAddr,
-    pub server1: SocketAddr,
+    pub server_0: SocketAddr,
+    pub server_1: SocketAddr,
+    pub server_2: SocketAddr,
 }
 
 fn parse_ip(v: &Value, error_msg: &str) -> SocketAddr {
@@ -29,8 +30,9 @@ pub fn get_config(filename: &str) -> Config {
     let zipf_exponent = v["zipf_exponent"]
         .as_f64()
         .expect("Can't parse zipf_exponent");
-    let server0 = parse_ip(&v["server0"], "Can't parse server0 addr");
-    let server1 = parse_ip(&v["server1"], "Can't parse server1 addr");
+    let server_0 = parse_ip(&v["server_0"], "Can't parse server0 addr");
+    let server_1 = parse_ip(&v["server_1"], "Can't parse server 1 addr");
+    let server_2 = parse_ip(&v["server_2"], "Can't parse server 2 addr");
 
     Config {
         data_len,
@@ -38,8 +40,9 @@ pub fn get_config(filename: &str) -> Config {
         unique_buckets,
         threshold,
         zipf_exponent,
-        server0,
-        server1,
+        server_0,
+        server_1,
+        server_2,
     }
 }
 

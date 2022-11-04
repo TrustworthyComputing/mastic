@@ -7,24 +7,34 @@ use serde::Deserialize;
 use serde::Serialize;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct HistogramResetRequest {}
+pub struct HistogramResetRequest {
+    pub client_idx: u8,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HistogramAddKeysRequest {
+    pub client_idx: u8,
     pub keys: Vec<dpf::DPFKey<FE,FieldElm>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct HistogramTreeInitRequest {}
+pub struct HistogramTreeInitRequest {
+    pub client_idx: u8,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct HistogramTreeCrawlRequest {}
+pub struct HistogramTreeCrawlRequest {
+    pub client_idx: u8,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct HistogramTreeCrawlLastRequest {}
+pub struct HistogramTreeCrawlLastRequest {
+    pub client_idx: u8,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HistogramAddLeavesBetweenClientsRequest {
+    pub client_idx: u8,
     pub verified: Vec<bool>,
 }
 

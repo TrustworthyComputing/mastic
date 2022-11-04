@@ -101,14 +101,8 @@ async fn main() -> io::Result<()> {
 
     let (cfg, sid, _) = config::get_args("Server", true, false);
     let mut server_addr = match sid {
-        0 => cfg.server0,
-        1 => cfg.server1,
-        _ => panic!("Oh no!"),
-    };
-
-    let _server_idx = match sid {
-        0 => 0,
-        1 => 1,
+        0 => cfg.server_0,
+        1 => cfg.server_1,
         _ => panic!("Oh no!"),
     };
 
@@ -127,7 +121,6 @@ async fn main() -> io::Result<()> {
         .filter_map(|r| future::ready(r.ok()))
         .map(server::BaseChannel::with_defaults)
         // Limit channels to 1 per IP.
-        // .max_channels_per_key(1, |t| t.transport().peer_addr().unwrap().ip())
         .map(|channel| {
             let server = CollectorServer {
                 seed: seed.clone(),
