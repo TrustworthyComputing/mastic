@@ -42,27 +42,33 @@ fn sample_string(len: usize) -> String {
         .collect()
 }
 
-fn generate_keys(cfg: &config::Config) -> (Vec<Key>, Vec<Key>) {
+fn generate_keys(cfg: &config::Config) -> Vec<(Vec<Key>, Vec<Key>)> {
     println!("data_len = {}\n", cfg.data_len);
 
-    let (keys0, keys1): (Vec<Key>, Vec<Key>) = rayon::iter::repeat(0)
-        .take(cfg.unique_buckets)
-        .enumerate()
-        .map(|(i, _)| {
-            let data_string = sample_string(cfg.data_len * 8);
-            let bit_str = dpf_codes::bits_to_bitstring(
-                dpf_codes::string_to_bits(&data_string).as_slice()
-            );
-            println!("Client({}) \t input \"{}\" ({})", i, data_string, bit_str);
-            
-            dpf::DPFKey::gen_from_str(&data_string)
-        })
-        .unzip();
+    let ((keys20, keys02), ((keys01, keys10), (keys12, keys21))): 
+        ((Vec<Key>, Vec<Key>), ((Vec<Key>, Vec<Key>), (Vec<Key>, Vec<Key>))) = 
+    rayon::iter::repeat(0)
+    .take(cfg.unique_buckets)
+    .enumerate()
+    .map(|(i, _)| {
+        let data_string = sample_string(cfg.data_len * 8);
+        let bit_str = dpf_codes::bits_to_bitstring(
+            dpf_codes::string_to_bits(&data_string).as_slice()
+        );
+        println!("Client({}) \t input \"{}\" ({})", i, data_string, bit_str);
+        
+        (
+            dpf::DPFKey::gen_from_str(&data_string),
+            (dpf::DPFKey::gen_from_str(&data_string), 
+            dpf::DPFKey::gen_from_str(&data_string))
+        )
+    })
+    .unzip();
 
-    let encoded: Vec<u8> = bincode::serialize(&keys0[0]).unwrap();
+    let encoded: Vec<u8> = bincode::serialize(&keys01[0]).unwrap();
     println!("Key size: {:?} bytes", encoded.len());
 
-    (keys0, keys1)
+    vec![(keys01, keys10), (keys12, keys21), (keys20, keys02)]
 }
 
 async fn reset_servers(
@@ -94,40 +100,58 @@ async fn tree_init(
         try_join!(response_0, response_1).unwrap();
     }
 
+    let response_0 = clients[0].0.tree_init(
+        long_context(), HistogramTreeInitRequest { client_idx: 2 }
+    );
+    let response_1 = clients[0].1.tree_init(
+        long_context(), HistogramTreeInitRequest { client_idx: 2 }
+    );
+    try_join!(response_0, response_1).unwrap();
+
     Ok(())
 }
 
 async fn add_keys(
     cfg: &config::Config,
     clients: &Vec<Client>,
-    keys0: &[dpf::DPFKey<fastfield::FE,FieldElm>],
-    keys1: &[dpf::DPFKey<fastfield::FE,FieldElm>],
+    keys: &Vec<(Vec<dpf::DPFKey<fastfield::FE,FieldElm>>, Vec<dpf::DPFKey<fastfield::FE,FieldElm>>)>,
     nreqs: usize,
 ) -> io::Result<()> {
     use rand::distributions::Distribution;
     let mut rng = rand::thread_rng();
     let zipf = zipf::ZipfDistribution::new(cfg.unique_buckets, cfg.zipf_exponent).unwrap();
 
-    let mut addkey_00 = Vec::with_capacity(nreqs);
-    let mut addkey_01 = Vec::with_capacity(nreqs);
-
+    let mut addkeys_0 = vec![Vec::with_capacity(nreqs); 3];
+    let mut addkeys_1 = vec![Vec::with_capacity(nreqs); 3];
     for _ in 0..nreqs {
         let idx = zipf.sample(&mut rng) - 1;
-        addkey_00.push(keys0[idx].clone());
-        addkey_01.push(keys1[idx].clone());
+        for i in 0..3 {
+            addkeys_0[i].push(keys[i].0[idx].clone());
+            addkeys_1[i].push(keys[i].1[idx].clone());
+        }
     }
 
-    for client in clients.iter() {
-        let response_0 = client.0.add_keys(
+    for i in 0..clients.len() {
+        let response_0 = clients[i].0.add_keys(
             long_context(),
-            HistogramAddKeysRequest { client_idx: 0, keys: addkey_00.clone() }
+            HistogramAddKeysRequest { client_idx: 0, keys: addkeys_0[i].clone() }
         );
-        let response_1 = client.1.add_keys(
+        let response_1 = clients[i].1.add_keys(
             long_context(),
-            HistogramAddKeysRequest { client_idx: 1, keys: addkey_01.clone() }
+            HistogramAddKeysRequest { client_idx: 1, keys: addkeys_1[i].clone() }
         );
         try_join!(response_0, response_1).unwrap();
     }
+
+    // let response_0 = clients[0].0.add_keys(
+    //     long_context(),
+    //     HistogramAddKeysRequest { client_idx: 2, keys: addkeys_0[0].clone() }
+    // );
+    // let response_1 = clients[0].1.add_keys(
+    //     long_context(),
+    //     HistogramAddKeysRequest { client_idx: 2, keys: addkeys_1[0].clone() }
+    // );
+    // try_join!(response_0, response_1).unwrap();
 
     Ok(())
 }
@@ -152,6 +176,14 @@ async fn run_level(
         assert_eq!(vals_0.len(), vals_1.len());
     }
     
+    // let response_0 = clients[0].0.histogram_tree_crawl(
+    //     long_context(), HistogramTreeCrawlRequest { client_idx: 2 }
+    // );
+    // let response_1 = clients[0].1.histogram_tree_crawl(
+    //     long_context(), HistogramTreeCrawlRequest { client_idx: 2 }
+    // );
+    // let (_vals_0, _vals_1) = try_join!(response_0, response_1).unwrap();
+
     // println!(
     //     "TreeCrawlDone {:?} - {:?}", _level, _start_time.elapsed().as_secs_f64()
     // );
@@ -193,6 +225,21 @@ async fn run_level_last(
     let ((hashes_22, tau_vals_22), (hashes_20, tau_vals_20)) = 
         try_join!(response_22, response_20).unwrap();
     assert_eq!(hashes_11.len(), hashes_12.len());
+
+    // let response_020 = clients[0].0.histogram_tree_crawl_last(
+    //     long_context(), HistogramTreeCrawlLastRequest { client_idx: 2 }
+    // );
+    // let response_021 = clients[0].1.histogram_tree_crawl_last(
+    //     long_context(), HistogramTreeCrawlLastRequest { client_idx: 2 }
+    // );
+    // let ((hashes_020, tau_vals_020), (hashes_021, tau_vals_021)) = 
+    //     try_join!(response_020, response_021).unwrap();
+
+    // Check that \tau_2,0 and \pi_2,0 from S0 and S2 are the same
+// tau_vals_020, tau_vals_22
+// tau_vals_021, tau_vals_20
+
+
     // println!("TreeCrawlDone last - {:?}", _start_time.elapsed().as_secs_f64());
     let mut ver_0 = vec![true; hashes_00.len()];
     let mut ver_1 = vec![true; hashes_11.len()];
@@ -331,11 +378,13 @@ async fn main() -> io::Result<()> {
     let mut clients = vec![client_0, client_1, client_2];
 
     let start = Instant::now();
-    let (keys0, keys1) = generate_keys(&cfg);
+    // let (keys0, keys1) = generate_keys(&cfg);
+    let keys = generate_keys(&cfg);
+    
     let delta = start.elapsed().as_secs_f64();
     println!(
         "Generated {:?} keys in {:?} seconds ({:?} sec/key)",
-        keys0.len(), delta, delta / (keys0.len() as f64)
+        keys[0].0.len(), delta, delta / (keys[0].0.len() as f64)
     );
 
     reset_servers(&mut clients).await?;
@@ -353,8 +402,7 @@ async fn main() -> io::Result<()> {
                 resps.push(add_keys(
                     &cfg,
                     &clients,
-                    &keys0,
-                    &keys1,
+                    &keys,
                     this_batch,
                 ));
             }
