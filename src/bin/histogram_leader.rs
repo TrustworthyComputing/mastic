@@ -84,6 +84,14 @@ async fn reset_servers(
         try_join!(response_0, response_1).unwrap();
     }
 
+    let response_0 = clients[0].0.reset(
+        long_context(), HistogramResetRequest { client_idx: 2 }
+    );
+    let response_1 = clients[0].1.reset(
+        long_context(), HistogramResetRequest { client_idx: 2 }
+    );
+    try_join!(response_0, response_1).unwrap();
+
     Ok(())
 }
 
@@ -143,15 +151,15 @@ async fn add_keys(
         try_join!(response_0, response_1).unwrap();
     }
 
-    // let response_0 = clients[0].0.add_keys(
-    //     long_context(),
-    //     HistogramAddKeysRequest { client_idx: 2, keys: addkeys_0[0].clone() }
-    // );
-    // let response_1 = clients[0].1.add_keys(
-    //     long_context(),
-    //     HistogramAddKeysRequest { client_idx: 2, keys: addkeys_1[0].clone() }
-    // );
-    // try_join!(response_0, response_1).unwrap();
+    let response_0 = clients[0].0.add_keys(
+        long_context(),
+        HistogramAddKeysRequest { client_idx: 2, keys: addkeys_0[0].clone() }
+    );
+    let response_1 = clients[0].1.add_keys(
+        long_context(),
+        HistogramAddKeysRequest { client_idx: 2, keys: addkeys_1[0].clone() }
+    );
+    try_join!(response_0, response_1).unwrap();
 
     Ok(())
 }
@@ -176,19 +184,70 @@ async fn run_level(
         assert_eq!(vals_0.len(), vals_1.len());
     }
     
-    // let response_0 = clients[0].0.histogram_tree_crawl(
-    //     long_context(), HistogramTreeCrawlRequest { client_idx: 2 }
-    // );
-    // let response_1 = clients[0].1.histogram_tree_crawl(
-    //     long_context(), HistogramTreeCrawlRequest { client_idx: 2 }
-    // );
-    // let (_vals_0, _vals_1) = try_join!(response_0, response_1).unwrap();
+    let response_0 = clients[0].0.histogram_tree_crawl(
+        long_context(), HistogramTreeCrawlRequest { client_idx: 2 }
+    );
+    let response_1 = clients[0].1.histogram_tree_crawl(
+        long_context(), HistogramTreeCrawlRequest { client_idx: 2 }
+    );
+    let (_, _) = try_join!(response_0, response_1).unwrap();
 
     // println!(
     //     "TreeCrawlDone {:?} - {:?}", _level, _start_time.elapsed().as_secs_f64()
     // );
 
     Ok(())
+}
+
+fn check_hashes(
+    verified: &mut Vec<bool>,
+    hashes_0: &Vec<Vec<u8>>,
+    hashes_1: &Vec<Vec<u8>>
+) {
+    // Check hashes
+    for ((i, h0), h1) in hashes_0.iter().enumerate().zip_eq(hashes_1) {
+        if h0.len() != h0.iter().zip_eq(h1.iter()).filter(|&(h0, h1)| h0 == h1).count() {
+            println!("Client({}) {} != {}", i, hex::encode(h0), hex::encode(h1));
+            verified[i] = false;
+        }
+    }
+}
+
+fn check_taus(
+    verified: &mut Vec<bool>,
+    tau_vals_0: &Vec<FieldElm>,
+    tau_vals_1: &Vec<FieldElm>,
+) {
+    // Check taus
+    for ((i, t0), t1) in tau_vals_0.iter().enumerate().zip_eq(tau_vals_1) {
+        if t0.value() != t1.value() {
+            println!("Client({}) {} != {}", i, 
+                t0.value().to_u32().unwrap(), 
+                t1.value().to_u32().unwrap()
+            );
+            verified[i] = false;
+        }
+    }
+}
+
+fn check_hashes_and_taus(
+    verified: &mut Vec<bool>,
+    hashes_0: &Vec<Vec<u8>>,
+    hashes_1: &Vec<Vec<u8>>,
+    tau_vals: &Vec<FieldElm>,
+) {
+    // Check hashes and taus
+    for ((i, h0), h1) in hashes_0.iter().enumerate().zip_eq(hashes_1) {
+        if h0.len() != h0.iter().zip_eq(h1.iter()).filter(|&(h0, h1)| h0 == h1).count()
+            || tau_vals[i].value().to_u32().unwrap() != 1 
+        {
+            println!("Client({}) h0: {}, h1: {}, tau: {}", 
+                i, hex::encode(h0), hex::encode(h1),
+                tau_vals[i].value().to_u32().unwrap()
+            );
+            verified[i] = false;
+        }
+    }
 }
 
 async fn run_level_last(
@@ -226,24 +285,30 @@ async fn run_level_last(
         try_join!(response_22, response_20).unwrap();
     assert_eq!(hashes_11.len(), hashes_12.len());
 
-    // let response_020 = clients[0].0.histogram_tree_crawl_last(
-    //     long_context(), HistogramTreeCrawlLastRequest { client_idx: 2 }
-    // );
-    // let response_021 = clients[0].1.histogram_tree_crawl_last(
-    //     long_context(), HistogramTreeCrawlLastRequest { client_idx: 2 }
-    // );
-    // let ((hashes_020, tau_vals_020), (hashes_021, tau_vals_021)) = 
-    //     try_join!(response_020, response_021).unwrap();
+    let response_020 = clients[0].0.histogram_tree_crawl_last(
+        long_context(), HistogramTreeCrawlLastRequest { client_idx: 2 }
+    );
+    let response_021 = clients[0].1.histogram_tree_crawl_last(
+        long_context(), HistogramTreeCrawlLastRequest { client_idx: 2 }
+    );
+    let ((hashes_020, tau_vals_020), (hashes_021, tau_vals_021)) = 
+        try_join!(response_020, response_021).unwrap();
 
-    // Check that \tau_2,0 and \pi_2,0 from S0 and S2 are the same
-// tau_vals_020, tau_vals_22
-// tau_vals_021, tau_vals_20
-
-
-    // println!("TreeCrawlDone last - {:?}", _start_time.elapsed().as_secs_f64());
     let mut ver_0 = vec![true; hashes_00.len()];
     let mut ver_1 = vec![true; hashes_11.len()];
     let mut ver_2 = vec![true; hashes_22.len()];
+
+    // Check that \tau_2,0 and \pi_2,0 from S0 and S2 are the same
+    check_hashes(&mut ver_0, &hashes_020, &hashes_00);
+    check_taus(&mut ver_0, &tau_vals_020, &tau_vals_00);
+    // Check that \tau_2,1 and \pi_2,1 from S0 and S2 are the same
+    check_hashes(&mut ver_1, &hashes_021, &hashes_01);
+    check_taus(&mut ver_1, &tau_vals_021, &tau_vals_01);
+
+    // TODO:
+    // H(shares01 - shares02 || shares02 - shares21)
+
+    // println!("TreeCrawlDone last - {:?}", _start_time.elapsed().as_secs_f64());
 
     let tau_vals_0 = &collect::KeyCollection::<fastfield::FE, FieldElm>::reconstruct_shares(
         &tau_vals_00, &tau_vals_01
@@ -256,30 +321,17 @@ async fn run_level_last(
     );
 
     // Check s0, s1 hashes and taus
-    for ((i, h0), h1) in hashes_00.iter().enumerate().zip_eq(hashes_01) {
-        let matching = h0.iter().zip(h1.iter()).filter(|&(h0, h1)| h0 == h1).count();
-        if h0.len() != matching || tau_vals_0[i].value().to_u32().unwrap() != 1 {
-            println!("Client {}, {} != {}", i, hex::encode(h0), hex::encode(h1));
-            ver_0[i] = false;
-        }
-    }
+    check_hashes_and_taus(&mut ver_0, &hashes_00, &hashes_01, &tau_vals_0);
     // Check s1, s2 hashes and taus
-    for ((i, h0), h1) in hashes_11.iter().enumerate().zip_eq(hashes_12) {
-        let matching = h0.iter().zip(h1.iter()).filter(|&(h0, h1)| h0 == h1).count();
-        if h0.len() != matching || tau_vals_1[i].value().to_u32().unwrap() != 1 {
-            println!("Client {}, {} != {}", i, hex::encode(h0), hex::encode(h1));
-            ver_1[i] = false;
-        }
-    }
+    check_hashes_and_taus(&mut ver_1, &hashes_11, &hashes_12, &tau_vals_1);
     // Check s2, s0 hashes and taus
-    for ((i, h0), h1) in hashes_22.iter().enumerate().zip_eq(hashes_20) {
-        let matching = h0.iter().zip(h1.iter()).filter(|&(h0, h1)| h0 == h1).count();
-        if h0.len() != matching || tau_vals_2[i].value().to_u32().unwrap() != 1 {
-            println!("Client {}, {} != {}", i, hex::encode(h0), hex::encode(h1));
-            ver_2[i] = false;
-        }
-    }
-    assert_eq!(ver_0.iter().zip(ver_1.iter()).filter(|&(v0, v1)| v0 == v1).count(), ver_0.len());
+    check_hashes_and_taus(&mut ver_2, &hashes_22, &hashes_20, &tau_vals_2);
+    assert_eq!(
+        ver_0.iter()
+            .zip_eq(ver_1.iter()).zip_eq(ver_2.iter())
+            .filter(|&((v0, v1), v2)| v0 == v1 && v1 == v2).count(),
+        ver_0.len()
+    );
 
     let response_00 = clients[0].0.histogram_add_leaves_between_clients(
         long_context(),
