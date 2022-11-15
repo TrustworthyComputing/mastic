@@ -6,11 +6,12 @@ use dpf_codes::{
     fastfield,
     histogram_rpc::{
         HistogramAddKeysRequest,
-        HistogramResetRequest, 
+        HistogramResetRequest,
         HistogramTreeInitRequest,
-        HistogramTreeCrawlRequest, 
-        HistogramTreeCrawlLastRequest, 
-        HistogramAddLeavesBetweenClientsRequest
+        HistogramTreeCrawlRequest,
+        HistogramTreeCrawlLastRequest,
+        HistogramComputeHashesRequest,
+        HistogramAddLeavesBetweenClientsRequest,
     },
     HistogramCollectorClient,
 };
@@ -43,19 +44,19 @@ fn sample_string(len: usize) -> String {
 }
 
 fn generate_keys(cfg: &config::Config) -> Vec<(Vec<Key>, Vec<Key>)> {
-    println!("data_len = {}\n", cfg.data_len);
+    println!("data_len = {} bits\n", cfg.data_len * 8);
 
     let ((keys20, keys02), ((keys01, keys10), (keys12, keys21))): 
         ((Vec<Key>, Vec<Key>), ((Vec<Key>, Vec<Key>), (Vec<Key>, Vec<Key>))) = 
     rayon::iter::repeat(0)
     .take(cfg.unique_buckets)
     .enumerate()
-    .map(|(i, _)| {
+    .map(|(_i, _)| {
         let data_string = sample_string(cfg.data_len * 8);
-        let bit_str = dpf_codes::bits_to_bitstring(
-            dpf_codes::string_to_bits(&data_string).as_slice()
-        );
-        println!("Client({}) \t input \"{}\" ({})", i, data_string, bit_str);
+        // let bit_str = dpf_codes::bits_to_bitstring(
+        //     dpf_codes::string_to_bits(&data_string).as_slice()
+        // );
+        // println!("Client({}) \t input \"{}\" ({})", _i, data_string, bit_str);
         
         (
             dpf::DPFKey::gen_from_str(&data_string),
@@ -153,11 +154,11 @@ async fn add_keys(
 
     let response_0 = clients[0].0.add_keys(
         long_context(),
-        HistogramAddKeysRequest { client_idx: 2, keys: addkeys_0[0].clone() }
+        HistogramAddKeysRequest { client_idx: 2, keys: addkeys_0[2].clone() }
     );
     let response_1 = clients[0].1.add_keys(
         long_context(),
-        HistogramAddKeysRequest { client_idx: 2, keys: addkeys_1[0].clone() }
+        HistogramAddKeysRequest { client_idx: 2, keys: addkeys_1[2].clone() }
     );
     try_join!(response_0, response_1).unwrap();
 
@@ -299,14 +300,11 @@ async fn run_level_last(
     let mut ver_2 = vec![true; hashes_22.len()];
 
     // Check that \tau_2,0 and \pi_2,0 from S0 and S2 are the same
-    check_hashes(&mut ver_0, &hashes_020, &hashes_00);
-    check_taus(&mut ver_0, &tau_vals_020, &tau_vals_00);
+    check_hashes(&mut ver_0, &hashes_020, &hashes_22);
+    check_taus(&mut ver_0, &tau_vals_020, &tau_vals_22);
     // Check that \tau_2,1 and \pi_2,1 from S0 and S2 are the same
-    check_hashes(&mut ver_1, &hashes_021, &hashes_01);
-    check_taus(&mut ver_1, &tau_vals_021, &tau_vals_01);
-
-    // TODO:
-    // H(shares01 - shares02 || shares02 - shares21)
+    check_hashes(&mut ver_1, &hashes_021, &hashes_20);
+    check_taus(&mut ver_1, &tau_vals_021, &tau_vals_20);
 
     // println!("TreeCrawlDone last - {:?}", _start_time.elapsed().as_secs_f64());
 
@@ -333,13 +331,22 @@ async fn run_level_last(
         ver_0.len()
     );
 
+    let resp_0 = clients[0].0.histogram_compute_hashes(
+        long_context(), HistogramComputeHashesRequest { client_idx: 0 }
+    );
+    let resp_1 = clients[0].1.histogram_compute_hashes(
+        long_context(), HistogramComputeHashesRequest { client_idx: 1 }
+    );
+    let (hashes_0, hashes_1) = try_join!(resp_0, resp_1).unwrap();
+    check_hashes(&mut ver_0, &hashes_0, &hashes_1);
+
     let response_00 = clients[0].0.histogram_add_leaves_between_clients(
         long_context(),
         HistogramAddLeavesBetweenClientsRequest { client_idx: 0, verified: ver_0.clone() }
     );
     let response_01 = clients[0].1.histogram_add_leaves_between_clients(
         long_context(),
-        HistogramAddLeavesBetweenClientsRequest { client_idx: 1, verified: ver_0 }
+        HistogramAddLeavesBetweenClientsRequest { client_idx: 1, verified: ver_0.clone() }
     );
     let (shares_00, shares_01) = try_join!(response_00, response_01).unwrap();
 
@@ -377,7 +384,9 @@ async fn run_level_last(
         assert_eq!(res_0.value.value(), res_1.value.value());
         assert_eq!(res_0.value.value(), res_2.value.value());
         let bits = dpf_codes::bits_to_bitstring(&res_0.path);
-        println!("Value ({}) \t Count: {:?}", bits, res_0.value.value());
+        if res_0.value.value().to_u32().unwrap() > 0 {
+            println!("Value ({}) \t Count: {:?}", bits, res_0.value.value());
+        }
     }
     Ok(())
 }

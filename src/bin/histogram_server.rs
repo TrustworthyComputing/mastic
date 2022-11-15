@@ -3,6 +3,7 @@ use dpf_codes::{
     config,
     FieldElm,
     fastfield::FE,
+    Group,
     histogram_rpc::{
         Collector,
         HistogramAddKeysRequest,
@@ -10,6 +11,7 @@ use dpf_codes::{
         HistogramResetRequest,
         HistogramTreeCrawlRequest, 
         HistogramTreeCrawlLastRequest,
+        HistogramComputeHashesRequest,
         HistogramAddLeavesBetweenClientsRequest,
     },
     prg,
@@ -17,6 +19,8 @@ use dpf_codes::{
 
 use futures::{future, prelude::*,};
 use std::{io, sync::{Arc, Mutex},};
+use sha2::{Sha256, Digest};
+use itertools::Itertools;
 use tarpc::{
     context,
     server::{self, Channel},
@@ -91,6 +95,43 @@ impl Collector for BatchCollectorServer {
         assert!(client_idx <= 2);
         let mut coll = self.cs[client_idx].arc.lock().unwrap();
         coll.histogram_tree_crawl_last()
+    }
+
+    async fn histogram_compute_hashes(self, 
+        _: context::Context, req: HistogramComputeHashesRequest
+    ) -> Vec<Vec<u8>> {
+        let client_idx = req.client_idx as usize;
+        assert!(client_idx <= 2);
+        let coll_0 = self.cs[0].arc.lock().unwrap();
+        let coll_1 = self.cs[1].arc.lock().unwrap();
+        let coll_2 = self.cs[2].arc.lock().unwrap();
+        let (y_0, y_1) = match client_idx {
+            0 => (coll_2.histogram_get_ys(), coll_0.histogram_get_ys()),
+            1 => (coll_1.histogram_get_ys(), coll_2.histogram_get_ys()),
+            _ => panic!("Oh no!"),
+        };
+        let mut y0_y1: Vec<Vec<FieldElm>> = vec![];
+        for i in 0..y_0[0].len() {
+            y0_y1.push(
+                y_0.iter()
+                    .zip_eq(y_1.iter())
+                    .map(|(h0, h1)| {
+                        let mut elm = h0[i].clone();
+                        elm.sub(&h1[i]);
+                        elm
+                    })
+                    .collect()
+            );
+        }
+        let mut hashes: Vec<Vec<u8>> = vec![];
+        let mut hasher = Sha256::new();
+        for client in 0..y0_y1.len() {
+            for y in y0_y1[client].iter() {
+                hasher.update(y.value().to_string());
+            }
+            hashes.push(hasher.finalize_reset().to_vec());
+        }
+        hashes
     }
 
     async fn histogram_add_leaves_between_clients(self, 

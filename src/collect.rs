@@ -202,7 +202,7 @@ where
 
         for (i, v) in key_values.iter().enumerate() {
             // Add in only live values
-            if self.keys[i].0 && verified[i] {
+            if verified[i] {
                 child_val.add_lazy(&v);
             }
         }
@@ -336,6 +336,26 @@ where
         }
 
         (final_hashes, tau_vals)
+    }
+
+    pub fn histogram_get_ys(&self) -> Vec<Vec<U>> {
+        // let next_frontier = 
+        self.frontier_intermediate
+            .par_iter()
+            .map(|node| {
+
+            // node.0.key_values.clone()
+            // node.1.key_values.clone()
+
+                vec![node.0.key_values.clone(), node.1.key_values.clone()]
+            })
+            .flatten()
+            .collect::<Vec<Vec<U>>>()
+        
+        // next_frontier
+        //     .iter()
+        //     .map(|node| node.value.clone())
+        //     .collect::<Vec<U>>()
     }
 
     pub fn histogram_add_leaves_between_clients(&mut self, verified: &Vec<bool>) -> Vec<Result<U>> {
