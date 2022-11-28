@@ -1,7 +1,7 @@
-use dpf_codes::collect::*;
-use dpf_codes::prg;
-use dpf_codes::dpf;
-use dpf_codes::*;
+use plasma::collect::*;
+use plasma::prg;
+use plasma::dpf;
+use plasma::*;
 
 #[test]
 fn collect_test_eval() {

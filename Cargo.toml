@@ -1,5 +1,5 @@
 [package]
-name = "dpf_codes"
+name = "plasma"
 description = "Library for translating between GPS coordinates (WGS84) and Open Location Code"
 version = "0.1.0"
 edition = "2021"

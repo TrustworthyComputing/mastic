@@ -128,6 +128,10 @@ pub fn xor_vec(v1: &Vec<u8>, v2: &Vec<u8>) -> Vec<u8> {
     v1.iter().zip_eq(v2.iter()).map(|(&x1, &x2)| x1 ^ x2).collect()
 }
 
+pub fn xor_three_vecs(v1: &Vec<u8>, v2: &Vec<u8>, v3: &Vec<u8>) -> Vec<u8> {
+    v1.iter().zip_eq(v2.iter()).zip_eq(v3.iter()).map(|((&x1, &x2), &x3)| x1 ^ x2 ^ x3).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

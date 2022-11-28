@@ -1,4 +1,4 @@
-use dpf_codes::{
+use plasma::{
     collect, 
     config,
     dpf,
@@ -91,8 +91,8 @@ fn main() {
     let s0 = col0.final_shares();
     let s1 = col1.final_shares();
     for res in &collect::KeyCollection::<FE, FieldElm>::final_values(&s0, &s1) {
-        let bits = dpf_codes::bits_to_bitstring(&res.path);
-        let s = dpf_codes::bits_to_string(&res.path);
+        let bits = plasma::bits_to_bitstring(&res.path);
+        let s = plasma::bits_to_string(&res.path);
         println!("Value: {:?} ({}) \t Count: {:?}", s, bits, res.value.value());
     }
 

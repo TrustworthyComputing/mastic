@@ -1,4 +1,4 @@
-use dpf_codes::{
+use plasma::{
     FieldElm,
     collect,
     config,
@@ -16,7 +16,7 @@ use dpf_codes::{
     HistogramCollectorClient,
 };
 
-use futures::try_join;
+use futures::future::join_all;
 use itertools::Itertools;
 use num_traits::cast::ToPrimitive;
 use rand::{Rng, distributions::Alphanumeric,};
@@ -25,6 +25,7 @@ use std::{io, time::{Duration, SystemTime, Instant},};
 use tarpc::{client, context, tokio_serde::formats::Json, serde_transport::tcp,};
 
 type Key = dpf::DPFKey<fastfield::FE,FieldElm>;
+type Client = HistogramCollectorClient;
 
 fn long_context() -> context::Context {
     let mut ctx = context::current();
@@ -44,8 +45,6 @@ fn sample_string(len: usize) -> String {
 }
 
 fn generate_keys(cfg: &config::Config) -> Vec<(Vec<Key>, Vec<Key>)> {
-    println!("data_len = {} bits\n", cfg.data_len * 8);
-
     let ((keys20, keys02), ((keys01, keys10), (keys12, keys21))): 
         ((Vec<Key>, Vec<Key>), ((Vec<Key>, Vec<Key>), (Vec<Key>, Vec<Key>))) = 
     rayon::iter::repeat(0)
@@ -53,8 +52,8 @@ fn generate_keys(cfg: &config::Config) -> Vec<(Vec<Key>, Vec<Key>)> {
     .enumerate()
     .map(|(_i, _)| {
         let data_string = sample_string(cfg.data_len * 8);
-        // let bit_str = dpf_codes::bits_to_bitstring(
-        //     dpf_codes::string_to_bits(&data_string).as_slice()
+        // let bit_str = plasma::bits_to_bitstring(
+        //     plasma::string_to_bits(&data_string).as_slice()
         // );
         // println!("Client({}) \t input \"{}\" ({})", _i, data_string, bit_str);
         
@@ -73,56 +72,112 @@ fn generate_keys(cfg: &config::Config) -> Vec<(Vec<Key>, Vec<Key>)> {
 }
 
 async fn reset_servers(
-    clients: &mut Vec<Client>,
+    clients: &Vec<&Client>,
 ) -> io::Result<()> {
-    for client in clients.iter() {
-        let response_0 = client.0.reset(
-            long_context(), HistogramResetRequest { client_idx: 0 }
-        );
-        let response_1 = client.1.reset(
-            long_context(), HistogramResetRequest { client_idx: 1 }
-        );
-        try_join!(response_0, response_1).unwrap();
-    }
+    let mut responses = vec![];
 
-    let response_0 = clients[0].0.reset(
+    responses.push(clients[0].reset(
+        long_context(), HistogramResetRequest { client_idx: 0 }
+    ));
+    responses.push(clients[1].reset(
+        long_context(), HistogramResetRequest { client_idx: 1 }
+    ));
+
+    responses.push(clients[1].reset(
+        long_context(), HistogramResetRequest { client_idx: 0 }
+    ));
+    responses.push(clients[2].reset(
+        long_context(), HistogramResetRequest { client_idx: 1 }
+    ));
+
+    responses.push(clients[2].reset(
+        long_context(), HistogramResetRequest { client_idx: 0 }
+    ));
+    responses.push(clients[0].reset(
+        long_context(), HistogramResetRequest { client_idx: 1 }
+    ));
+
+    responses.push(clients[0].reset(
         long_context(), HistogramResetRequest { client_idx: 2 }
-    );
-    let response_1 = clients[0].1.reset(
+    ));
+    responses.push(clients[1].reset(
         long_context(), HistogramResetRequest { client_idx: 2 }
-    );
-    try_join!(response_0, response_1).unwrap();
+    ));
+
+    join_all(responses).await;
 
     Ok(())
 }
 
 async fn tree_init(
-    clients: &mut Vec<Client>,
+    clients: &Vec<&Client>,
 ) -> io::Result<()> {
-    for client in clients.iter() {
-        let response_0 = client.0.tree_init(
-            long_context(), HistogramTreeInitRequest { client_idx: 0 }
-        );
-        let response_1 = client.1.tree_init(
-            long_context(), HistogramTreeInitRequest { client_idx: 1 }
-        );
-        try_join!(response_0, response_1).unwrap();
-    }
+    let mut responses = vec![];
 
-    let response_0 = clients[0].0.tree_init(
-        long_context(), HistogramTreeInitRequest { client_idx: 2 }
-    );
-    let response_1 = clients[0].1.tree_init(
-        long_context(), HistogramTreeInitRequest { client_idx: 2 }
-    );
-    try_join!(response_0, response_1).unwrap();
+    // Session 0
+    let cl = clients[0].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.tree_init(long_context(), HistogramTreeInitRequest { 
+            client_idx: 0
+        }).await
+    }));
+    let cl = clients[1].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.tree_init(long_context(), HistogramTreeInitRequest { 
+            client_idx: 1
+        }).await
+    }));
+
+    // Session 1
+    let cl = clients[1].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.tree_init(long_context(), HistogramTreeInitRequest { 
+            client_idx: 0
+        }).await
+    }));
+    let cl = clients[2].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.tree_init(long_context(), HistogramTreeInitRequest { 
+            client_idx: 1
+        }).await
+    }));
+    
+    // Session 2
+    let cl = clients[2].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.tree_init(long_context(), HistogramTreeInitRequest { 
+            client_idx: 0
+        }).await
+    }));
+    let cl = clients[0].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.tree_init(long_context(), HistogramTreeInitRequest { 
+            client_idx: 1
+        }).await
+    }));
+
+    // extra
+    let cl = clients[0].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.tree_init(long_context(), HistogramTreeInitRequest { 
+            client_idx: 2
+        }).await
+    }));
+    let cl = clients[1].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.tree_init(long_context(), HistogramTreeInitRequest { 
+            client_idx: 2
+        }).await
+    }));
+
+    join_all(responses).await;
 
     Ok(())
 }
 
 async fn add_keys(
     cfg: &config::Config,
-    clients: &Vec<Client>,
+    clients: &Vec<&Client>,
     keys: &Vec<(Vec<dpf::DPFKey<fastfield::FE,FieldElm>>, Vec<dpf::DPFKey<fastfield::FE,FieldElm>>)>,
     nreqs: usize,
 ) -> io::Result<()> {
@@ -140,62 +195,140 @@ async fn add_keys(
         }
     }
 
-    for i in 0..clients.len() {
-        let response_0 = clients[i].0.add_keys(
-            long_context(),
-            HistogramAddKeysRequest { client_idx: 0, keys: addkeys_0[i].clone() }
-        );
-        let response_1 = clients[i].1.add_keys(
-            long_context(),
-            HistogramAddKeysRequest { client_idx: 1, keys: addkeys_1[i].clone() }
-        );
-        try_join!(response_0, response_1).unwrap();
-    }
+    let mut responses = vec![];
+    // Session 0
+    let keys = addkeys_0[0].clone();
+    let cl = clients[0].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.add_keys(long_context(), HistogramAddKeysRequest { 
+            client_idx: 0, keys: keys
+        }).await
+    }));
+    let keys = addkeys_1[0].clone();
+    let cl = clients[1].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.add_keys(long_context(), HistogramAddKeysRequest { 
+            client_idx: 1, keys: keys
+        }).await
+    }));
 
-    let response_0 = clients[0].0.add_keys(
-        long_context(),
-        HistogramAddKeysRequest { client_idx: 2, keys: addkeys_0[2].clone() }
-    );
-    let response_1 = clients[0].1.add_keys(
-        long_context(),
-        HistogramAddKeysRequest { client_idx: 2, keys: addkeys_1[2].clone() }
-    );
-    try_join!(response_0, response_1).unwrap();
+    // Session 1
+    let keys = addkeys_0[1].clone();
+    let cl = clients[1].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.add_keys(long_context(), HistogramAddKeysRequest { 
+            client_idx: 0, keys: keys
+        }).await
+    }));
+    let cl = clients[2].clone();
+    let keys = addkeys_1[1].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.add_keys(long_context(), HistogramAddKeysRequest { 
+            client_idx: 1, keys: keys
+        }).await
+    }));
+
+    // Session 2
+    let cl = clients[2].clone();
+    let keys = addkeys_0[2].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.add_keys(long_context(), HistogramAddKeysRequest { 
+            client_idx: 0, keys: keys
+        }).await
+    }));
+    let cl = clients[0].clone();
+    let keys = addkeys_1[2].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.add_keys(long_context(), HistogramAddKeysRequest { 
+            client_idx: 1, keys: keys
+        }).await
+    }));
+    
+    // extra
+    let cl = clients[0].clone();
+    let keys = addkeys_0[2].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.add_keys(long_context(), HistogramAddKeysRequest { 
+            client_idx: 2, keys: keys
+        }).await
+    }));
+    let cl = clients[1].clone();
+    let keys = addkeys_1[2].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.add_keys(long_context(), HistogramAddKeysRequest { 
+            client_idx: 2, keys: keys
+        }).await
+    }));
+
+    join_all(responses).await;
 
     Ok(())
 }
 
 async fn run_level(
-    clients: &mut Vec<Client>,
+    clients: &Vec<&Client>,
     _level: usize,
     _start_time: Instant,
 ) -> io::Result<()> {
-    // Tree crawl
-    // println!(
-    //     "TreeCrawlStart {:?} - {:?}", _level, _start_time.elapsed().as_secs_f64()
-    // );
-    for client in clients.iter() {
-        let response_0 = client.0.histogram_tree_crawl(
-            long_context(), HistogramTreeCrawlRequest { client_idx: 0 }
-        );
-        let response_1 = client.1.histogram_tree_crawl(
-            long_context(), HistogramTreeCrawlRequest { client_idx: 1 }
-        );
-        let (vals_0, vals_1) = try_join!(response_0, response_1).unwrap();
-        assert_eq!(vals_0.len(), vals_1.len());
-    }
-    
-    let response_0 = clients[0].0.histogram_tree_crawl(
-        long_context(), HistogramTreeCrawlRequest { client_idx: 2 }
-    );
-    let response_1 = clients[0].1.histogram_tree_crawl(
-        long_context(), HistogramTreeCrawlRequest { client_idx: 2 }
-    );
-    let (_, _) = try_join!(response_0, response_1).unwrap();
+    let mut responses = vec![];
 
-    // println!(
-    //     "TreeCrawlDone {:?} - {:?}", _level, _start_time.elapsed().as_secs_f64()
-    // );
+    // Session 0
+    let cl = clients[0].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.histogram_tree_crawl(long_context(), HistogramTreeCrawlRequest { 
+            client_idx: 0,
+        }).await
+    }));
+    let cl = clients[1].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.histogram_tree_crawl(long_context(), HistogramTreeCrawlRequest { 
+            client_idx: 1,
+        }).await
+    }));
+
+    // Session 1
+    let cl = clients[1].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.histogram_tree_crawl(long_context(), HistogramTreeCrawlRequest { 
+            client_idx: 0,
+        }).await
+    }));
+    let cl = clients[2].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.histogram_tree_crawl(long_context(), HistogramTreeCrawlRequest { 
+            client_idx: 1,
+        }).await
+    }));
+
+    // Session 2
+    let cl = clients[2].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.histogram_tree_crawl(long_context(), HistogramTreeCrawlRequest { 
+            client_idx: 0,
+        }).await
+    }));
+    let cl = clients[0].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.histogram_tree_crawl(long_context(), HistogramTreeCrawlRequest { 
+            client_idx: 1,
+        }).await
+    }));
+
+    // extra
+    let cl = clients[0].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.histogram_tree_crawl(long_context(), HistogramTreeCrawlRequest { 
+            client_idx: 2,
+        }).await
+    }));
+    let cl = clients[1].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.histogram_tree_crawl(long_context(), HistogramTreeCrawlRequest { 
+            client_idx: 2,
+        }).await
+    }));
+
+    join_all(responses).await;
 
     Ok(())
 }
@@ -205,13 +338,15 @@ fn check_hashes(
     hashes_0: &Vec<Vec<u8>>,
     hashes_1: &Vec<Vec<u8>>
 ) {
-    // Check hashes
-    for ((i, h0), h1) in hashes_0.iter().enumerate().zip_eq(hashes_1) {
-        if h0.len() != h0.iter().zip_eq(h1.iter()).filter(|&(h0, h1)| h0 == h1).count() {
-            println!("Client({}) {} != {}", i, hex::encode(h0), hex::encode(h1));
-            verified[i] = false;
-        }
-    }
+    verified
+        .par_iter_mut()
+        .zip(hashes_0)
+        .zip(hashes_1)
+        .for_each(|((v, h0), h1)| {
+            if h0.len() != h0.iter().zip_eq(h1.iter()).filter(|&(h0, h1)| h0 == h1).count() {
+                *v = false;
+            }
+        });
 }
 
 fn check_taus(
@@ -219,16 +354,15 @@ fn check_taus(
     tau_vals_0: &Vec<FieldElm>,
     tau_vals_1: &Vec<FieldElm>,
 ) {
-    // Check taus
-    for ((i, t0), t1) in tau_vals_0.iter().enumerate().zip_eq(tau_vals_1) {
-        if t0.value() != t1.value() {
-            println!("Client({}) {} != {}", i, 
-                t0.value().to_u32().unwrap(), 
-                t1.value().to_u32().unwrap()
-            );
-            verified[i] = false;
-        }
-    }
+    verified
+        .par_iter_mut()
+        .zip(tau_vals_0)
+        .zip(tau_vals_1)
+        .for_each(|((v, t0), t1)| {
+            if t0.value() != t1.value() {
+                *v = false;
+            }
+        });
 }
 
 fn check_hashes_and_taus(
@@ -236,68 +370,97 @@ fn check_hashes_and_taus(
     hashes_0: &Vec<Vec<u8>>,
     hashes_1: &Vec<Vec<u8>>,
     tau_vals: &Vec<FieldElm>,
+    nreqs: usize,
 ) {
-    // Check hashes and taus
-    for ((i, h0), h1) in hashes_0.iter().enumerate().zip_eq(hashes_1) {
-        if h0.len() != h0.iter().zip_eq(h1.iter()).filter(|&(h0, h1)| h0 == h1).count()
-            || tau_vals[i].value().to_u32().unwrap() != 1 
-        {
-            println!("Client({}) h0: {}, h1: {}, tau: {}", 
-                i, hex::encode(h0), hex::encode(h1),
-                tau_vals[i].value().to_u32().unwrap()
-            );
-            verified[i] = false;
-        }
-    }
+    let tau_check = if plasma::consts::BATCH { nreqs } else { 1 };
+    verified
+        .par_iter_mut()
+        .zip(hashes_0)
+        .zip(hashes_1)
+        .zip(tau_vals)
+        .for_each(|(((v, h0), h1), t)| {
+            if h0.len() != h0.iter().zip_eq(h1.iter()).filter(|&(h0, h1)| h0 == h1).count() 
+                || t.value().to_usize().unwrap() != tau_check {
+                *v = false;
+            }
+        });
 }
 
 async fn run_level_last(
-    clients: &mut Vec<Client>,
-    _start_time: Instant,
+    clients: &Vec<&Client>,
+    num_clients: usize,
 ) -> io::Result<()> {
-    // Tree crawl
-    // println!("TreeCrawlStart last {:?}", _start_time.elapsed().as_secs_f64());
-    let response_00 = clients[0].0.histogram_tree_crawl_last(
-        long_context(), HistogramTreeCrawlLastRequest { client_idx: 0 }
-    );
-    let response_01 = clients[0].1.histogram_tree_crawl_last(
-        long_context(), HistogramTreeCrawlLastRequest { client_idx: 1 }
-    );
-    let ((hashes_00, tau_vals_00), (hashes_01, tau_vals_01)) = 
-        try_join!(response_00, response_01).unwrap();
-    assert_eq!(hashes_00.len(), hashes_01.len());
-    let response_11 = clients[1].0.histogram_tree_crawl_last(
-        long_context(), HistogramTreeCrawlLastRequest { client_idx: 0 }
-    );
-    let response_12 = clients[1].1.histogram_tree_crawl_last(
-        long_context(), HistogramTreeCrawlLastRequest { client_idx: 1 }
-    );
-    let ((hashes_11, tau_vals_11), (hashes_12, tau_vals_12)) = 
-        try_join!(response_11, response_12).unwrap();
-    assert_eq!(hashes_11.len(), hashes_12.len());
+    // Session 0
+    let cl = clients[0].clone();
+    let response_00 = tokio::spawn(async move { 
+        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+            client_idx: 0,
+        }).await
+    });
+    let cl = clients[1].clone();
+    let response_01 = tokio::spawn(async move { 
+        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+            client_idx: 1,
+        }).await
+    });
+    
+    // Session 1
+    let cl = clients[1].clone();
+    let response_11 = tokio::spawn(async move { 
+        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+            client_idx: 0,
+        }).await
+    });
+    let cl = clients[2].clone();
+    let response_12 = tokio::spawn(async move { 
+        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+            client_idx: 1,
+        }).await
+    });
         
-    let response_22 = clients[2].0.histogram_tree_crawl_last(
-        long_context(), HistogramTreeCrawlLastRequest { client_idx: 0 }
-    );
-    let response_20 = clients[2].1.histogram_tree_crawl_last(
-        long_context(), HistogramTreeCrawlLastRequest { client_idx: 1 }
-    );
-    let ((hashes_22, tau_vals_22), (hashes_20, tau_vals_20)) = 
-        try_join!(response_22, response_20).unwrap();
+    // Session 2
+    let cl = clients[2].clone();
+    let response_22 = tokio::spawn(async move { 
+        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+            client_idx: 0,
+        }).await
+    });
+    let cl = clients[0].clone();
+    let response_20 = tokio::spawn(async move { 
+        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+            client_idx: 1,
+        }).await
+    });
+
+    // extra
+    let cl = clients[0].clone();
+    let response_020 = tokio::spawn(async move { 
+        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+            client_idx: 2,
+        }).await
+    });
+    let cl = clients[1].clone();
+    let response_021 = tokio::spawn(async move { 
+        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+            client_idx: 2,
+        }).await
+    });
+
+    let ((hashes_00, tau_vals_00), (hashes_01, tau_vals_01)) =
+        (response_00.await?.unwrap(), response_01.await?.unwrap());
+    let ((hashes_11, tau_vals_11), (hashes_12, tau_vals_12)) =
+        (response_11.await?.unwrap(), response_12.await?.unwrap());
+    let ((hashes_22, tau_vals_22), (hashes_20, tau_vals_20))= 
+        (response_22.await?.unwrap(), response_20.await?.unwrap());
+    let ((hashes_020, tau_vals_020), (hashes_021, tau_vals_021)) =
+        (response_020.await?.unwrap(), response_021.await?.unwrap());
+
+    assert_eq!(hashes_00.len(), hashes_01.len());
     assert_eq!(hashes_11.len(), hashes_12.len());
-
-    let response_020 = clients[0].0.histogram_tree_crawl_last(
-        long_context(), HistogramTreeCrawlLastRequest { client_idx: 2 }
-    );
-    let response_021 = clients[0].1.histogram_tree_crawl_last(
-        long_context(), HistogramTreeCrawlLastRequest { client_idx: 2 }
-    );
-    let ((hashes_020, tau_vals_020), (hashes_021, tau_vals_021)) = 
-        try_join!(response_020, response_021).unwrap();
-
-    let mut ver_0 = vec![true; hashes_00.len()];
-    let mut ver_1 = vec![true; hashes_11.len()];
-    let mut ver_2 = vec![true; hashes_22.len()];
+    assert_eq!(hashes_11.len(), hashes_12.len());
+    let mut ver_0 = vec![true; num_clients];
+    let mut ver_1 = vec![true; num_clients];
+    let mut ver_2 = vec![true; num_clients];
 
     // Check that \tau_2,0 and \pi_2,0 from S0 and S2 are the same
     check_hashes(&mut ver_0, &hashes_020, &hashes_22);
@@ -305,8 +468,6 @@ async fn run_level_last(
     // Check that \tau_2,1 and \pi_2,1 from S0 and S2 are the same
     check_hashes(&mut ver_1, &hashes_021, &hashes_20);
     check_taus(&mut ver_1, &tau_vals_021, &tau_vals_20);
-
-    // println!("TreeCrawlDone last - {:?}", _start_time.elapsed().as_secs_f64());
 
     let tau_vals_0 = &collect::KeyCollection::<fastfield::FE, FieldElm>::reconstruct_shares(
         &tau_vals_00, &tau_vals_01
@@ -319,56 +480,94 @@ async fn run_level_last(
     );
 
     // Check s0, s1 hashes and taus
-    check_hashes_and_taus(&mut ver_0, &hashes_00, &hashes_01, &tau_vals_0);
+    check_hashes_and_taus(&mut ver_0, &hashes_00, &hashes_01, &tau_vals_0, num_clients);
     // Check s1, s2 hashes and taus
-    check_hashes_and_taus(&mut ver_1, &hashes_11, &hashes_12, &tau_vals_1);
+    check_hashes_and_taus(&mut ver_1, &hashes_11, &hashes_12, &tau_vals_1, num_clients);
     // Check s2, s0 hashes and taus
-    check_hashes_and_taus(&mut ver_2, &hashes_22, &hashes_20, &tau_vals_2);
+    check_hashes_and_taus(&mut ver_2, &hashes_22, &hashes_20, &tau_vals_2, num_clients);
     assert_eq!(
-        ver_0.iter()
-            .zip_eq(ver_1.iter()).zip_eq(ver_2.iter())
-            .filter(|&((v0, v1), v2)| v0 == v1 && v1 == v2).count(),
+        ver_0.par_iter().zip_eq(&ver_1).zip_eq(&ver_2)
+            .filter(|&((&v0, &v1), &v2)| v0 == true && v0 == v1 && v1 == v2).count(),
         ver_0.len()
     );
 
-    let resp_0 = clients[0].0.histogram_compute_hashes(
-        long_context(), HistogramComputeHashesRequest { client_idx: 0 }
-    );
-    let resp_1 = clients[0].1.histogram_compute_hashes(
-        long_context(), HistogramComputeHashesRequest { client_idx: 1 }
-    );
-    let (hashes_0, hashes_1) = try_join!(resp_0, resp_1).unwrap();
+    let cl = clients[0].clone();
+    let response_0 = tokio::spawn(async move { 
+        cl.histogram_compute_hashes(
+            long_context(), HistogramComputeHashesRequest { client_idx: 0, }
+        ).await
+    });
+    let cl = clients[1].clone();
+    let response_1 = tokio::spawn(async move { 
+        cl.histogram_compute_hashes(
+            long_context(), HistogramComputeHashesRequest { client_idx: 1, }
+        ).await
+    });
+
+    let (hashes_0, hashes_1) =
+        (response_0.await?.unwrap(), response_1.await?.unwrap());
     check_hashes(&mut ver_0, &hashes_0, &hashes_1);
 
-    let response_00 = clients[0].0.histogram_add_leaves_between_clients(
-        long_context(),
-        HistogramAddLeavesBetweenClientsRequest { client_idx: 0, verified: ver_0.clone() }
-    );
-    let response_01 = clients[0].1.histogram_add_leaves_between_clients(
-        long_context(),
-        HistogramAddLeavesBetweenClientsRequest { client_idx: 1, verified: ver_0.clone() }
-    );
-    let (shares_00, shares_01) = try_join!(response_00, response_01).unwrap();
+    // Session 0
+    let cl = clients[0].clone();
+    let v0 = ver_0.clone();
+    let response_00 = tokio::spawn(async move { 
+        cl.histogram_add_leaves_between_clients(long_context(), 
+            HistogramAddLeavesBetweenClientsRequest { 
+                client_idx: 0, verified: v0,
+        }).await
+    });
+    let cl = clients[1].clone();
+    let v0 = ver_0.clone();
+    let response_01 = tokio::spawn(async move { 
+        cl.histogram_add_leaves_between_clients(long_context(), 
+            HistogramAddLeavesBetweenClientsRequest { 
+                client_idx: 1, verified: v0,
+        }).await
+    });
 
-    let response_11 = clients[1].0.histogram_add_leaves_between_clients(
-        long_context(),
-        HistogramAddLeavesBetweenClientsRequest { client_idx: 0, verified: ver_1.clone() }
-    );
-    let response_12 = clients[1].1.histogram_add_leaves_between_clients(
-        long_context(),
-        HistogramAddLeavesBetweenClientsRequest { client_idx: 1, verified: ver_1 }
-    );
-    let (shares_11, shares_12) = try_join!(response_11, response_12).unwrap();
+    // Session 1
+    let cl = clients[1].clone();
+    let v1 = ver_1.clone();
+    let response_11 = tokio::spawn(async move { 
+        cl.histogram_add_leaves_between_clients(long_context(), 
+            HistogramAddLeavesBetweenClientsRequest { 
+                client_idx: 0, verified: v1,
+        }).await
+    });
+    let cl = clients[2].clone();
+    let v1 = ver_1.clone();
+    let response_12 = tokio::spawn(async move { 
+        cl.histogram_add_leaves_between_clients(long_context(), 
+            HistogramAddLeavesBetweenClientsRequest { 
+                client_idx: 1, verified: v1,
+        }).await
+    });
     
-    let response_22 = clients[2].0.histogram_add_leaves_between_clients(
-        long_context(),
-        HistogramAddLeavesBetweenClientsRequest { client_idx: 0, verified: ver_2.clone() }
-    );
-    let response_20 = clients[2].1.histogram_add_leaves_between_clients(
-        long_context(),
-        HistogramAddLeavesBetweenClientsRequest { client_idx: 1, verified: ver_2 }
-    );
-    let (shares_22, shares_20) = try_join!(response_22, response_20).unwrap();
+    // Session 2
+    let cl = clients[2].clone();
+    let v2 = ver_2.clone();
+    let response_22 = tokio::spawn(async move { 
+        cl.histogram_add_leaves_between_clients(long_context(), 
+            HistogramAddLeavesBetweenClientsRequest { 
+                client_idx: 0, verified: v2,
+        }).await
+    });
+    let cl = clients[0].clone();
+    let v2 = ver_2.clone();
+    let response_20 = tokio::spawn(async move { 
+        cl.histogram_add_leaves_between_clients(long_context(), 
+            HistogramAddLeavesBetweenClientsRequest { 
+                client_idx: 1, verified: v2,
+        }).await
+    });
+
+    let (shares_00, shares_01) =
+        (response_00.await?.unwrap(), response_01.await?.unwrap());
+    let (shares_11, shares_12) =
+        (response_11.await?.unwrap(), response_12.await?.unwrap());
+    let (shares_22, shares_20) = 
+        (response_22.await?.unwrap(), response_20.await?.unwrap());
 
     let hist_0 = &collect::KeyCollection::<fastfield::FE, FieldElm>::final_values(
         &shares_00, &shares_01
@@ -383,7 +582,7 @@ async fn run_level_last(
     for ((res_0, res_1), res_2) in hist_0.iter().zip_eq(hist_1).zip_eq(hist_2) {
         assert_eq!(res_0.value.value(), res_1.value.value());
         assert_eq!(res_0.value.value(), res_2.value.value());
-        let bits = dpf_codes::bits_to_bitstring(&res_0.path);
+        let bits = plasma::bits_to_bitstring(&res_0.path);
         if res_0.value.value().to_u32().unwrap() > 0 {
             println!("Value ({}) \t Count: {:?}", bits, res_0.value.value());
         }
@@ -392,11 +591,9 @@ async fn run_level_last(
 }
 
 // Client/Server Pairs: 
-// Client 0 connects to S0 and S1
-// Client 1 connects to S1 and S2
-// Client 2 connects to S2 and S0
-
-type Client = (HistogramCollectorClient, HistogramCollectorClient);
+// Session 0 connects to S0 and S1
+// Session 1 connects to S1 and S2
+// Session 2 connects to S2 and S0
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -406,40 +603,20 @@ async fn main() -> io::Result<()> {
     env_logger::init();
     let (cfg, _, nreqs) = config::get_args("Leader", false, true);
 
-    let client_0: Client = (
-        HistogramCollectorClient::new(
-            client::Config::default(),
-            tcp::connect(cfg.server_0, Json::default).await?
-        ).spawn(),
-        HistogramCollectorClient::new(
-            client::Config::default(),
-            tcp::connect(cfg.server_1, Json::default).await?
-        ).spawn()
-    );
-    let client_1: Client = (
-        HistogramCollectorClient::new(
-            client::Config::default(),
-            tcp::connect(cfg.server_1, Json::default).await?
-        ).spawn(),
-        HistogramCollectorClient::new(
-            client::Config::default(),
-            tcp::connect(cfg.server_2, Json::default).await?
-        ).spawn()
-    );
-    let client_2: Client = (
-        HistogramCollectorClient::new(
-            client::Config::default(),
-            tcp::connect(cfg.server_2, Json::default).await?
-        ).spawn(), 
-        HistogramCollectorClient::new(
-            client::Config::default(),
-            tcp::connect(cfg.server_0, Json::default).await?
-        ).spawn()
-    );
-    let mut clients = vec![client_0, client_1, client_2];
+    let client_0 = Client::new(
+        client::Config::default(),
+        tcp::connect(cfg.server_0, Json::default).await?
+    ).spawn();
+    let client_1 = Client::new(
+        client::Config::default(),
+        tcp::connect(cfg.server_1, Json::default).await?
+    ).spawn();
+    let client_2 = Client::new(
+        client::Config::default(),
+        tcp::connect(cfg.server_2, Json::default).await?
+    ).spawn();
 
     let start = Instant::now();
-    // let (keys0, keys1) = generate_keys(&cfg);
     let keys = generate_keys(&cfg);
     
     let delta = start.elapsed().as_secs_f64();
@@ -448,7 +625,9 @@ async fn main() -> io::Result<()> {
         keys[0].0.len(), delta, delta / (keys[0].0.len() as f64)
     );
 
-    reset_servers(&mut clients).await?;
+    let clients = vec![&client_0, &client_1, &client_2];
+
+    reset_servers(&clients).await?;
 
     let mut left_to_go = nreqs;
     let reqs_in_flight = 1000;
@@ -473,18 +652,19 @@ async fn main() -> io::Result<()> {
             r.await?;
         }
     }
+    let start = Instant::now();
 
-    tree_init(&mut clients).await?;
+    tree_init(&clients).await?;
+    println!("Tree init time {:?}", start.elapsed().as_secs_f64());
 
     let start = Instant::now();
     let bitlen = cfg.data_len * 8; // bits
     for level in 0..bitlen-1 {
-        run_level(&mut clients, level, start).await?;
-        // println!("Level {:?}: {:?}", level, start.elapsed().as_secs_f64());
+        run_level(&clients, level, start).await?;
     }
 
-    run_level_last(&mut clients, start).await?;
-    println!("Level {:?}: {:?}", bitlen, start.elapsed().as_secs_f64());
+    run_level_last(&clients, nreqs).await?;
+    println!("Time {:?}", start.elapsed().as_secs_f64());
 
     Ok(())
 }

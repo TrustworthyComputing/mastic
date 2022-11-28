@@ -1,4 +1,4 @@
-use dpf_codes::{
+use plasma::{
     bits_to_string,
     collect,
     config,
@@ -72,8 +72,8 @@ fn generate_keys(cfg: &config::Config) -> (Vec<Key>, Vec<Key>) {
 }
 
 async fn reset_servers(
-    client0: &mut dpf_codes::IdpfCollectorClient,
-    client1: &mut dpf_codes::IdpfCollectorClient,
+    client0: &mut plasma::IdpfCollectorClient,
+    client1: &mut plasma::IdpfCollectorClient,
 ) -> io::Result<()> {
     let req = IdpfResetRequest {};
     let response0 = client0.reset(long_context(), req.clone());
@@ -84,8 +84,8 @@ async fn reset_servers(
 }
 
 async fn tree_init(
-    client0: &mut dpf_codes::IdpfCollectorClient,
-    client1: &mut dpf_codes::IdpfCollectorClient,
+    client0: &mut plasma::IdpfCollectorClient,
+    client1: &mut plasma::IdpfCollectorClient,
 ) -> io::Result<()> {
     let req = IdpfTreeInitRequest {};
     let response0 = client0.tree_init(long_context(), req.clone());
@@ -97,8 +97,8 @@ async fn tree_init(
 
 async fn add_keys(
     cfg: &config::Config,
-    client0: dpf_codes::IdpfCollectorClient,
-    client1: dpf_codes::IdpfCollectorClient,
+    client0: plasma::IdpfCollectorClient,
+    client1: plasma::IdpfCollectorClient,
     keys0: &[dpf::DPFKey<fastfield::FE,FieldElm>],
     keys1: &[dpf::DPFKey<fastfield::FE,FieldElm>],
     nreqs: usize,
@@ -129,8 +129,8 @@ async fn add_keys(
 
 async fn run_level(
     cfg: &config::Config,
-    client0: &mut dpf_codes::IdpfCollectorClient,
-    client1: &mut dpf_codes::IdpfCollectorClient,
+    client0: &mut plasma::IdpfCollectorClient,
+    client1: &mut plasma::IdpfCollectorClient,
     level: usize,
     nreqs: usize,
     start_time: Instant,
@@ -172,8 +172,8 @@ async fn run_level(
 
 async fn run_level_last(
     cfg: &config::Config,
-    client0: &mut dpf_codes::IdpfCollectorClient,
-    client1: &mut dpf_codes::IdpfCollectorClient,
+    client0: &mut plasma::IdpfCollectorClient,
+    client1: &mut plasma::IdpfCollectorClient,
     nreqs: usize,
     start_time: Instant,
 ) -> io::Result<usize> {
@@ -211,8 +211,8 @@ async fn run_level_last(
 }
 
 async fn final_shares(
-    client0: &mut dpf_codes::IdpfCollectorClient,
-    client1: &mut dpf_codes::IdpfCollectorClient,
+    client0: &mut plasma::IdpfCollectorClient,
+    client1: &mut plasma::IdpfCollectorClient,
 ) -> io::Result<()> {
     // Final shares
     let req = IdpfFinalSharesRequest {};
@@ -241,10 +241,10 @@ async fn main() -> io::Result<()> {
     let transport0 = tarpc::serde_transport::tcp::connect(cfg.server_0, Json::default);
     let transport1 = tarpc::serde_transport::tcp::connect(cfg.server_1, Json::default);
 
-    let mut client0 = dpf_codes::IdpfCollectorClient::new(
+    let mut client0 = plasma::IdpfCollectorClient::new(
         client::Config::default(), transport0.await?
     ).spawn();
-    let mut client1 = dpf_codes::IdpfCollectorClient::new(
+    let mut client1 = plasma::IdpfCollectorClient::new(
         client::Config::default(), transport1.await?
     ).spawn();
 

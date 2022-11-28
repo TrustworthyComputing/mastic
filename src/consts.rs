@@ -1,4 +1,7 @@
 // A separator used to break the code into two parts to aid memorability.
+pub const BATCH: bool = true;
+
+// A separator used to break the code into two parts to aid memorability.
 pub const SEPARATOR: char = '+';
 
 // The number of characters to place before the separator.

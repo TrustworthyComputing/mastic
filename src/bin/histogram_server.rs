@@ -1,4 +1,4 @@
-use dpf_codes::{
+use plasma::{
     collect,
     config,
     FieldElm,
@@ -15,19 +15,20 @@ use dpf_codes::{
         HistogramAddLeavesBetweenClientsRequest,
     },
     prg,
+    xor_vec,
 };
 
 use futures::{future, prelude::*,};
 use std::{io, sync::{Arc, Mutex},};
 use sha2::{Sha256, Digest};
-use itertools::Itertools;
+use rayon::prelude::*;
 use tarpc::{
     context,
     server::{self, Channel},
     tokio_serde::formats::Json,
     serde_transport::tcp,
 };
-
+use std::time::Instant;
 #[derive(Clone)]
 struct CollectorServer {
     seed: prg::PrgSeed,
@@ -64,42 +65,52 @@ impl Collector for BatchCollectorServer {
         for k in req.keys {
             coll.add_key(k);
         }
-        println!("SID {}) Number of keys: {:?}", client_idx, coll.keys.len());
+        if coll.keys.len() % 1000 == 0 {
+            println!("SID {}) Number of keys: {:?}", client_idx, coll.keys.len());
+        }
         "Done".to_string()
     }
 
     async fn tree_init(self,
         _: context::Context, req: HistogramTreeInitRequest
     ) -> String {
+        let start = Instant::now();
         let client_idx = req.client_idx as usize;
         assert!(client_idx <= 2);
         let mut coll = self.cs[client_idx].arc.lock().unwrap();
         coll.tree_init();
+        println!("session {:?}: tree_init: {:?}", client_idx, start.elapsed().as_secs_f64());
         "Done".to_string()
     }
 
     async fn histogram_tree_crawl(self, 
         _: context::Context, req: HistogramTreeCrawlRequest
     ) -> String {
+        // let start = Instant::now();
         let client_idx = req.client_idx as usize;
         assert!(client_idx <= 2);
         let mut coll = self.cs[client_idx].arc.lock().unwrap();
         coll.histogram_tree_crawl();
+        // println!("session {:?}: histogram_tree_crawl: {:?}", client_idx, start.elapsed().as_secs_f64());
         "Done".to_string()
     }
 
     async fn histogram_tree_crawl_last(self, 
         _: context::Context, req: HistogramTreeCrawlLastRequest
     ) -> (Vec<Vec<u8>>, Vec<FieldElm>) {
+        let start = Instant::now();
         let client_idx = req.client_idx as usize;
         assert!(client_idx <= 2);
         let mut coll = self.cs[client_idx].arc.lock().unwrap();
-        coll.histogram_tree_crawl_last()
+        let res = coll.histogram_tree_crawl_last();
+        println!("session {:?}: histogram_tree_crawl_last: {:?}", client_idx, start.elapsed().as_secs_f64());
+        res
     }
 
     async fn histogram_compute_hashes(self, 
         _: context::Context, req: HistogramComputeHashesRequest
     ) -> Vec<Vec<u8>> {
+        let start = Instant::now();
         let client_idx = req.client_idx as usize;
         assert!(client_idx <= 2);
         let coll_0 = self.cs[0].arc.lock().unwrap();
@@ -113,8 +124,9 @@ impl Collector for BatchCollectorServer {
         let mut y0_y1: Vec<Vec<FieldElm>> = vec![];
         for i in 0..y_0[0].len() {
             y0_y1.push(
-                y_0.iter()
-                    .zip_eq(y_1.iter())
+                y_0
+                    .par_iter()
+                    .zip_eq(y_1.par_iter())
                     .map(|(h0, h1)| {
                         let mut elm = h0[i].clone();
                         elm.sub(&h1[i]);
@@ -131,16 +143,29 @@ impl Collector for BatchCollectorServer {
             }
             hashes.push(hasher.finalize_reset().to_vec());
         }
-        hashes
+        println!("session {:?}: histogram_compute_hashes: {:?}", client_idx, start.elapsed().as_secs_f64());
+
+        if plasma::consts::BATCH {
+            let mut batched_hash = vec![0u8; 32];
+            for hash in hashes {
+                batched_hash = xor_vec(&batched_hash, &hash);
+            }
+            vec![batched_hash]
+        } else {
+            hashes
+        }
     }
 
     async fn histogram_add_leaves_between_clients(self, 
         _: context::Context, req: HistogramAddLeavesBetweenClientsRequest
     ) -> Vec<collect::Result<FieldElm>> {
+        let start = Instant::now();
         let client_idx = req.client_idx as usize;
         assert!(client_idx <= 2);
         let mut coll = self.cs[client_idx].arc.lock().unwrap();
-        coll.histogram_add_leaves_between_clients(&req.verified)
+        let res = coll.histogram_add_leaves_between_clients(&req.verified);
+        println!("session {:?}: histogram_add_leaves_between_clients: {:?}", client_idx, start.elapsed().as_secs_f64());
+        res 
     }
 
 }

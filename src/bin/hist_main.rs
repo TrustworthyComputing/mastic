@@ -1,4 +1,4 @@
-use dpf_codes::{
+use plasma::{
     collect, 
     config,
     dpf,
@@ -30,8 +30,8 @@ fn generate_keys(cfg: &config::Config) -> (Vec<Key>, Vec<Key>) {
         .enumerate()
         .map(|(i, _)| {
             let data_string = sample_string(cfg.data_len * 8);
-            let bit_str = dpf_codes::bits_to_bitstring(
-                dpf_codes::string_to_bits(&data_string).as_slice()
+            let bit_str = plasma::bits_to_bitstring(
+                plasma::string_to_bits(&data_string).as_slice()
             );
             println!("Client({}) \t input \"{}\" ({})", i, data_string, bit_str);
             
@@ -102,6 +102,7 @@ fn main() {
     col0.tree_init();
     col1.tree_init();
 
+    let start = Instant::now();
     for _ in 0..bitlen-1 {
         col0.histogram_tree_crawl();
         col1.histogram_tree_crawl();
@@ -116,8 +117,12 @@ fn main() {
     let s1 = col1.histogram_add_leaves_between_clients(&verified);
 
     for res in &collect::KeyCollection::<FE, FieldElm>::final_values(&s0, &s1) {
-        let bits = dpf_codes::bits_to_bitstring(&res.path);
-        println!("Value ({}) \t Count: {:?}", bits, res.value.value());
+        if res.value.value().to_u32().unwrap() > 0 {
+            let bits = plasma::bits_to_bitstring(&res.path);
+            println!("Value ({}) \t Count: {:?}", bits, res.value.value());
+        }
     }
+
+    println!("Time {:?}", start.elapsed().as_secs_f64());
 
 }

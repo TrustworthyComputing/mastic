@@ -1,5 +1,5 @@
-use dpf_codes::dpf::*;
-use dpf_codes::*;
+use plasma::dpf::*;
+use plasma::*;
 
 #[test]
 fn dpf_complete() {
