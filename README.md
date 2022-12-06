@@ -27,24 +27,28 @@ $ cargo test
 ... lots of output ...
 ```
 
-## iDPF with Malicious sketching checkout to branch "sketches"
-## iDPF without Malicious sketching
+## Heavy Hitters
 
 Server 0:
 ```bash
-$ cargo run --release --bin idpf-server -- --config src/bin/test.json --server_id 0
+$ cargo run --release --bin hh-server -- --config src/bin/test.json --server_id 0
 ```
 
 Server 1:
 ```bash
-$ cargo run --release --bin idpf-server -- --config src/bin/test.json --server_id 1
+$ cargo run --release --bin hh-server -- --config src/bin/test.json --server_id 1
+```
+
+Server 2:
+```bash
+$ cargo run --release --bin hh-server -- --config src/bin/test.json --server_id 2
 ```
 
 Now, the servers should be ready to process client requests. In a third shell, run the following command to send 100 client requests to the servers (this will take some time):
 
 Clients:
 ```bash
-$ cargo run --release --bin idpf-leader -- --config src/bin/test.json -n 100
+$ cargo run --release --bin hh-leader -- --config src/bin/test.json -n 100
 ```
 
 ## Histogram
@@ -57,6 +61,11 @@ $ cargo run --release --bin histogram-server -- --config src/bin/histogram.json 
 Server 1:
 ```bash
 $ cargo run --release --bin histogram-server -- --config src/bin/histogram.json --server_id 1
+```
+
+Server 2:
+```bash
+$ cargo run --release --bin histogram-server -- --config src/bin/histogram.json --server_id 2
 ```
 
 Now, the servers should be ready to process client requests. In a third shell, run the following command to send 100 client requests to the servers (this will take some time):
@@ -92,10 +101,3 @@ The parameters are:
 * `server0` and `server1`: The `IP:port` of tuple for the two servers. The servers can run on different IP addresses, but these IPs must be publicly addressable.
 * `*_batch_size`: The number of each type of RPC request to bundle together. The underlying RPC library has an annoying limit on the size of each RPC request, so you cannot set these values too large.
 * `unique_buckets` and `zipf_exponent`: Each simulated client samples its private string from a Zipf distribution over strings with parameter `zipf_exponent` and support `unique_buckets`.
-
-
-Local testing:
-```bash
-$ cargo run --release --bin idpf-main -- --config src/bin/test.json
-$ cargo run --release --bin histogram-main -- --config src/bin/histogram.json -n 100
-```

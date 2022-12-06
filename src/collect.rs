@@ -336,7 +336,7 @@ where
         }
     }
 
-    pub fn histogram_get_ys(&self) -> Vec<&Vec<U>> {
+    pub fn get_ys(&self) -> Vec<&Vec<U>> {
         self.frontier_intermediate
             .par_iter()
             .map(|node| {

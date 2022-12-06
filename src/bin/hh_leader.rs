@@ -1,19 +1,23 @@
 use plasma::{
-    FieldElm,
+    bits_to_string,
     collect,
     config,
     dpf,
+    FieldElm,
     fastfield,
-    histogram_rpc::{
-        HistogramAddKeysRequest,
-        HistogramResetRequest,
-        HistogramTreeInitRequest,
-        HistogramTreeCrawlRequest,
-        HistogramTreeCrawlLastRequest,
-        HistogramComputeHashesRequest,
-        HistogramAddLeavesBetweenClientsRequest,
+    hh_rpc::{
+        HHAddKeysRequest,
+        HHFinalSharesRequest,
+        HHResetRequest, 
+        HHTreeInitRequest,
+        HHTreeCrawlRequest, 
+        HHTreeCrawlLastRequest, 
+        HHTreePruneRequest, 
+        HHTreePruneLastRequest,
+        HHComputeHashesRequest,
+        HHAddLeavesBetweenClientsRequest,
     },
-    HistogramCollectorClient,
+    HHCollectorClient,
 };
 
 use futures::future::join_all;
@@ -24,8 +28,9 @@ use rayon::prelude::*;
 use std::{io, time::{Duration, SystemTime, Instant},};
 use tarpc::{client, context, tokio_serde::formats::Json, serde_transport::tcp,};
 
+
 type Key = dpf::DPFKey<fastfield::FE,FieldElm>;
-type Client = HistogramCollectorClient;
+type Client = HHCollectorClient;
 
 fn long_context() -> context::Context {
     let mut ctx = context::current();
@@ -35,7 +40,6 @@ fn long_context() -> context::Context {
     ctx
 }
 
-
 fn sample_string(len: usize) -> String {
     let mut rng = rand::thread_rng();
     std::iter::repeat(())
@@ -43,6 +47,11 @@ fn sample_string(len: usize) -> String {
         .take(len / 8)
         .collect()
 }
+
+// fn sample_location() -> (f64, f64) {
+//     let mut rng = rand::thread_rng();
+//     (rng.gen_range(-180.0..180.0) as f64, rng.gen_range(-90.0..90.0) as f64)
+// }
 
 fn generate_keys(cfg: &config::Config) -> Vec<(Vec<Key>, Vec<Key>)> {
     let ((keys20, keys02), ((keys01, keys10), (keys12, keys21))): 
@@ -56,7 +65,8 @@ fn generate_keys(cfg: &config::Config) -> Vec<(Vec<Key>, Vec<Key>)> {
         //     plasma::string_to_bits(&data_string).as_slice()
         // );
         // println!("Client({}) \t input \"{}\" ({})", _i, data_string, bit_str);
-        
+        // let loc = sample_location();
+        // let data_string = encode(Point::new(loc.0, loc.1), cfg.data_len * 8);
         (
             dpf::DPFKey::gen_from_str(&data_string),
             (dpf::DPFKey::gen_from_str(&data_string), 
@@ -77,31 +87,31 @@ async fn reset_servers(
     let mut responses = vec![];
 
     responses.push(clients[0].reset(
-        long_context(), HistogramResetRequest { client_idx: 0 }
+        long_context(), HHResetRequest { client_idx: 0 }
     ));
     responses.push(clients[1].reset(
-        long_context(), HistogramResetRequest { client_idx: 1 }
+        long_context(), HHResetRequest { client_idx: 1 }
     ));
 
     responses.push(clients[1].reset(
-        long_context(), HistogramResetRequest { client_idx: 0 }
+        long_context(), HHResetRequest { client_idx: 0 }
     ));
     responses.push(clients[2].reset(
-        long_context(), HistogramResetRequest { client_idx: 1 }
+        long_context(), HHResetRequest { client_idx: 1 }
     ));
 
     responses.push(clients[2].reset(
-        long_context(), HistogramResetRequest { client_idx: 0 }
+        long_context(), HHResetRequest { client_idx: 0 }
     ));
     responses.push(clients[0].reset(
-        long_context(), HistogramResetRequest { client_idx: 1 }
+        long_context(), HHResetRequest { client_idx: 1 }
     ));
 
     responses.push(clients[0].reset(
-        long_context(), HistogramResetRequest { client_idx: 2 }
+        long_context(), HHResetRequest { client_idx: 2 }
     ));
     responses.push(clients[1].reset(
-        long_context(), HistogramResetRequest { client_idx: 2 }
+        long_context(), HHResetRequest { client_idx: 2 }
     ));
 
     join_all(responses).await;
@@ -117,13 +127,13 @@ async fn tree_init(
     // Session 0
     let cl = clients[0].clone();
     responses.push(tokio::spawn(async move { 
-        cl.tree_init(long_context(), HistogramTreeInitRequest { 
+        cl.tree_init(long_context(), HHTreeInitRequest { 
             client_idx: 0
         }).await
     }));
     let cl = clients[1].clone();
     responses.push(tokio::spawn(async move { 
-        cl.tree_init(long_context(), HistogramTreeInitRequest { 
+        cl.tree_init(long_context(), HHTreeInitRequest { 
             client_idx: 1
         }).await
     }));
@@ -131,13 +141,13 @@ async fn tree_init(
     // Session 1
     let cl = clients[1].clone();
     responses.push(tokio::spawn(async move { 
-        cl.tree_init(long_context(), HistogramTreeInitRequest { 
+        cl.tree_init(long_context(), HHTreeInitRequest { 
             client_idx: 0
         }).await
     }));
     let cl = clients[2].clone();
     responses.push(tokio::spawn(async move { 
-        cl.tree_init(long_context(), HistogramTreeInitRequest { 
+        cl.tree_init(long_context(), HHTreeInitRequest { 
             client_idx: 1
         }).await
     }));
@@ -145,13 +155,13 @@ async fn tree_init(
     // Session 2
     let cl = clients[2].clone();
     responses.push(tokio::spawn(async move { 
-        cl.tree_init(long_context(), HistogramTreeInitRequest { 
+        cl.tree_init(long_context(), HHTreeInitRequest { 
             client_idx: 0
         }).await
     }));
     let cl = clients[0].clone();
     responses.push(tokio::spawn(async move { 
-        cl.tree_init(long_context(), HistogramTreeInitRequest { 
+        cl.tree_init(long_context(), HHTreeInitRequest { 
             client_idx: 1
         }).await
     }));
@@ -159,13 +169,13 @@ async fn tree_init(
     // extra
     let cl = clients[0].clone();
     responses.push(tokio::spawn(async move { 
-        cl.tree_init(long_context(), HistogramTreeInitRequest { 
+        cl.tree_init(long_context(), HHTreeInitRequest { 
             client_idx: 2
         }).await
     }));
     let cl = clients[1].clone();
     responses.push(tokio::spawn(async move { 
-        cl.tree_init(long_context(), HistogramTreeInitRequest { 
+        cl.tree_init(long_context(), HHTreeInitRequest { 
             client_idx: 2
         }).await
     }));
@@ -200,14 +210,14 @@ async fn add_keys(
     let keys = addkeys_0[0].clone();
     let cl = clients[0].clone();
     responses.push(tokio::spawn(async move { 
-        cl.add_keys(long_context(), HistogramAddKeysRequest { 
+        cl.add_keys(long_context(), HHAddKeysRequest { 
             client_idx: 0, keys: keys
         }).await
     }));
     let keys = addkeys_1[0].clone();
     let cl = clients[1].clone();
     responses.push(tokio::spawn(async move { 
-        cl.add_keys(long_context(), HistogramAddKeysRequest { 
+        cl.add_keys(long_context(), HHAddKeysRequest { 
             client_idx: 1, keys: keys
         }).await
     }));
@@ -216,14 +226,14 @@ async fn add_keys(
     let keys = addkeys_0[1].clone();
     let cl = clients[1].clone();
     responses.push(tokio::spawn(async move { 
-        cl.add_keys(long_context(), HistogramAddKeysRequest { 
+        cl.add_keys(long_context(), HHAddKeysRequest { 
             client_idx: 0, keys: keys
         }).await
     }));
     let cl = clients[2].clone();
     let keys = addkeys_1[1].clone();
     responses.push(tokio::spawn(async move { 
-        cl.add_keys(long_context(), HistogramAddKeysRequest { 
+        cl.add_keys(long_context(), HHAddKeysRequest { 
             client_idx: 1, keys: keys
         }).await
     }));
@@ -232,14 +242,14 @@ async fn add_keys(
     let cl = clients[2].clone();
     let keys = addkeys_0[2].clone();
     responses.push(tokio::spawn(async move { 
-        cl.add_keys(long_context(), HistogramAddKeysRequest { 
+        cl.add_keys(long_context(), HHAddKeysRequest { 
             client_idx: 0, keys: keys
         }).await
     }));
     let cl = clients[0].clone();
     let keys = addkeys_1[2].clone();
     responses.push(tokio::spawn(async move { 
-        cl.add_keys(long_context(), HistogramAddKeysRequest { 
+        cl.add_keys(long_context(), HHAddKeysRequest { 
             client_idx: 1, keys: keys
         }).await
     }));
@@ -248,14 +258,14 @@ async fn add_keys(
     let cl = clients[0].clone();
     let keys = addkeys_0[2].clone();
     responses.push(tokio::spawn(async move { 
-        cl.add_keys(long_context(), HistogramAddKeysRequest { 
+        cl.add_keys(long_context(), HHAddKeysRequest { 
             client_idx: 2, keys: keys
         }).await
     }));
     let cl = clients[1].clone();
     let keys = addkeys_1[2].clone();
     responses.push(tokio::spawn(async move { 
-        cl.add_keys(long_context(), HistogramAddKeysRequest { 
+        cl.add_keys(long_context(), HHAddKeysRequest { 
             client_idx: 2, keys: keys
         }).await
     }));
@@ -266,22 +276,26 @@ async fn add_keys(
 }
 
 async fn run_level(
+    cfg: &config::Config,
     clients: &Vec<&Client>,
-    _level: usize,
-    _start_time: Instant,
+    level: usize,
+    nreqs: usize,
 ) -> io::Result<()> {
+    let threshold64 = core::cmp::max(1, (cfg.threshold * (nreqs as f64)) as u64);
+    let threshold = fastfield::FE::new(threshold64 as u64);
+
     let mut responses = vec![];
 
     // Session 0
     let cl = clients[0].clone();
     responses.push(tokio::spawn(async move { 
-        cl.histogram_tree_crawl(long_context(), HistogramTreeCrawlRequest { 
+        cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
             client_idx: 0,
         }).await
     }));
     let cl = clients[1].clone();
     responses.push(tokio::spawn(async move { 
-        cl.histogram_tree_crawl(long_context(), HistogramTreeCrawlRequest { 
+        cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
             client_idx: 1,
         }).await
     }));
@@ -289,13 +303,13 @@ async fn run_level(
     // Session 1
     let cl = clients[1].clone();
     responses.push(tokio::spawn(async move { 
-        cl.histogram_tree_crawl(long_context(), HistogramTreeCrawlRequest { 
+        cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
             client_idx: 0,
         }).await
     }));
     let cl = clients[2].clone();
     responses.push(tokio::spawn(async move { 
-        cl.histogram_tree_crawl(long_context(), HistogramTreeCrawlRequest { 
+        cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
             client_idx: 1,
         }).await
     }));
@@ -303,13 +317,13 @@ async fn run_level(
     // Session 2
     let cl = clients[2].clone();
     responses.push(tokio::spawn(async move { 
-        cl.histogram_tree_crawl(long_context(), HistogramTreeCrawlRequest { 
+        cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
             client_idx: 0,
         }).await
     }));
     let cl = clients[0].clone();
     responses.push(tokio::spawn(async move { 
-        cl.histogram_tree_crawl(long_context(), HistogramTreeCrawlRequest { 
+        cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
             client_idx: 1,
         }).await
     }));
@@ -317,37 +331,52 @@ async fn run_level(
     // extra
     let cl = clients[0].clone();
     responses.push(tokio::spawn(async move { 
-        cl.histogram_tree_crawl(long_context(), HistogramTreeCrawlRequest { 
+        cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
             client_idx: 2,
         }).await
     }));
     let cl = clients[1].clone();
     responses.push(tokio::spawn(async move { 
-        cl.histogram_tree_crawl(long_context(), HistogramTreeCrawlRequest { 
+        cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
             client_idx: 2,
         }).await
     }));
 
     join_all(responses).await;
 
+// TODO
+    // // vals from tree_crawl
+    // assert_eq!(vals0.len(), vals1.len());
+    // let keep = collect::KeyCollection::<fastfield::FE,FieldElm>::keep_values(nreqs, &threshold, &vals0, &vals1);
+    //println!("Keep: {:?}", keep);
+    //println!("KeepLen: {:?}", keep.len());
+
+    // // Tree prune
+    // let req = HHTreePruneRequest { keep };
+    // let response0 = client0.tree_prune(long_context(), req.clone());
+    // let response1 = client1.tree_prune(long_context(), req);
+    // try_join!(response0, response1).unwrap();
+
     Ok(())
 }
 
-
 async fn run_level_last(
+    cfg: &config::Config,
     clients: &Vec<&Client>,
     num_clients: usize,
 ) -> io::Result<()> {
+    let threshold64 = core::cmp::max(1, (cfg.threshold * (num_clients as f64)) as u32);
+    let threshold = FieldElm::from(threshold64 as u32);
     // Session 0
     let cl = clients[0].clone();
     let response_00 = tokio::spawn(async move { 
-        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+        cl.tree_crawl_last(long_context(), HHTreeCrawlLastRequest { 
             client_idx: 0,
         }).await
     });
     let cl = clients[1].clone();
     let response_01 = tokio::spawn(async move { 
-        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+        cl.tree_crawl_last(long_context(), HHTreeCrawlLastRequest { 
             client_idx: 1,
         }).await
     });
@@ -355,13 +384,13 @@ async fn run_level_last(
     // Session 1
     let cl = clients[1].clone();
     let response_11 = tokio::spawn(async move { 
-        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+        cl.tree_crawl_last(long_context(), HHTreeCrawlLastRequest { 
             client_idx: 0,
         }).await
     });
     let cl = clients[2].clone();
     let response_12 = tokio::spawn(async move { 
-        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+        cl.tree_crawl_last(long_context(), HHTreeCrawlLastRequest { 
             client_idx: 1,
         }).await
     });
@@ -369,13 +398,13 @@ async fn run_level_last(
     // Session 2
     let cl = clients[2].clone();
     let response_22 = tokio::spawn(async move { 
-        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+        cl.tree_crawl_last(long_context(), HHTreeCrawlLastRequest { 
             client_idx: 0,
         }).await
     });
     let cl = clients[0].clone();
     let response_20 = tokio::spawn(async move { 
-        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+        cl.tree_crawl_last(long_context(), HHTreeCrawlLastRequest { 
             client_idx: 1,
         }).await
     });
@@ -383,13 +412,13 @@ async fn run_level_last(
     // extra
     let cl = clients[0].clone();
     let response_020 = tokio::spawn(async move { 
-        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+        cl.tree_crawl_last(long_context(), HHTreeCrawlLastRequest { 
             client_idx: 2,
         }).await
     });
     let cl = clients[1].clone();
     let response_021 = tokio::spawn(async move { 
-        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+        cl.tree_crawl_last(long_context(), HHTreeCrawlLastRequest { 
             client_idx: 2,
         }).await
     });
@@ -441,14 +470,14 @@ async fn run_level_last(
 
     let cl = clients[0].clone();
     let response_0 = tokio::spawn(async move { 
-        cl.histogram_compute_hashes(
-            long_context(), HistogramComputeHashesRequest { client_idx: 0, }
+        cl.compute_hashes(
+            long_context(), HHComputeHashesRequest { client_idx: 0, }
         ).await
     });
     let cl = clients[1].clone();
     let response_1 = tokio::spawn(async move { 
-        cl.histogram_compute_hashes(
-            long_context(), HistogramComputeHashesRequest { client_idx: 1, }
+        cl.compute_hashes(
+            long_context(), HHComputeHashesRequest { client_idx: 1, }
         ).await
     });
 
@@ -460,16 +489,16 @@ async fn run_level_last(
     let cl = clients[0].clone();
     let v0 = ver_0.clone();
     let response_00 = tokio::spawn(async move { 
-        cl.histogram_add_leaves_between_clients(long_context(), 
-            HistogramAddLeavesBetweenClientsRequest { 
+        cl.add_leaves_between_clients(long_context(), 
+            HHAddLeavesBetweenClientsRequest { 
                 client_idx: 0, verified: v0,
         }).await
     });
     let cl = clients[1].clone();
     let v0 = ver_0.clone();
     let response_01 = tokio::spawn(async move { 
-        cl.histogram_add_leaves_between_clients(long_context(), 
-            HistogramAddLeavesBetweenClientsRequest { 
+        cl.add_leaves_between_clients(long_context(), 
+            HHAddLeavesBetweenClientsRequest { 
                 client_idx: 1, verified: v0,
         }).await
     });
@@ -478,16 +507,16 @@ async fn run_level_last(
     let cl = clients[1].clone();
     let v1 = ver_1.clone();
     let response_11 = tokio::spawn(async move { 
-        cl.histogram_add_leaves_between_clients(long_context(), 
-            HistogramAddLeavesBetweenClientsRequest { 
+        cl.add_leaves_between_clients(long_context(), 
+            HHAddLeavesBetweenClientsRequest { 
                 client_idx: 0, verified: v1,
         }).await
     });
     let cl = clients[2].clone();
     let v1 = ver_1.clone();
     let response_12 = tokio::spawn(async move { 
-        cl.histogram_add_leaves_between_clients(long_context(), 
-            HistogramAddLeavesBetweenClientsRequest { 
+        cl.add_leaves_between_clients(long_context(), 
+            HHAddLeavesBetweenClientsRequest { 
                 client_idx: 1, verified: v1,
         }).await
     });
@@ -496,16 +525,16 @@ async fn run_level_last(
     let cl = clients[2].clone();
     let v2 = ver_2.clone();
     let response_22 = tokio::spawn(async move { 
-        cl.histogram_add_leaves_between_clients(long_context(), 
-            HistogramAddLeavesBetweenClientsRequest { 
+        cl.add_leaves_between_clients(long_context(), 
+            HHAddLeavesBetweenClientsRequest { 
                 client_idx: 0, verified: v2,
         }).await
     });
     let cl = clients[0].clone();
     let v2 = ver_2.clone();
     let response_20 = tokio::spawn(async move { 
-        cl.histogram_add_leaves_between_clients(long_context(), 
-            HistogramAddLeavesBetweenClientsRequest { 
+        cl.add_leaves_between_clients(long_context(), 
+            HHAddLeavesBetweenClientsRequest { 
                 client_idx: 1, verified: v2,
         }).await
     });
@@ -527,6 +556,17 @@ async fn run_level_last(
         &shares_22, &shares_20
     );
 
+    // assert_eq!(vals0.len(), vals1.len());
+    // let keep = collect::KeyCollection::<fastfield::FE,FieldElm>::keep_values_last(nreqs, &threshold, &vals0, &vals1);
+    // //println!("Keep: {:?}", keep);
+    // //println!("KeepLen: {:?}", keep.len());
+
+    // // Tree prune
+    // let req = HHTreePruneLastRequest { keep };
+    // let response0 = client0.tree_prune_last(long_context(), req.clone());
+    // let response1 = client1.tree_prune_last(long_context(), req);
+    // try_join!(response0, response1).unwrap();
+
     for ((res_0, res_1), res_2) in hist_0.iter().zip_eq(hist_1).zip_eq(hist_2) {
         assert_eq!(res_0.value.value(), res_1.value.value());
         assert_eq!(res_0.value.value(), res_2.value.value());
@@ -535,13 +575,10 @@ async fn run_level_last(
             println!("Value ({}) \t Count: {:?}", bits, res_0.value.value());
         }
     }
+
     Ok(())
 }
 
-// Client/Server Pairs: 
-// Session 0 connects to S0 and S1
-// Session 1 connects to S1 and S2
-// Session 2 connects to S2 and S0
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -550,6 +587,7 @@ async fn main() -> io::Result<()> {
 
     env_logger::init();
     let (cfg, _, nreqs) = config::get_args("Leader", false, true);
+    debug_assert_eq!(cfg.data_len % 8, 0);
 
     let client_0 = Client::new(
         client::Config::default(),
@@ -600,19 +638,32 @@ async fn main() -> io::Result<()> {
             r.await?;
         }
     }
-    let start = Instant::now();
 
     tree_init(&clients).await?;
-    println!("Tree init time {:?}", start.elapsed().as_secs_f64());
 
     let start = Instant::now();
     let bitlen = cfg.data_len * 8; // bits
     for level in 0..bitlen-1 {
-        run_level(&clients, level, start).await?;
+        // let active_paths = run_level(&cfg, &mut client0, &mut client1, level, nreqs, start).await?;
+        run_level(&cfg, &clients, level, nreqs).await?;
+
+        // println!(
+        //     "Level {:?} active_paths={:?} {:?}",
+        //     level,
+        //     active_paths,
+        //     start.elapsed().as_secs_f64()
+        // );
     }
 
-    run_level_last(&clients, nreqs).await?;
-    println!("Time {:?}", start.elapsed().as_secs_f64());
+    run_level_last(&cfg, &clients, nreqs).await?;
+
+    // let active_paths = run_level_last(&cfg, &mut client0, &mut client1, nreqs, start).await?;
+    // println!(
+    //     "Level {:?} active_paths={:?} {:?}",
+    //     bitlen,
+    //     active_paths,
+    //     start.elapsed().as_secs_f64()
+    // );
 
     Ok(())
 }
