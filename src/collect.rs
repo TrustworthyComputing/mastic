@@ -116,38 +116,7 @@ where
         child
     }
 
-    fn make_tree_node_last(&self, parent: &TreeNode<T>, dir: bool) -> TreeNode<U> {
-        let (key_states, key_values): (Vec<dpf::EvalState>, Vec<U>) = self
-            .keys
-            .par_iter()
-            .enumerate()
-            .map(|(i, key)| {
-                key.1.eval_bit_last(&parent.key_states[i], dir)
-            })
-            .unzip();
-
-        let mut child_val = U::zero();
-        for (i, v) in key_values.iter().enumerate() {
-            // Add in only live values
-            if self.keys[i].0 {
-                child_val.add_lazy(&v);
-            }
-        }
-        child_val.reduce();
-
-        let mut child = TreeNode::<U> {
-            path: parent.path.clone(),
-            value: child_val,
-            key_states,
-            key_values,
-            hashes: vec![],
-        };
-        child.path.push(dir);
-
-        child
-    }
-
-    fn histogram_make_tree_node_last(&self, parent: &TreeNode<T>, dir: bool) -> (Vec<U>, Vec<Vec<u8>>, Vec<bool>) {
+    fn make_tree_node_last(&self, parent: &TreeNode<T>, dir: bool) -> (Vec<U>, Vec<Vec<u8>>, Vec<bool>) {
         let (key_states, key_values): (Vec<dpf::EvalState>, Vec<U>) = self
             .keys
             .par_iter()
@@ -187,7 +156,7 @@ where
     }
 
     // Adds values for "path" accross multiple clients.
-    fn histogram_add_leaf_values(&self,
+    fn add_leaf_values(&self,
         key_values: &Vec<U>,
         path: &Vec<bool>,
         verified: &Vec<bool>
@@ -210,7 +179,7 @@ where
         }
     }
 
-    pub fn tree_crawl(&mut self) -> Vec<T> {
+    pub fn hh_tree_crawl(&mut self) -> Vec<T> {
         let next_frontier = self
             .frontier
             .par_iter()
@@ -248,39 +217,16 @@ where
             .collect::<Vec<TreeNode<T>>>();
     }
 
-    pub fn tree_crawl_last(&mut self) -> Vec<U> {
-        let next_frontier = self
-            .frontier
-            .par_iter()
-            .map(|node| {
-                assert!(node.path.len() <= self.depth);
-                let child0 = self.make_tree_node_last(node, false);
-                let child1 = self.make_tree_node_last(node, true);
-
-                vec![child0, child1]
-            })
-            .flatten()
-            .collect::<Vec<TreeNode<U>>>();
-
-        let values = next_frontier
-            .par_iter()
-            .map(|node| node.value.clone())
-            .collect::<Vec<U>>();
-            
-        self.frontier_last = next_frontier;
-        values
-    }
-
-    pub fn histogram_tree_crawl_last(&mut self) -> (Vec<Vec<u8>>, Vec<U>) {
+    pub fn tree_crawl_last(&mut self) -> (Vec<Vec<u8>>, Vec<U>) {
         self.frontier_intermediate = self
             .frontier
             .par_iter()
             .map(|node| {
                 // assert!(node.path.len() <= self.depth);
                 let (key_values_l, hashes_l, path_l) = self.
-                    histogram_make_tree_node_last(node, false);
+                    make_tree_node_last(node, false);
                 let (key_values_r, hashes_r, path_r) = self.
-                    histogram_make_tree_node_last(node, true);
+                    make_tree_node_last(node, true);
 
                 (TreeNode::<U> {
                     path: path_l,
@@ -336,7 +282,7 @@ where
         }
     }
 
-    pub fn histogram_get_ys(&self) -> Vec<&Vec<U>> {
+    pub fn get_ys(&self) -> Vec<&Vec<U>> {
         self.frontier_intermediate
             .par_iter()
             .map(|node| {
@@ -346,19 +292,21 @@ where
             .collect::<Vec<_>>()
     }
 
-    pub fn histogram_add_leaves_between_clients(&mut self, verified: &Vec<bool>) -> Vec<Result<U>> {
+    pub fn add_leaves_between_clients(&mut self, verified: &Vec<bool>) -> Vec<Result<U>> {
         let next_frontier = self.frontier_intermediate
             .par_iter()
             .map(|node| {
-                let child_l = self.histogram_add_leaf_values(
+                let child_l = self.add_leaf_values(
                     &node.0.key_values, &node.0.path, verified);
-                let child_r = self.histogram_add_leaf_values(
+                let child_r = self.add_leaf_values(
                     &node.1.key_values, &node.1.path, verified);
 
                 vec![child_l, child_r]
             })
             .flatten()
             .collect::<Vec<TreeNode<U>>>();
+
+        // self.frontier_last = next_frontier; //.clone();
 
         next_frontier
             .par_iter()
@@ -406,32 +354,25 @@ where
             v.add(&vals0[i]);
             v.add(&vals1[i]);
 
-            // let v_any = &v as &dyn Any;
-            // if let Some(v_fe) = v_any.downcast_ref::<FE>() {
-            //     println!("-> Sum: {:?} {:?} {:?}", v_fe.value(), *threshold, nclients);
-            // } else {
-            //     // Generic path, pretend this is expensive
-            //     println!("-> {:?} {:?} {:?}", v, *threshold, nclients);
-            // }
-
             debug_assert!(v <= nclients);
 
             // Keep nodes that are above threshold
             keep.push(v >= *threshold);
         }
 
+        // println!("Keep: {}", keep.len());
         keep
     }
 
-    pub fn keep_values_last(_nclients: usize, threshold: &U, vals0: &[U], vals1: &[U]) -> Vec<bool> {
+    pub fn keep_values_last(_nclients: usize, threshold: &U, vals0: &[Result::<U>], vals1: &[Result::<U> ]) -> Vec<bool> {
         assert_eq!(vals0.len(), vals1.len());
 
         // let nclients = U::from(_nclients as u32);
         let mut keep = vec![];
         for i in 0..vals0.len() {
             let mut v = U::zero();
-            v.add(&vals0[i]);
-            v.add(&vals1[i]);
+            v.add(&vals0[i].value);
+            v.add(&vals1[i].value);
             //println!("-> {:?} {:?} {:?}", v, *threshold, nclients);
 
             // debug_assert!(v <= nclients);
@@ -440,6 +381,7 @@ where
             keep.push(v >= *threshold);
         }
 
+        // println!("Keep-last: {}", keep.len());
         keep
     }
 
@@ -483,10 +425,12 @@ where
             v.add(&res0[i].value);
             v.add(&res1[i].value);
 
-            out.push(Result {
-                path: res0[i].path.clone(),
-                value: v,
-            });
+            if v > U::zero() {
+                out.push(Result {
+                    path: res0[i].path.clone(),
+                    value: v,
+                });
+            }
         }
 
         out

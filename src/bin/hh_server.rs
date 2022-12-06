@@ -4,15 +4,17 @@ use plasma::{
     FieldElm,
     fastfield::FE,
     Group,
-    histogram_rpc::{
+    hh_rpc::{
         Collector,
-        HistogramAddKeysRequest,
-        HistogramTreeInitRequest,
-        HistogramResetRequest,
-        HistogramTreeCrawlRequest, 
-        HistogramTreeCrawlLastRequest,
-        HistogramComputeHashesRequest,
-        HistogramAddLeavesBetweenClientsRequest,
+        HHAddKeysRequest,
+        HHTreeInitRequest,
+        HHResetRequest,
+        HHTreeCrawlRequest, 
+        HHTreeCrawlLastRequest,
+        HHTreePruneRequest,
+        HHTreePruneLastRequest,
+        HHComputeHashesRequest,
+        HHAddLeavesBetweenClientsRequest,
     },
     prg,
     xor_vec,
@@ -45,7 +47,7 @@ struct BatchCollectorServer {
 impl Collector for BatchCollectorServer {
 
     async fn reset(self,
-         _: context::Context, req: HistogramResetRequest
+         _: context::Context, req: HHResetRequest
     ) -> String {
         let client_idx = req.client_idx as usize;
         assert!(client_idx <= 2);
@@ -57,7 +59,7 @@ impl Collector for BatchCollectorServer {
     }
 
     async fn add_keys(self,
-         _: context::Context, req: HistogramAddKeysRequest
+         _: context::Context, req: HHAddKeysRequest
     ) -> String {
         let client_idx = req.client_idx as usize;
         assert!(client_idx <= 2);
@@ -72,7 +74,7 @@ impl Collector for BatchCollectorServer {
     }
 
     async fn tree_init(self,
-        _: context::Context, req: HistogramTreeInitRequest
+        _: context::Context, req: HHTreeInitRequest
     ) -> String {
         let start = Instant::now();
         let client_idx = req.client_idx as usize;
@@ -83,32 +85,50 @@ impl Collector for BatchCollectorServer {
         "Done".to_string()
     }
 
-    async fn histogram_tree_crawl(self, 
-        _: context::Context, req: HistogramTreeCrawlRequest
-    ) -> String {
+    async fn tree_crawl(self, 
+        _: context::Context, req: HHTreeCrawlRequest
+    ) -> Vec<FE> {
         // let start = Instant::now();
         let client_idx = req.client_idx as usize;
         assert!(client_idx <= 2);
         let mut coll = self.cs[client_idx].arc.lock().unwrap();
-        coll.histogram_tree_crawl();
-        // println!("session {:?}: histogram_tree_crawl: {:?}", client_idx, start.elapsed().as_secs_f64());
-        "Done".to_string()
+        let res = coll.hh_tree_crawl();
+        // println!("session {:?}: hh_tree_crawl: {:?}", client_idx, start.elapsed().as_secs_f64());
+        res
     }
 
     async fn tree_crawl_last(self, 
-        _: context::Context, req: HistogramTreeCrawlLastRequest
+        _: context::Context, req: HHTreeCrawlLastRequest
     ) -> (Vec<Vec<u8>>, Vec<FieldElm>) {
         let start = Instant::now();
         let client_idx = req.client_idx as usize;
         assert!(client_idx <= 2);
         let mut coll = self.cs[client_idx].arc.lock().unwrap();
         let res = coll.tree_crawl_last();
-        println!("session {:?}: tree_crawl_last: {:?}", client_idx, start.elapsed().as_secs_f64());
+        println!("session {:?}: hh_tree_crawl_last: {:?}", client_idx, start.elapsed().as_secs_f64());
         res
     }
 
-    async fn histogram_compute_hashes(self, 
-        _: context::Context, req: HistogramComputeHashesRequest
+    async fn tree_prune(self,
+         _: context::Context, req: HHTreePruneRequest
+    ) -> String {
+        let client_idx = req.client_idx as usize;
+        let mut coll = self.cs[client_idx].arc.lock().unwrap();
+        coll.tree_prune(&req.keep);
+        "Done".to_string()
+    }
+
+    async fn tree_prune_last(self,
+        _: context::Context, req: HHTreePruneLastRequest
+    ) -> String {
+        let client_idx = req.client_idx as usize;
+        let mut coll = self.cs[client_idx].arc.lock().unwrap();
+        coll.tree_prune_last(&req.keep);
+        "Done".to_string()
+    }
+
+    async fn compute_hashes(self, 
+        _: context::Context, req: HHComputeHashesRequest
     ) -> Vec<Vec<u8>> {
         let start = Instant::now();
         let client_idx = req.client_idx as usize;
@@ -143,7 +163,7 @@ impl Collector for BatchCollectorServer {
             }
             hashes.push(hasher.finalize_reset().to_vec());
         }
-        println!("session {:?}: histogram_compute_hashes: {:?}", client_idx, start.elapsed().as_secs_f64());
+        println!("session {:?}: hh_compute_hashes: {:?}", client_idx, start.elapsed().as_secs_f64());
 
         if plasma::consts::BATCH {
             let mut batched_hash = vec![0u8; 32];
@@ -157,18 +177,18 @@ impl Collector for BatchCollectorServer {
     }
 
     async fn add_leaves_between_clients(self, 
-        _: context::Context, req: HistogramAddLeavesBetweenClientsRequest
+        _: context::Context, req: HHAddLeavesBetweenClientsRequest
     ) -> Vec<collect::Result<FieldElm>> {
         let start = Instant::now();
         let client_idx = req.client_idx as usize;
         assert!(client_idx <= 2);
         let mut coll = self.cs[client_idx].arc.lock().unwrap();
         let res = coll.add_leaves_between_clients(&req.verified);
-        println!("session {:?}: add_leaves_between_clients: {:?}", client_idx, start.elapsed().as_secs_f64());
+        println!("session {:?}: hh_add_leaves_between_clients: {:?}", client_idx, start.elapsed().as_secs_f64());
         res 
     }
 
-}
+    }
 
 #[tokio::main]
 async fn main() -> io::Result<()> {

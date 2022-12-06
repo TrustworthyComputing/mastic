@@ -36,16 +36,12 @@ zipf = "7.0.0"
 
 
 [[bin]]
-name = "idpf-server"
-path = "src/bin/idpf_server.rs"
+name = "hh-server"
+path = "src/bin/hh_server.rs"
 
 [[bin]]
-name = "idpf-leader"
-path = "src/bin/idpf_leader.rs"
-
-[[bin]]
-name = "idpf-main"
-path = "src/bin/idpf_main.rs"
+name = "hh-leader"
+path = "src/bin/hh_leader.rs"
 
 [[bin]]
 name = "histogram-server"
@@ -54,7 +50,3 @@ path = "src/bin/histogram_server.rs"
 [[bin]]
 name = "histogram-leader"
 path = "src/bin/histogram_leader.rs"
-
-[[bin]]
-name = "histogram-main"
-path = "src/bin/hist_main.rs"

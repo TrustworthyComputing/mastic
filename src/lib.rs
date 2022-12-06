@@ -9,7 +9,7 @@ pub mod fastfield;
 mod field;
 pub mod prg;
 pub mod histogram_rpc;
-pub mod idpf_rpc;
+pub mod hh_rpc;
 
 extern crate geo;
 
@@ -20,14 +20,15 @@ pub use codearea::CodeArea;
 mod interface;
 pub use interface::{decode, encode, to_bit_string, from_bit_string, is_full, is_short, is_valid, recover_nearest, shorten};
 
+use rayon::prelude::*;
+use num_traits::cast::ToPrimitive;
 
 #[macro_use]
 extern crate lazy_static;
 
-pub use crate::field::Dummy;
 pub use crate::field::FieldElm;
 pub use crate::histogram_rpc::CollectorClient as HistogramCollectorClient;
-pub use crate::idpf_rpc::CollectorClient as IdpfCollectorClient;
+pub use crate::hh_rpc::CollectorClient as HHCollectorClient;
 use itertools::Itertools;
 
 // Additive group, such as (Z_n, +)
@@ -41,7 +42,6 @@ pub trait Group {
     fn mul(&mut self, other: &Self);
     fn mul_lazy(&mut self, other: &Self);
     fn sub(&mut self, other: &Self);
-    fn hash(&self) -> Vec<u8>;
 }
 
 pub trait Share: Group + prg::FromRng + Clone {
@@ -130,6 +130,59 @@ pub fn xor_vec(v1: &Vec<u8>, v2: &Vec<u8>) -> Vec<u8> {
 
 pub fn xor_three_vecs(v1: &Vec<u8>, v2: &Vec<u8>, v3: &Vec<u8>) -> Vec<u8> {
     v1.iter().zip_eq(v2.iter()).zip_eq(v3.iter()).map(|((&x1, &x2), &x3)| x1 ^ x2 ^ x3).collect()
+}
+
+pub fn check_hashes(
+    verified: &mut Vec<bool>,
+    hashes_0: &Vec<Vec<u8>>,
+    hashes_1: &Vec<Vec<u8>>
+) {
+    verified
+        .par_iter_mut()
+        .zip(hashes_0)
+        .zip(hashes_1)
+        .for_each(|((v, h0), h1)| {
+            if h0.len() != h0.iter().zip_eq(h1.iter()).filter(|&(h0, h1)| h0 == h1).count() {
+                *v = false;
+            }
+        });
+}
+
+pub fn check_taus(
+    verified: &mut Vec<bool>,
+    tau_vals_0: &Vec<FieldElm>,
+    tau_vals_1: &Vec<FieldElm>,
+) {
+    verified
+        .par_iter_mut()
+        .zip(tau_vals_0)
+        .zip(tau_vals_1)
+        .for_each(|((v, t0), t1)| {
+            if t0.value() != t1.value() {
+                *v = false;
+            }
+        });
+}
+
+pub fn check_hashes_and_taus(
+    verified: &mut Vec<bool>,
+    hashes_0: &Vec<Vec<u8>>,
+    hashes_1: &Vec<Vec<u8>>,
+    tau_vals: &Vec<FieldElm>,
+    nreqs: usize,
+) {
+    let tau_check = if consts::BATCH { nreqs } else { 1 };
+    verified
+        .par_iter_mut()
+        .zip(hashes_0)
+        .zip(hashes_1)
+        .zip(tau_vals)
+        .for_each(|(((v, h0), h1), t)| {
+            if h0.len() != h0.iter().zip_eq(h1.iter()).filter(|&(h0, h1)| h0 == h1).count() 
+                || t.value().to_usize().unwrap() != tau_check {
+                *v = false;
+            }
+        });
 }
 
 #[cfg(test)]

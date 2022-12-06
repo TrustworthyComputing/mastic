@@ -49,7 +49,7 @@ pub trait Collector {
     async fn add_keys(add: HistogramAddKeysRequest) -> String;
     async fn tree_init(req: HistogramTreeInitRequest) -> String;
     async fn histogram_tree_crawl(req: HistogramTreeCrawlRequest) -> String;
-    async fn histogram_tree_crawl_last(req: HistogramTreeCrawlLastRequest) -> (Vec<Vec<u8>>, Vec<FieldElm>);
+    async fn tree_crawl_last(req: HistogramTreeCrawlLastRequest) -> (Vec<Vec<u8>>, Vec<FieldElm>);
     async fn histogram_compute_hashes(req: HistogramComputeHashesRequest) -> Vec<Vec<u8>>;
-    async fn histogram_add_leaves_between_clients(req: HistogramAddLeavesBetweenClientsRequest) -> Vec<collect::Result<FieldElm>>;
+    async fn add_leaves_between_clients(req: HistogramAddLeavesBetweenClientsRequest) -> Vec<collect::Result<FieldElm>>;
 }

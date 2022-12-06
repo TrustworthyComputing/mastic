@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::{fs, net::SocketAddr};
 
 pub struct Config {
-    pub data_len: usize,
+    pub data_bytes: usize,
     pub addkey_batch_size: usize,
     pub unique_buckets: usize,
     pub threshold: f64,
@@ -21,7 +21,7 @@ pub fn get_config(filename: &str) -> Config {
     let json_data = &fs::read_to_string(filename).expect("Cannot open JSON file");
     let v: Value = serde_json::from_str(json_data).expect("Cannot parse JSON config");
 
-    let data_len: usize = v["data_len"].as_u64().expect("Can't parse data_len") as usize;
+    let data_bytes: usize = v["data_bytes"].as_u64().expect("Can't parse data_bytes") as usize;
     let addkey_batch_size: usize = v["addkey_batch_size"]
         .as_u64()
         .expect("Can't parse addkey_batch_size") as usize;
@@ -35,7 +35,7 @@ pub fn get_config(filename: &str) -> Config {
     let server_2 = parse_ip(&v["server_2"], "Can't parse server 2 addr");
 
     Config {
-        data_len,
+        data_bytes,
         addkey_batch_size,
         unique_buckets,
         threshold,

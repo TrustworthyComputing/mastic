@@ -1,5 +1,5 @@
 {
-  "data_len": 256,
+  "data_bytes": 256,
   "threshold": 0.001,
   "server0": "SERVER0_IP_ADDRESS_GOES_HERE:9100",
   "server1": "SERVER0_IP_ADDRESS_GOES_HERE:9101",
