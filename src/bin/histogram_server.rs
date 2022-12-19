@@ -32,7 +32,7 @@ use std::time::Instant;
 #[derive(Clone)]
 struct CollectorServer {
     seed: prg::PrgSeed,
-    data_len: usize,
+    data_bytes: usize,
     arc: Arc<Mutex<collect::KeyCollection<FE,FieldElm>>>,
 }
 
@@ -51,7 +51,7 @@ impl Collector for BatchCollectorServer {
         assert!(client_idx <= 2);
         let mut coll = self.cs[client_idx].arc.lock().unwrap();
         *coll = collect::KeyCollection::new(
-            &self.cs[client_idx].seed, self.cs[client_idx].data_len * 8
+            &self.cs[client_idx].seed, self.cs[client_idx].data_bytes * 8
         );
         "Done".to_string()
     }
@@ -95,15 +95,15 @@ impl Collector for BatchCollectorServer {
         "Done".to_string()
     }
 
-    async fn histogram_tree_crawl_last(self, 
+    async fn tree_crawl_last(self, 
         _: context::Context, req: HistogramTreeCrawlLastRequest
     ) -> (Vec<Vec<u8>>, Vec<FieldElm>) {
         let start = Instant::now();
         let client_idx = req.client_idx as usize;
         assert!(client_idx <= 2);
         let mut coll = self.cs[client_idx].arc.lock().unwrap();
-        let res = coll.histogram_tree_crawl_last();
-        println!("session {:?}: histogram_tree_crawl_last: {:?}", client_idx, start.elapsed().as_secs_f64());
+        let res = coll.tree_crawl_last();
+        println!("session {:?}: tree_crawl_last: {:?}", client_idx, start.elapsed().as_secs_f64());
         res
     }
 
@@ -156,15 +156,15 @@ impl Collector for BatchCollectorServer {
         }
     }
 
-    async fn histogram_add_leaves_between_clients(self, 
+    async fn add_leaves_between_clients(self, 
         _: context::Context, req: HistogramAddLeavesBetweenClientsRequest
     ) -> Vec<collect::Result<FieldElm>> {
         let start = Instant::now();
         let client_idx = req.client_idx as usize;
         assert!(client_idx <= 2);
         let mut coll = self.cs[client_idx].arc.lock().unwrap();
-        let res = coll.histogram_add_leaves_between_clients(&req.verified);
-        println!("session {:?}: histogram_add_leaves_between_clients: {:?}", client_idx, start.elapsed().as_secs_f64());
+        let res = coll.add_leaves_between_clients(&req.verified);
+        println!("session {:?}: add_leaves_between_clients: {:?}", client_idx, start.elapsed().as_secs_f64());
         res 
     }
 
@@ -188,9 +188,9 @@ async fn main() -> io::Result<()> {
         prg::PrgSeed { key: [3u8; 16] }
     ];
 
-    let coll_0 = collect::KeyCollection::new(&seeds[0], cfg.data_len * 8);
-    let coll_1 = collect::KeyCollection::new(&seeds[1], cfg.data_len * 8);
-    let coll_2 = collect::KeyCollection::new(&seeds[2], cfg.data_len * 8);
+    let coll_0 = collect::KeyCollection::new(&seeds[0], cfg.data_bytes * 8);
+    let coll_1 = collect::KeyCollection::new(&seeds[1], cfg.data_bytes * 8);
+    let coll_2 = collect::KeyCollection::new(&seeds[2], cfg.data_bytes * 8);
     let arc_0 = Arc::new(Mutex::new(coll_0));
     let arc_1 = Arc::new(Mutex::new(coll_1));
     let arc_2 = Arc::new(Mutex::new(coll_2));
@@ -206,17 +206,17 @@ async fn main() -> io::Result<()> {
         .map(|channel| {
             let local_0 = CollectorServer {
                 seed: seeds[0].clone(),
-                data_len: cfg.data_len * 8,
+                data_bytes: cfg.data_bytes * 8,
                 arc: arc_0.clone(),
             };
             let local_1 = CollectorServer {
                 seed: seeds[1].clone(),
-                data_len: cfg.data_len * 8,
+                data_bytes: cfg.data_bytes * 8,
                 arc: arc_1.clone(),
             };
             let local_2 = CollectorServer {
                 seed: seeds[2].clone(),
-                data_len: cfg.data_len * 8,
+                data_bytes: cfg.data_bytes * 8,
                 arc: arc_2.clone(),
             };
             let server = BatchCollectorServer {

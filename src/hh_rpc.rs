@@ -67,10 +67,10 @@ pub trait Collector {
     async fn reset(rst: HHResetRequest) -> String;
     async fn add_keys(add: HHAddKeysRequest) -> String;
     async fn tree_init(req: HHTreeInitRequest) -> String;
-    async fn tree_crawl(req: HHTreeCrawlRequest) -> String;
+    async fn tree_crawl(req: HHTreeCrawlRequest) -> Vec<FE>;
     async fn tree_crawl_last(req: HHTreeCrawlLastRequest) -> (Vec<Vec<u8>>, Vec<FieldElm>);
-    // async fn tree_prune(req: HHTreePruneRequest) -> String;
-    // async fn tree_prune_last(req: HHTreePruneLastRequest) -> String;
+    async fn tree_prune(req: HHTreePruneRequest) -> String;
+    async fn tree_prune_last(req: HHTreePruneLastRequest) -> String;
     async fn compute_hashes(req: HHComputeHashesRequest) -> Vec<Vec<u8>>;
     async fn add_leaves_between_clients(req: HHAddLeavesBetweenClientsRequest) -> Vec<collect::Result<FieldElm>>;
     // async fn final_shares(req: HHFinalSharesRequest) -> Vec<collect::Result<FieldElm>>;

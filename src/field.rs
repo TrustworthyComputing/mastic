@@ -8,7 +8,7 @@ use serde::Serialize;
 use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::u32;
-use sha2::{Sha256, Digest};
+// use std::any::Any;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct FieldElm {
@@ -16,10 +16,10 @@ pub struct FieldElm {
 }
 
 // 255-bit modulus:   p = 2^255 - 10
-const MODULUS_STR: &[u8] = b"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed";
+// const MODULUS_STR: &[u8] = b"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed";
 
 // 127-bit modulus:   p = 2^127 - 1
-//const MODULUS_STR: &[u8] = b"7fffffffffffffffffffffffffffffff";
+const MODULUS_STR: &[u8] = b"7fffffffffffffffffffffffffffffff";
 
 //  63-bit modulus:   p = 2^63 - 25;
 const MODULUS_64: u64 = 9223372036854775783u64;
@@ -28,7 +28,6 @@ const MODULUS_64_BIG: u128 = 9223372036854775783u128;
 lazy_static! {
     static ref MODULUS: FieldElm =
         FieldElm::from_hex(MODULUS_STR).expect("Could not parse modulus");
-    static ref MODULUS_DUMMY: Dummy = Dummy::from(7);
 }
 
 impl FieldElm {
@@ -44,97 +43,6 @@ impl FieldElm {
         return self.value.clone();
     }
 }
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct Dummy {
-    value: u32,
-}
-
-/*******/
-impl From<u32> for Dummy {
-    fn from(_inp: u32) -> Self {
-        Dummy { value: 0 }
-    }
-}
-
-impl From<BigUint> for Dummy {
-    fn from(_inp: BigUint) -> Self {
-        Dummy { value: 0 }
-    }
-}
-
-impl Ord for Dummy {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.value.cmp(&other.value)
-    }
-}
-
-impl PartialOrd for Dummy {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.value.cmp(&other.value))
-    }
-}
-
-impl crate::Group for Dummy {
-    fn zero() -> Self {
-        Dummy::from(0)
-    }
-
-    fn one() -> Self {
-        Dummy::from(1)
-    }
-
-    fn add(&mut self, other: &Self) {
-        //*self = FieldElm::from((&self.value + &other.value) % &MODULUS.value);
-        self.value += &other.value;
-        self.value %= &MODULUS.value;
-    }
-
-    fn mul(&mut self, other: &Self) {
-        self.value *= &other.value;
-        self.value %= &MODULUS.value;
-    }
-
-    fn add_lazy(&mut self, other: &Self) {
-        self.value += &other.value;
-    }
-
-    fn mul_lazy(&mut self, other: &Self) {
-        self.value *= &other.value;
-    }
-
-    fn reduce(&mut self) {
-        self.value %= &MODULUS.value;
-    }
-
-    fn sub(&mut self, other: &Self) {
-        // XXX not constant time
-        if self.value < other.value {
-            self.value += &MODULUS_DUMMY.value;
-        }
-
-        *self = Dummy::from(self.value - other.value);
-    }
-
-    fn negate(&mut self) {
-        self.value = MODULUS_DUMMY.value - self.value;
-    }
-
-    fn hash(&self) -> Vec<u8> {
-        let mut hasher = Sha256::new();
-        hasher.update( self.value.to_string());
-        hasher.finalize().to_vec()
-    }
-
-}
-
-impl crate::prg::FromRng for Dummy {
-    fn from_rng(&mut self, rng: &mut impl rand::Rng) {
-        RandBigInt::gen_biguint_below(rng, &MODULUS.value);
-    }
-}
-
-impl crate::Share for Dummy {}
 
 impl crate::Group for u64 {
     #[inline]
@@ -197,11 +105,13 @@ impl crate::Group for u64 {
         *self %= MODULUS_64;
     }
 
-    fn hash(&self) -> Vec<u8> {
-        let mut hasher = Sha256::new();
-        hasher.update( self.to_string());
-        hasher.finalize().to_vec()
+    #[inline]
+    fn value(self) -> u64 {
+        println!("value: Group for u64");
+
+        self
     }
+
 }
 
 impl crate::prg::FromRng for u64 {
@@ -264,11 +174,12 @@ impl crate::Group for FE {
         *self = self.neg();
     }
 
-    fn hash(&self) -> Vec<u8> {
-        let mut hasher = Sha256::new();
-        hasher.update( self.to_string());
-        hasher.finalize().to_vec()
+    #[inline]
+    fn value(self) -> u64 {
+        // println!("value {}: Group for FE", self.value());
+        self.value() // TODO
     }
+
 }
 
 impl crate::prg::FromRng for FE {
@@ -386,10 +297,11 @@ impl crate::Group for FieldElm {
         self.value = &MODULUS.value - &self.value;
     }
 
-    fn hash(&self) -> Vec<u8> {
-        let mut hasher = Sha256::new();
-        hasher.update( self.value.to_string());
-        hasher.finalize().to_vec()
+    #[inline]
+    fn value(self) -> u64 {
+        println!("value: Group for FieldElem");
+
+        self.value.to_u64_digits()[0]
     }
 }
 
@@ -462,11 +374,13 @@ where
         self.1.add(&inv1);
     }
 
-    fn hash(&self) -> Vec<u8> {
-        // let mut hasher = Sha256::new();
-        // hasher.update( "self.0".to_string());
-        // hasher.finalize().to_vec()
-        vec![]
+    // fn get<T: Behaviour + std::any::Any>(&mut self, name: &str) -> Option<& T> {
+
+    #[inline]
+    fn value(self) -> u64 {
+        println!("value: Group for (T, T)");
+
+        0u64
     }
 }
 

@@ -51,7 +51,7 @@ fn generate_keys(cfg: &config::Config) -> Vec<(Vec<Key>, Vec<Key>)> {
     .take(cfg.unique_buckets)
     .enumerate()
     .map(|(_i, _)| {
-        let data_string = sample_string(cfg.data_len * 8);
+        let data_string = sample_string(cfg.data_bytes * 8);
         // let bit_str = plasma::bits_to_bitstring(
         //     plasma::string_to_bits(&data_string).as_slice()
         // );
@@ -341,13 +341,13 @@ async fn run_level_last(
     // Session 0
     let cl = clients[0].clone();
     let response_00 = tokio::spawn(async move { 
-        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+        cl.tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
             client_idx: 0,
         }).await
     });
     let cl = clients[1].clone();
     let response_01 = tokio::spawn(async move { 
-        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+        cl.tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
             client_idx: 1,
         }).await
     });
@@ -355,13 +355,13 @@ async fn run_level_last(
     // Session 1
     let cl = clients[1].clone();
     let response_11 = tokio::spawn(async move { 
-        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+        cl.tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
             client_idx: 0,
         }).await
     });
     let cl = clients[2].clone();
     let response_12 = tokio::spawn(async move { 
-        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+        cl.tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
             client_idx: 1,
         }).await
     });
@@ -369,13 +369,13 @@ async fn run_level_last(
     // Session 2
     let cl = clients[2].clone();
     let response_22 = tokio::spawn(async move { 
-        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+        cl.tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
             client_idx: 0,
         }).await
     });
     let cl = clients[0].clone();
     let response_20 = tokio::spawn(async move { 
-        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+        cl.tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
             client_idx: 1,
         }).await
     });
@@ -383,13 +383,13 @@ async fn run_level_last(
     // extra
     let cl = clients[0].clone();
     let response_020 = tokio::spawn(async move { 
-        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+        cl.tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
             client_idx: 2,
         }).await
     });
     let cl = clients[1].clone();
     let response_021 = tokio::spawn(async move { 
-        cl.histogram_tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
+        cl.tree_crawl_last(long_context(), HistogramTreeCrawlLastRequest { 
             client_idx: 2,
         }).await
     });
@@ -460,7 +460,7 @@ async fn run_level_last(
     let cl = clients[0].clone();
     let v0 = ver_0.clone();
     let response_00 = tokio::spawn(async move { 
-        cl.histogram_add_leaves_between_clients(long_context(), 
+        cl.add_leaves_between_clients(long_context(), 
             HistogramAddLeavesBetweenClientsRequest { 
                 client_idx: 0, verified: v0,
         }).await
@@ -468,7 +468,7 @@ async fn run_level_last(
     let cl = clients[1].clone();
     let v0 = ver_0.clone();
     let response_01 = tokio::spawn(async move { 
-        cl.histogram_add_leaves_between_clients(long_context(), 
+        cl.add_leaves_between_clients(long_context(), 
             HistogramAddLeavesBetweenClientsRequest { 
                 client_idx: 1, verified: v0,
         }).await
@@ -478,7 +478,7 @@ async fn run_level_last(
     let cl = clients[1].clone();
     let v1 = ver_1.clone();
     let response_11 = tokio::spawn(async move { 
-        cl.histogram_add_leaves_between_clients(long_context(), 
+        cl.add_leaves_between_clients(long_context(), 
             HistogramAddLeavesBetweenClientsRequest { 
                 client_idx: 0, verified: v1,
         }).await
@@ -486,7 +486,7 @@ async fn run_level_last(
     let cl = clients[2].clone();
     let v1 = ver_1.clone();
     let response_12 = tokio::spawn(async move { 
-        cl.histogram_add_leaves_between_clients(long_context(), 
+        cl.add_leaves_between_clients(long_context(), 
             HistogramAddLeavesBetweenClientsRequest { 
                 client_idx: 1, verified: v1,
         }).await
@@ -496,7 +496,7 @@ async fn run_level_last(
     let cl = clients[2].clone();
     let v2 = ver_2.clone();
     let response_22 = tokio::spawn(async move { 
-        cl.histogram_add_leaves_between_clients(long_context(), 
+        cl.add_leaves_between_clients(long_context(), 
             HistogramAddLeavesBetweenClientsRequest { 
                 client_idx: 0, verified: v2,
         }).await
@@ -504,7 +504,7 @@ async fn run_level_last(
     let cl = clients[0].clone();
     let v2 = ver_2.clone();
     let response_20 = tokio::spawn(async move { 
-        cl.histogram_add_leaves_between_clients(long_context(), 
+        cl.add_leaves_between_clients(long_context(), 
             HistogramAddLeavesBetweenClientsRequest { 
                 client_idx: 1, verified: v2,
         }).await
@@ -606,7 +606,7 @@ async fn main() -> io::Result<()> {
     println!("Tree init time {:?}", start.elapsed().as_secs_f64());
 
     let start = Instant::now();
-    let bitlen = cfg.data_len * 8; // bits
+    let bitlen = cfg.data_bytes * 8; // bits
     for level in 0..bitlen-1 {
         run_level(&clients, level, start).await?;
     }

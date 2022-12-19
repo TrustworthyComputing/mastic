@@ -11,6 +11,8 @@ use plasma::{
         HHResetRequest,
         HHTreeCrawlRequest, 
         HHTreeCrawlLastRequest,
+        HHTreePruneRequest,
+        HHTreePruneLastRequest,
         HHComputeHashesRequest,
         HHAddLeavesBetweenClientsRequest,
     },
@@ -25,14 +27,14 @@ use rayon::prelude::*;
 use tarpc::{
     context,
     server::{self, Channel},
-    tokio_serde::formats::Json,
+    tokio_serde::formats::Bincode,
     serde_transport::tcp,
 };
 use std::time::Instant;
 #[derive(Clone)]
 struct CollectorServer {
     seed: prg::PrgSeed,
-    data_len: usize,
+    data_bytes: usize,
     arc: Arc<Mutex<collect::KeyCollection<FE,FieldElm>>>,
 }
 
@@ -48,10 +50,10 @@ impl Collector for BatchCollectorServer {
          _: context::Context, req: HHResetRequest
     ) -> String {
         let client_idx = req.client_idx as usize;
-        assert!(client_idx <= 2);
+        debug_assert!(client_idx <= 2);
         let mut coll = self.cs[client_idx].arc.lock().unwrap();
         *coll = collect::KeyCollection::new(
-            &self.cs[client_idx].seed, self.cs[client_idx].data_len * 8
+            &self.cs[client_idx].seed, self.cs[client_idx].data_bytes * 8
         );
         "Done".to_string()
     }
@@ -60,7 +62,7 @@ impl Collector for BatchCollectorServer {
          _: context::Context, req: HHAddKeysRequest
     ) -> String {
         let client_idx = req.client_idx as usize;
-        assert!(client_idx <= 2);
+        debug_assert!(client_idx <= 2);
         let mut coll = self.cs[client_idx].arc.lock().unwrap();
         for k in req.keys {
             coll.add_key(k);
@@ -76,7 +78,7 @@ impl Collector for BatchCollectorServer {
     ) -> String {
         let start = Instant::now();
         let client_idx = req.client_idx as usize;
-        assert!(client_idx <= 2);
+        debug_assert!(client_idx <= 2);
         let mut coll = self.cs[client_idx].arc.lock().unwrap();
         coll.tree_init();
         println!("session {:?}: tree_init: {:?}", client_idx, start.elapsed().as_secs_f64());
@@ -85,14 +87,14 @@ impl Collector for BatchCollectorServer {
 
     async fn tree_crawl(self, 
         _: context::Context, req: HHTreeCrawlRequest
-    ) -> String {
+    ) -> Vec<FE> {
         // let start = Instant::now();
         let client_idx = req.client_idx as usize;
-        assert!(client_idx <= 2);
+        debug_assert!(client_idx <= 2);
         let mut coll = self.cs[client_idx].arc.lock().unwrap();
-        coll.histogram_tree_crawl();
+        let res = coll.hh_tree_crawl();
         // println!("session {:?}: hh_tree_crawl: {:?}", client_idx, start.elapsed().as_secs_f64());
-        "Done".to_string()
+        res
     }
 
     async fn tree_crawl_last(self, 
@@ -100,11 +102,29 @@ impl Collector for BatchCollectorServer {
     ) -> (Vec<Vec<u8>>, Vec<FieldElm>) {
         let start = Instant::now();
         let client_idx = req.client_idx as usize;
-        assert!(client_idx <= 2);
+        debug_assert!(client_idx <= 2);
         let mut coll = self.cs[client_idx].arc.lock().unwrap();
-        let res = coll.histogram_tree_crawl_last();
+        let res = coll.tree_crawl_last();
         println!("session {:?}: hh_tree_crawl_last: {:?}", client_idx, start.elapsed().as_secs_f64());
         res
+    }
+
+    async fn tree_prune(self,
+         _: context::Context, req: HHTreePruneRequest
+    ) -> String {
+        let client_idx = req.client_idx as usize;
+        let mut coll = self.cs[client_idx].arc.lock().unwrap();
+        coll.tree_prune(&req.keep);
+        "Done".to_string()
+    }
+
+    async fn tree_prune_last(self,
+        _: context::Context, req: HHTreePruneLastRequest
+    ) -> String {
+        let client_idx = req.client_idx as usize;
+        let mut coll = self.cs[client_idx].arc.lock().unwrap();
+        coll.tree_prune_last(&req.keep);
+        "Done".to_string()
     }
 
     async fn compute_hashes(self, 
@@ -112,7 +132,7 @@ impl Collector for BatchCollectorServer {
     ) -> Vec<Vec<u8>> {
         let start = Instant::now();
         let client_idx = req.client_idx as usize;
-        assert!(client_idx <= 2);
+        debug_assert!(client_idx <= 2);
         let coll_0 = self.cs[0].arc.lock().unwrap();
         let coll_1 = self.cs[1].arc.lock().unwrap();
         let coll_2 = self.cs[2].arc.lock().unwrap();
@@ -161,14 +181,14 @@ impl Collector for BatchCollectorServer {
     ) -> Vec<collect::Result<FieldElm>> {
         let start = Instant::now();
         let client_idx = req.client_idx as usize;
-        assert!(client_idx <= 2);
+        debug_assert!(client_idx <= 2);
         let mut coll = self.cs[client_idx].arc.lock().unwrap();
-        let res = coll.histogram_add_leaves_between_clients(&req.verified);
+        let res = coll.add_leaves_between_clients(&req.verified);
         println!("session {:?}: hh_add_leaves_between_clients: {:?}", client_idx, start.elapsed().as_secs_f64());
         res 
     }
 
-}
+    }
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -188,16 +208,16 @@ async fn main() -> io::Result<()> {
         prg::PrgSeed { key: [3u8; 16] }
     ];
 
-    let coll_0 = collect::KeyCollection::new(&seeds[0], cfg.data_len * 8);
-    let coll_1 = collect::KeyCollection::new(&seeds[1], cfg.data_len * 8);
-    let coll_2 = collect::KeyCollection::new(&seeds[2], cfg.data_len * 8);
+    let coll_0 = collect::KeyCollection::new(&seeds[0], cfg.data_bytes * 8);
+    let coll_1 = collect::KeyCollection::new(&seeds[1], cfg.data_bytes * 8);
+    let coll_2 = collect::KeyCollection::new(&seeds[2], cfg.data_bytes * 8);
     let arc_0 = Arc::new(Mutex::new(coll_0));
     let arc_1 = Arc::new(Mutex::new(coll_1));
     let arc_2 = Arc::new(Mutex::new(coll_2));
 
     println!("Server {} running at {:?}", sid, server_addr);
     // Listen on any IP
-    let listener = tcp::listen(&server_addr, Json::default).await?;
+    let listener = tcp::listen(&server_addr, Bincode::default).await?;
     listener
         // Ignore accept errors.
         .filter_map(|r| future::ready(r.ok()))
@@ -206,17 +226,17 @@ async fn main() -> io::Result<()> {
         .map(|channel| {
             let local_0 = CollectorServer {
                 seed: seeds[0].clone(),
-                data_len: cfg.data_len * 8,
+                data_bytes: cfg.data_bytes * 8,
                 arc: arc_0.clone(),
             };
             let local_1 = CollectorServer {
                 seed: seeds[1].clone(),
-                data_len: cfg.data_len * 8,
+                data_bytes: cfg.data_bytes * 8,
                 arc: arc_1.clone(),
             };
             let local_2 = CollectorServer {
                 seed: seeds[2].clone(),
-                data_len: cfg.data_len * 8,
+                data_bytes: cfg.data_bytes * 8,
                 arc: arc_2.clone(),
             };
             let server = BatchCollectorServer {
@@ -226,7 +246,7 @@ async fn main() -> io::Result<()> {
             channel.execute(server.serve())
         })
         // Max 10 channels.
-        .buffer_unordered(10)
+        .buffer_unordered(100)
         .for_each(|_| async {})
         .await;
         

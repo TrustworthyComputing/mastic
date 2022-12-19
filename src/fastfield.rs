@@ -12,14 +12,13 @@ use serde::{Deserialize, Serialize};
 use std::cmp::{Eq, PartialEq};
 use std::convert::From;
 use std::fmt::{self, Display, Formatter, LowerHex, UpperHex};
-use std::hash::{Hash, Hasher};
 use std::ops::{Add, Div, Mul, Neg, Rem, Sub};
 use std::ops::{AddAssign, DivAssign, MulAssign, RemAssign, SubAssign};
 
 // Here are the constants that determine our prime:
 //
 // number of bits in our field elements
-const N_BITS: u64 = 62;
+const N_BITS: u64 = 42;
 // Which bit (other than bit 0) do we clear in our prime?
 const OFFSET_BIT: u64 = 30;
 // order of the prime field
@@ -251,12 +250,6 @@ impl PartialEq for FE {
     }
 }
 impl Eq for FE {}
-
-impl Hash for FE {
-    fn hash<H: Hasher>(&self, hasher: &mut H) {
-        hasher.write_u64(self.value())
-    }
-}
 
 impl AddAssign for FE {
     fn add_assign(&mut self, other: Self) {

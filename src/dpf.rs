@@ -19,7 +19,6 @@ pub struct DPFKey<T,U> {
     root_seed: prg::PrgSeed,
     cor_words: Vec<CorWord<T>>,
     cor_word_last: CorWord<U>,
-    pub pi: Vec<u8>,
     pub cs: Vec<u8>,
 }
 
@@ -184,7 +183,6 @@ where
                 root_seed: root_seeds.0,
                 cor_words: cor_words.clone(),
                 cor_word_last: last_cor_word.clone(),
-                pi: pi.clone(),
                 cs: pi.clone(),
             },
             DPFKey::<T,U> {
@@ -192,7 +190,6 @@ where
                 root_seed: root_seeds.1,
                 cor_words,
                 cor_word_last: last_cor_word,
-                pi: pi.clone(),
                 cs: pi,
             },
         )

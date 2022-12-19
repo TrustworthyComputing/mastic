@@ -1,5 +1,4 @@
 use plasma::{
-    bits_to_string,
     collect,
     config,
     dpf,
@@ -7,13 +6,11 @@ use plasma::{
     fastfield,
     hh_rpc::{
         HHAddKeysRequest,
-        HHFinalSharesRequest,
         HHResetRequest, 
         HHTreeInitRequest,
         HHTreeCrawlRequest, 
         HHTreeCrawlLastRequest, 
         HHTreePruneRequest, 
-        HHTreePruneLastRequest,
         HHComputeHashesRequest,
         HHAddLeavesBetweenClientsRequest,
     },
@@ -21,13 +18,13 @@ use plasma::{
 };
 
 use futures::future::join_all;
+// use futures::try_join;
 use itertools::Itertools;
 use num_traits::cast::ToPrimitive;
 use rand::{Rng, distributions::Alphanumeric,};
 use rayon::prelude::*;
 use std::{io, time::{Duration, SystemTime, Instant},};
-use tarpc::{client, context, tokio_serde::formats::Json, serde_transport::tcp,};
-
+use tarpc::{client, context, tokio_serde::formats::Bincode, serde_transport::tcp,};
 
 type Key = dpf::DPFKey<fastfield::FE,FieldElm>;
 type Client = HHCollectorClient;
@@ -60,13 +57,13 @@ fn generate_keys(cfg: &config::Config) -> Vec<(Vec<Key>, Vec<Key>)> {
     .take(cfg.unique_buckets)
     .enumerate()
     .map(|(_i, _)| {
-        let data_string = sample_string(cfg.data_len * 8);
+        let data_string = sample_string(cfg.data_bytes * 8);
         // let bit_str = plasma::bits_to_bitstring(
         //     plasma::string_to_bits(&data_string).as_slice()
         // );
         // println!("Client({}) \t input \"{}\" ({})", _i, data_string, bit_str);
         // let loc = sample_location();
-        // let data_string = encode(Point::new(loc.0, loc.1), cfg.data_len * 8);
+        // let data_string = encode(Point::new(loc.0, loc.1), cfg.data_bytes * 8);
         (
             dpf::DPFKey::gen_from_str(&data_string),
             (dpf::DPFKey::gen_from_str(&data_string), 
@@ -278,7 +275,6 @@ async fn add_keys(
 async fn run_level(
     cfg: &config::Config,
     clients: &Vec<&Client>,
-    level: usize,
     nreqs: usize,
 ) -> io::Result<()> {
     let threshold64 = core::cmp::max(1, (cfg.threshold * (nreqs as f64)) as u64);
@@ -330,43 +326,102 @@ async fn run_level(
 
     // extra
     let cl = clients[0].clone();
-    responses.push(tokio::spawn(async move { 
+    let response_00 = tokio::spawn(async move { 
         cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
             client_idx: 2,
         }).await
-    }));
+    });
     let cl = clients[1].clone();
-    responses.push(tokio::spawn(async move { 
+    let response_01 = tokio::spawn(async move { 
         cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
             client_idx: 2,
+        }).await
+    });
+
+    join_all(responses).await;
+
+    let (vals0, vals1) = (response_00.await?.unwrap(), response_01.await?.unwrap());
+
+    debug_assert_eq!(vals0.len(), vals1.len());
+    let mut responses = vec![];
+    let keep = collect::KeyCollection::<fastfield::FE,FieldElm>::keep_values_cmp(&threshold, &vals0, &vals1);
+
+    // Tree prune
+    // Session 0
+    let cl = clients[0].clone();
+    let k = keep.clone();
+    responses.push(tokio::spawn(async move { 
+        cl.tree_prune(long_context(), HHTreePruneRequest { 
+            client_idx: 0, keep: k,
+        }).await
+    }));
+    let cl = clients[1].clone();
+    let k = keep.clone();
+    responses.push(tokio::spawn(async move { 
+        cl.tree_prune(long_context(), HHTreePruneRequest { 
+            client_idx: 1, keep: k,
+        }).await
+    }));
+
+    // Session 1
+    let cl = clients[1].clone();
+    let k = keep.clone();
+    responses.push(tokio::spawn(async move { 
+        cl.tree_prune(long_context(), HHTreePruneRequest { 
+            client_idx: 0, keep: k,
+        }).await
+    }));
+    let cl = clients[2].clone();
+    let k = keep.clone();
+    responses.push(tokio::spawn(async move { 
+        cl.tree_prune(long_context(), HHTreePruneRequest { 
+            client_idx: 1, keep: k,
+        }).await
+    }));
+
+    // Session 2
+    let cl = clients[2].clone();
+    let k = keep.clone();
+    responses.push(tokio::spawn(async move { 
+        cl.tree_prune(long_context(), HHTreePruneRequest { 
+            client_idx: 0, keep: k,
+        }).await
+    }));
+    let cl = clients[0].clone();
+    let k = keep.clone();
+    responses.push(tokio::spawn(async move { 
+        cl.tree_prune(long_context(), HHTreePruneRequest { 
+            client_idx: 1, keep: k,
+        }).await
+    }));
+    
+    // Extra
+    let cl = clients[0].clone();
+    let k = keep.clone();
+    responses.push(tokio::spawn(async move { 
+        cl.tree_prune(long_context(), HHTreePruneRequest { 
+            client_idx: 2, keep: k,
+        }).await
+    }));
+    let cl = clients[1].clone();
+    let k = keep.clone();
+    responses.push(tokio::spawn(async move { 
+        cl.tree_prune(long_context(), HHTreePruneRequest { 
+            client_idx: 2, keep: k,
         }).await
     }));
 
     join_all(responses).await;
 
-// TODO
-    // // vals from tree_crawl
-    // assert_eq!(vals0.len(), vals1.len());
-    // let keep = collect::KeyCollection::<fastfield::FE,FieldElm>::keep_values(nreqs, &threshold, &vals0, &vals1);
-    //println!("Keep: {:?}", keep);
-    //println!("KeepLen: {:?}", keep.len());
-
-    // // Tree prune
-    // let req = HHTreePruneRequest { keep };
-    // let response0 = client0.tree_prune(long_context(), req.clone());
-    // let response1 = client1.tree_prune(long_context(), req);
-    // try_join!(response0, response1).unwrap();
-
     Ok(())
 }
 
 async fn run_level_last(
-    cfg: &config::Config,
     clients: &Vec<&Client>,
     num_clients: usize,
 ) -> io::Result<()> {
-    let threshold64 = core::cmp::max(1, (cfg.threshold * (num_clients as f64)) as u32);
-    let threshold = FieldElm::from(threshold64 as u32);
+    // let threshold64 = core::cmp::max(1, (cfg.threshold * (num_clients as f64)) as u32);
+    // let threshold = FieldElm::from(threshold64 as u32);
     // Session 0
     let cl = clients[0].clone();
     let response_00 = tokio::spawn(async move { 
@@ -432,9 +487,9 @@ async fn run_level_last(
     let ((hashes_020, tau_vals_020), (hashes_021, tau_vals_021)) =
         (response_020.await?.unwrap(), response_021.await?.unwrap());
 
-    assert_eq!(hashes_00.len(), hashes_01.len());
-    assert_eq!(hashes_11.len(), hashes_12.len());
-    assert_eq!(hashes_11.len(), hashes_12.len());
+    debug_assert_eq!(hashes_00.len(), hashes_01.len());
+    debug_assert_eq!(hashes_11.len(), hashes_12.len());
+    debug_assert_eq!(hashes_11.len(), hashes_12.len());
     let mut ver_0 = vec![true; num_clients];
     let mut ver_1 = vec![true; num_clients];
     let mut ver_2 = vec![true; num_clients];
@@ -462,7 +517,7 @@ async fn run_level_last(
     plasma::check_hashes_and_taus(&mut ver_1, &hashes_11, &hashes_12, &tau_vals_1, num_clients);
     // Check s2, s0 hashes and taus
     plasma::check_hashes_and_taus(&mut ver_2, &hashes_22, &hashes_20, &tau_vals_2, num_clients);
-    assert_eq!(
+    debug_assert_eq!(
         ver_0.par_iter().zip_eq(&ver_1).zip_eq(&ver_2)
             .filter(|&((&v0, &v1), &v2)| v0 == true && v0 == v1 && v1 == v2).count(),
         ver_0.len()
@@ -546,6 +601,10 @@ async fn run_level_last(
     let (shares_22, shares_20) = 
         (response_22.await?.unwrap(), response_20.await?.unwrap());
 
+    // let keep = collect::KeyCollection::<fastfield::FE,FieldElm>::keep_values_last(num_clients, &threshold, &shares_00, &shares_01);
+    // println!("KeepLast : {:?}", keep);
+    // println!("KeepLen Last: {:?}", keep.len());
+
     let hist_0 = &collect::KeyCollection::<fastfield::FE, FieldElm>::final_values(
         &shares_00, &shares_01
     );
@@ -556,20 +615,76 @@ async fn run_level_last(
         &shares_22, &shares_20
     );
 
-    // assert_eq!(vals0.len(), vals1.len());
-    // let keep = collect::KeyCollection::<fastfield::FE,FieldElm>::keep_values_last(nreqs, &threshold, &vals0, &vals1);
-    // //println!("Keep: {:?}", keep);
-    // //println!("KeepLen: {:?}", keep.len());
+    // // Tree prune last
+    // let mut responses = vec![];
+    // // Session 0
+    // let cl = clients[0].clone();
+    // let k = keep.clone();
+    // responses.push(tokio::spawn(async move { 
+    //     cl.tree_prune_last(long_context(), HHTreePruneLastRequest { 
+    //         client_idx: 0, keep: k,
+    //     }).await
+    // }));
+    // let cl = clients[1].clone();
+    // let k = keep.clone();
+    // responses.push(tokio::spawn(async move { 
+    //     cl.tree_prune_last(long_context(), HHTreePruneLastRequest { 
+    //         client_idx: 1, keep: k,
+    //     }).await
+    // }));
 
-    // // Tree prune
-    // let req = HHTreePruneLastRequest { keep };
-    // let response0 = client0.tree_prune_last(long_context(), req.clone());
-    // let response1 = client1.tree_prune_last(long_context(), req);
-    // try_join!(response0, response1).unwrap();
+    // // Session 1
+    // let cl = clients[1].clone();
+    // let k = keep.clone();
+    // responses.push(tokio::spawn(async move { 
+    //     cl.tree_prune_last(long_context(), HHTreePruneLastRequest { 
+    //         client_idx: 0, keep: k,
+    //     }).await
+    // }));
+    // let cl = clients[2].clone();
+    // let k = keep.clone();
+    // responses.push(tokio::spawn(async move { 
+    //     cl.tree_prune_last(long_context(), HHTreePruneLastRequest { 
+    //         client_idx: 1, keep: k,
+    //     }).await
+    // }));
+
+    // // Session 2
+    // let cl = clients[2].clone();
+    // let k = keep.clone();
+    // responses.push(tokio::spawn(async move { 
+    //     cl.tree_prune_last(long_context(), HHTreePruneLastRequest { 
+    //         client_idx: 0, keep: k,
+    //     }).await
+    // }));
+    // let cl = clients[0].clone();
+    // let k = keep.clone();
+    // responses.push(tokio::spawn(async move { 
+    //     cl.tree_prune_last(long_context(), HHTreePruneLastRequest { 
+    //         client_idx: 1, keep: k,
+    //     }).await
+    // }));
+    
+    // // Session 2
+    // let cl = clients[0].clone();
+    // let k = keep.clone();
+    // responses.push(tokio::spawn(async move { 
+    //     cl.tree_prune_last(long_context(), HHTreePruneLastRequest { 
+    //         client_idx: 2, keep: k,
+    //     }).await
+    // }));
+    // let cl = clients[1].clone();
+    // let k = keep.clone();
+    // responses.push(tokio::spawn(async move { 
+    //     cl.tree_prune_last(long_context(), HHTreePruneLastRequest { 
+    //         client_idx: 2, keep: k,
+    //     }).await
+    // }));
+    // join_all(responses).await;
 
     for ((res_0, res_1), res_2) in hist_0.iter().zip_eq(hist_1).zip_eq(hist_2) {
-        assert_eq!(res_0.value.value(), res_1.value.value());
-        assert_eq!(res_0.value.value(), res_2.value.value());
+        debug_assert_eq!(res_0.value.value(), res_1.value.value());
+        debug_assert_eq!(res_0.value.value(), res_2.value.value());
         let bits = plasma::bits_to_bitstring(&res_0.path);
         if res_0.value.value().to_u32().unwrap() > 0 {
             println!("Value ({}) \t Count: {:?}", bits, res_0.value.value());
@@ -587,19 +702,19 @@ async fn main() -> io::Result<()> {
 
     env_logger::init();
     let (cfg, _, nreqs) = config::get_args("Leader", false, true);
-    debug_assert_eq!(cfg.data_len % 8, 0);
+    debug_assert_eq!(cfg.data_bytes % 8, 0);
 
     let client_0 = Client::new(
         client::Config::default(),
-        tcp::connect(cfg.server_0, Json::default).await?
+        tcp::connect(cfg.server_0, Bincode::default).await?
     ).spawn();
     let client_1 = Client::new(
         client::Config::default(),
-        tcp::connect(cfg.server_1, Json::default).await?
+        tcp::connect(cfg.server_1, Bincode::default).await?
     ).spawn();
     let client_2 = Client::new(
         client::Config::default(),
-        tcp::connect(cfg.server_2, Json::default).await?
+        tcp::connect(cfg.server_2, Bincode::default).await?
     ).spawn();
 
     let start = Instant::now();
@@ -642,28 +757,18 @@ async fn main() -> io::Result<()> {
     tree_init(&clients).await?;
 
     let start = Instant::now();
-    let bitlen = cfg.data_len * 8; // bits
-    for level in 0..bitlen-1 {
-        // let active_paths = run_level(&cfg, &mut client0, &mut client1, level, nreqs, start).await?;
-        run_level(&cfg, &clients, level, nreqs).await?;
-
-        // println!(
-        //     "Level {:?} active_paths={:?} {:?}",
-        //     level,
-        //     active_paths,
-        //     start.elapsed().as_secs_f64()
-        // );
+    let bitlen = cfg.data_bytes * 8; // bits
+    for _level in 0..bitlen-1 {
+        let start_level = Instant::now();
+        run_level(&cfg, &clients, nreqs).await?;
+        println!("Time for level {} :{:?}", _level, start_level.elapsed().as_secs_f64());
     }
+    println!("Time for {} levels: {:?}", bitlen, start.elapsed().as_secs_f64());
 
-    run_level_last(&cfg, &clients, nreqs).await?;
-
-    // let active_paths = run_level_last(&cfg, &mut client0, &mut client1, nreqs, start).await?;
-    // println!(
-    //     "Level {:?} active_paths={:?} {:?}",
-    //     bitlen,
-    //     active_paths,
-    //     start.elapsed().as_secs_f64()
-    // );
+    let start_last = Instant::now();
+    run_level_last(&clients, nreqs).await?;
+    println!("Time for last level: {:?}", start_last.elapsed().as_secs_f64());
+    println!("Total time {:?}", start.elapsed().as_secs_f64());
 
     Ok(())
 }

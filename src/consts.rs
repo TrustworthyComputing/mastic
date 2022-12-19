@@ -1,5 +1,5 @@
 // A separator used to break the code into two parts to aid memorability.
-pub const BATCH: bool = true;
+pub const BATCH: bool = false;
 
 // A separator used to break the code into two parts to aid memorability.
 pub const SEPARATOR: char = '+';

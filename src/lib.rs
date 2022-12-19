@@ -26,7 +26,6 @@ use num_traits::cast::ToPrimitive;
 #[macro_use]
 extern crate lazy_static;
 
-pub use crate::field::Dummy;
 pub use crate::field::FieldElm;
 pub use crate::histogram_rpc::CollectorClient as HistogramCollectorClient;
 pub use crate::hh_rpc::CollectorClient as HHCollectorClient;
@@ -43,7 +42,7 @@ pub trait Group {
     fn mul(&mut self, other: &Self);
     fn mul_lazy(&mut self, other: &Self);
     fn sub(&mut self, other: &Self);
-    fn hash(&self) -> Vec<u8>;
+    fn value(self) -> u64;
 }
 
 pub trait Share: Group + prg::FromRng + Clone {
@@ -183,6 +182,7 @@ pub fn check_hashes_and_taus(
             if h0.len() != h0.iter().zip_eq(h1.iter()).filter(|&(h0, h1)| h0 == h1).count() 
                 || t.value().to_usize().unwrap() != tau_check {
                 *v = false;
+                println!("t vs t_check: {:?} {}", t.value(), tau_check);
             }
         });
 }
