@@ -345,7 +345,7 @@ async fn run_level(
 
     assert_eq!(vals0.len(), vals1.len());
     let mut responses = vec![];
-    let keep = collect::KeyCollection::<fastfield::FE,FieldElm>::keep_values(nreqs, &threshold, &vals0, &vals1);
+    let keep = collect::KeyCollection::<fastfield::FE,FieldElm>::keep_values_cmp(&threshold, &vals0, &vals1);
 
     // Tree prune
     // Session 0

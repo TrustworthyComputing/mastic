@@ -8,6 +8,7 @@ use serde::Serialize;
 use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::u32;
+// use std::any::Any;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct FieldElm {
@@ -104,6 +105,13 @@ impl crate::Group for u64 {
         *self %= MODULUS_64;
     }
 
+    #[inline]
+    fn value(self) -> u64 {
+        println!("value: Group for u64");
+
+        self
+    }
+
 }
 
 impl crate::prg::FromRng for u64 {
@@ -164,6 +172,12 @@ impl crate::Group for FE {
     fn negate(&mut self) {
         use std::ops::Neg;
         *self = self.neg();
+    }
+
+    #[inline]
+    fn value(self) -> u64 {
+        // println!("value {}: Group for FE", self.value());
+        self.value() // TODO
     }
 
 }
@@ -283,6 +297,12 @@ impl crate::Group for FieldElm {
         self.value = &MODULUS.value - &self.value;
     }
 
+    #[inline]
+    fn value(self) -> u64 {
+        println!("value: Group for FieldElem");
+
+        self.value.to_u64_digits()[0]
+    }
 }
 
 impl crate::prg::FromRng for FieldElm {
@@ -354,6 +374,14 @@ where
         self.1.add(&inv1);
     }
 
+    // fn get<T: Behaviour + std::any::Any>(&mut self, name: &str) -> Option<& T> {
+
+    #[inline]
+    fn value(self) -> u64 {
+        println!("value: Group for (T, T)");
+
+        0u64
+    }
 }
 
 impl<T> crate::prg::FromRng for (T, T)

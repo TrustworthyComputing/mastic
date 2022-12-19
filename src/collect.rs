@@ -5,6 +5,9 @@ use crate::xor_vec;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
+use bitvec::prelude::*;
+use rand::Rng;
+use fast_math::log2_raw;
 
 #[derive(Clone)]
 struct TreeNode<T> {
@@ -31,6 +34,21 @@ pub struct KeyCollection<T,U> {
 pub struct Result<T> {
     pub path: Vec<bool>,
     pub value: T,
+}
+
+pub struct Dealer {
+    k: Vec<u8>,
+    c: u8,
+    kc: u8,
+}
+
+impl Dealer {
+    pub fn new() -> Dealer {
+        let mut rng = rand::thread_rng();
+        let k = vec![rng.gen::<u8>() % 2, rng.gen::<u8>() % 2];
+        let c = rng.gen::<u8>() % 2;
+        Dealer { kc: k[c as usize], k: k, c: c, }
+    }
 }
 
 impl<T,U> KeyCollection<T,U>
@@ -362,6 +380,225 @@ where
 
         // println!("Keep: {}", keep.len());
         keep
+    }
+
+    pub fn keep_values_cmp(threshold: &T, vals0: &[T], vals1: &[T]) -> Vec<bool> {
+        let mut keep = vec![];
+        let threshold_u8 = (*threshold).clone().value() as u8;
+        for i in 0..vals0.len() {
+            let mut vals_0_one = T::one();
+            vals_0_one.add(&vals0[i]);
+            let lt = Self::lt_const(threshold_u8, &vals_0_one, &vals1[i]);
+
+            if cfg!(debug_assertions) {
+                let mut v = T::zero();
+                v.add(&vals0[i]);
+                v.add(&vals1[i]);
+                println!("LT const");
+                assert_eq!(v >= *threshold, lt, "lt_const");
+            }            
+
+            // Keep nodes that are above threshold
+            keep.push(lt);
+        }
+
+        // println!("Keep: {}", keep.len());
+        keep
+    }
+
+    pub fn secret_share_bool(bit_array: &BitVec<u8>) -> (BitVec<u8>, BitVec<u8>) {
+        let mut rng = rand::thread_rng();
+        let mut sh_1 = BitVec::<u8>::with_capacity(8);
+        let mut sh_2 = BitVec::<u8>::with_capacity(8);
+        for i in 0..8 {
+            sh_1.push(rng.gen::<bool>());
+            sh_2.push(sh_1[i] ^ bit_array[i]);
+        }
+        (sh_1, sh_2)
+    }
+
+    pub fn reconstruct_shares_bool(ss0: &BitVec<u8>, ss1: &BitVec<u8>) -> BitVec<u8> {
+        assert_eq!(ss0.len(), ss1.len());
+        let mut reconstructed = BitVec::<u8>::with_capacity(8);
+        for (b0, b1) in ss0.iter().zip(ss1.iter()) {
+            reconstructed.push(*b0 ^ *b1);
+        }
+        reconstructed
+    }
+    
+    // P0 is the Sender with inputs (m0, m1)
+    // P1 is the Receiver with inputs (b, mb)
+    pub fn one_out_of_two_ot(
+        dealer: &Dealer,
+        receiver_b: u8,
+        sender_m: &Vec<u8>) -> u8
+    {
+        let z = receiver_b ^ dealer.c;
+        let y = {
+            if z == 0 {
+                vec![sender_m[0] ^ dealer.k[0], sender_m[1] ^ dealer.k[1]]
+            } else {
+                vec![sender_m[0] ^ dealer.k[1], sender_m[1] ^ dealer.k[0]]
+            }
+        };
+
+        y[receiver_b as usize] ^ dealer.kc
+    }
+
+    // OR: z = x | y = ~(~x & ~y)
+    //   ~(~x & ~y) = ~(~x * ~y) = ~( ~(p0.x + p1.x) * ~(p0.y + p1.y) ) =
+    //  ~( (~p0.x + p1.x) * (~p0.y + p1.y) ) =
+    //  ~( (~p0.x * ~p0.y) + (~p0.x * p1.y) + (p1.x * ~p0.y) + (p1.x * p1.y) ) =
+    //  P0 computes locally ~p0.x * ~p0.y
+    //  P1 computes locally p1.x * p1.y
+    //  Both parties compute via OT: ~p0.x * p1.y and p1.x * ~p0.y
+    pub fn or_gate(x0: bool, y0: bool, x1: bool, y1: bool) -> (bool, bool) {
+        let mut rng = rand::thread_rng();
+
+        // Online Phase - P1 receives r0 + p0.x * p1.y
+        let r0 = rng.gen::<bool>();
+        let dealer = Dealer::new();
+        let r0_x0y1 = Self::one_out_of_two_ot(
+            &dealer,
+            y1 as u8,
+            &vec![r0 as u8, (!x0 as u8) ^ (r0 as u8)]
+        ) != 0;
+
+        // Online Phase - P0 receives r1 + p1.x * p0.y
+        let r1 = rng.gen::<bool>();
+        let dealer = Dealer::new();
+        let r1_x1y0 = Self::one_out_of_two_ot(
+            &dealer,
+            !y0 as u8,
+            &vec![r1 as u8, (x1 as u8) ^ (r1 as u8)]
+        ) != 0;
+
+        // P0
+        let share_0 = !( (!x0 & !y0) ^ (r0 ^ r1_x1y0) );
+
+        // P1
+        let share_1 = (x1 & y1) ^ (r1 ^ r0_x0y1);
+
+        (share_0, share_1)
+    }
+
+    pub fn get_rand_edabit() -> ((T, BitVec<u8>), (T, BitVec<u8>)) {
+        let mut rng = rand::thread_rng();
+        let r = rng.gen::<u8>() % 64;
+        let r_bits = r.view_bits::<Lsb0>().to_bitvec();
+        let (r_0_bits, r_1_bits) = Self::secret_share_bool(&r_bits);
+        let (r_0, r_1) = T::from(r as u32).share();
+        ((r_0, r_0_bits), (r_1, r_1_bits))
+    }
+    
+    // Returns c = x < R
+    fn lt_bits(
+        const_r: u8, sh_0: &BitVec<u8>, sh_1: &BitVec<u8>
+    ) -> (BitVec<u8>, BitVec<u8>) {
+        let r_bits = const_r.view_bits::<Lsb0>().to_bitvec();
+
+        // Step 1
+        let mut y_bits_0 = bitvec![u8, Lsb0; 0; 8];
+        let mut y_bits_1 = bitvec![u8, Lsb0; 0; 8];
+        for i in 0..8 {
+            y_bits_0.set(i, sh_0[i] ^ r_bits[i]);
+            y_bits_1.set(i, sh_1[i]);
+        }
+
+        // Step 2 - PreOpL
+        let log_m = log2_raw(8 as f32).ceil() as usize;
+        for i in 0..log_m {
+            for j in 0..(8 / (1 << (i + 1))) {
+                let y = ((1 << i) + j * (1 << (i + 1))) - 1;
+                for z in 1..(1 << (i + 1)) {
+                    if y + z < 8 {
+                        let idx_y = 8 - 1 - y;
+                        let (or_0, or_1) = Self::or_gate(
+                            y_bits_0[idx_y], y_bits_0[idx_y - z],
+                            y_bits_1[idx_y], y_bits_1[idx_y - z]
+                        );
+                        y_bits_0.set(idx_y - z, or_0);
+                        y_bits_1.set(idx_y - z, or_1);
+                    }
+                }
+            }
+        }
+        y_bits_0.push(false);
+        y_bits_1.push(false);
+        let z_bits_0 = y_bits_0;
+        let z_bits_1 = y_bits_1;
+
+        // Step 3
+        let mut w_bits_0 = bitvec![u8, Lsb0; 0; 8];
+        let mut w_bits_1 = bitvec![u8, Lsb0; 0; 8];
+        for i in 0..8 {
+            w_bits_0.set(i, z_bits_0[i] ^ z_bits_0[i+1]); // -
+            w_bits_1.set(i, z_bits_1[i] ^ z_bits_1[i+1]); // -
+        }
+
+        // Step 4
+        let mut sum_0 = 0u8;
+        let mut sum_1 = 0u8;
+        for i in 0..8 {
+            sum_0 += if r_bits[i] & w_bits_0[i] { 1 } else { 0 };
+            sum_1 += if r_bits[i] & w_bits_1[i] { 1 } else { 0 };
+        }
+
+        (sum_0.view_bits::<Lsb0>().to_bitvec(), sum_1.view_bits::<Lsb0>().to_bitvec())
+    }
+
+    fn lt_const(const_r: u8, x_0: &T, x_1: &T) -> bool {
+        let ((r_0, r_0_bits), (r_1, r_1_bits)) = Self::get_rand_edabit();
+        let const_m = 1 << 8;
+    
+        // Step 1
+        let mut a_0 = T::zero();
+        a_0.add(x_0);
+        a_0.add(&r_0);
+    
+        let mut a_1 = T::zero();
+        a_1.add(x_1);
+        a_1.add(&r_1);
+        
+        let b_0 = a_0.clone();
+        let mut b_1 = a_1.clone();
+        let const_r_fe = T::from(const_m - const_r as u32);
+        b_1.add(&const_r_fe);
+    
+        // Step 2
+        let mut a = T::zero();
+        a.add(&a_0);
+        a.add(&a_1);
+    
+        let mut b = T::zero();
+        b.add(&b_0);
+        b.add(&b_1);
+    
+        // Step 3
+        let (w1_0, w1_1) = Self::lt_bits(a.clone().value() as u8, &r_0_bits, &r_1_bits);
+        let w1 = Self::reconstruct_shares_bool(&w1_0, &w1_1)[0];
+        let (w2_0, w2_1) = Self::lt_bits(b.clone().value() as u8, &r_0_bits, &r_1_bits);
+        let w2 = Self::reconstruct_shares_bool(&w2_0, &w2_1)[0];
+        let w3 = (b.clone().value() as u8) < (const_m - const_r as u32) as u8;
+    
+        let w1_val = w1 as i8;
+        let w2_val = w2 as i8;
+        let w3_val = w3 as i8;
+        let c = 1 - (w1_val - w2_val + w3_val);
+
+        if cfg!(debug_assertions) {
+            println!("\tR: {}", const_r);
+            println!("\tM: {}", const_m);
+            println!("\tb.value() {} < M - R: {}", b.clone().value() as u8, const_m - const_r as u32);
+            println!("\ta u8: {}", a.clone().value() as u8);
+            println!("\tb u8: {}", b.clone().value() as u8);
+            println!("\tw1_val: {}", w1_val);
+            println!("\tw2_val: {}", w2_val);
+            println!("\tw3_val: {}", w3_val);
+            println!("\tw: x < {} : {}", const_r, c % 2);
+        }
+        
+        c % 2 == 0
     }
 
     pub fn keep_values_last(_nclients: usize, threshold: &U, vals0: &[Result::<U>], vals1: &[Result::<U> ]) -> Vec<bool> {

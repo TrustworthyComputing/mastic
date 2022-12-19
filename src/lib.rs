@@ -42,6 +42,7 @@ pub trait Group {
     fn mul(&mut self, other: &Self);
     fn mul_lazy(&mut self, other: &Self);
     fn sub(&mut self, other: &Self);
+    fn value(self) -> u64;
 }
 
 pub trait Share: Group + prg::FromRng + Clone {
