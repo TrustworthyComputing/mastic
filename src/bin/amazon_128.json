@@ -1,0 +1,10 @@
+{
+  "data_bytes": 16,
+  "threshold": 0,
+  "server_0": "3.140.71.107:8000",
+  "server_1": "18.222.42.81:8001",
+  "server_2": "3.129.193.161:8002",
+  "addkey_batch_size": 100,
+  "unique_buckets": 10,
+  "zipf_exponent": 1.03
+}

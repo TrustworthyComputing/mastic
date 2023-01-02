@@ -1,5 +1,5 @@
 {
-  "data_len": 1,
+  "data_bytes": 32,
   "threshold": 0,
   "server_0": "3.140.71.107:8000",
   "server_1": "18.222.42.81:8001",

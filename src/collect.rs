@@ -104,7 +104,7 @@ where
         self.frontier.push(root);
     }
 
-    fn make_tree_node(&self, parent: &TreeNode<T>, dir: bool, hh: bool) -> TreeNode<T> {
+    fn make_tree_node(&self, parent: &TreeNode<T>, dir: bool, _hh: bool) -> TreeNode<T> {
         let (key_states, key_values): (Vec<dpf::EvalState>, Vec<T>) = self
             .keys
             .par_iter()
@@ -114,42 +114,42 @@ where
             })
             .unzip();
 
+        // let mut hashes = vec![];
+        // let mut hasher = Sha256::new();
+        let mut bit_str = crate::bits_to_bitstring(parent.path.as_slice());
+        bit_str.push(if dir {'1'} else {'0'});
+
         let mut child_val = T::zero();
+        // for (i, (v, ks)) in key_values.iter().zip(key_states.iter()).enumerate() {
         for (i, v) in key_values.iter().enumerate() {
             // Add in only live values
             if self.keys[i].0 {
                 child_val.add_lazy(&v);
+
+                // if _hh {
+                //     // pre_image = x | seed_b
+                //     let mut pre_image = bit_str.clone();
+                //     pre_image.push_str(&String::from_utf8_lossy(&ks.seed.key));
+    
+                //     hasher.update(pre_image);
+                //     let mut pi_prime = hasher.finalize_reset().to_vec();
+            
+                //     // Correction operation
+                //     if ks.bit {
+                //         pi_prime = xor_vec(&pi_prime, &self.keys[i].1.cs);
+                //     }
+                //     hashes.push(pi_prime);
+                // }
             }
         }
         child_val.reduce();
-
-        let mut hashes = vec![];
-        if hh {
-            let mut bit_str = crate::bits_to_bitstring(parent.path.as_slice());
-            bit_str.push(if dir {'1'} else {'0'});
-            let mut hasher = Sha256::new();
-            for (i, ks) in key_states.iter().enumerate() {
-                // pre_image = x | seed_b
-                let mut pre_image = bit_str.clone();
-                pre_image.push_str(&String::from_utf8_lossy(&ks.seed.key));
-
-                hasher.update(pre_image);
-                let mut pi_prime = hasher.finalize_reset().to_vec();
-        
-                // Correction operation
-                if ks.bit {
-                    pi_prime = xor_vec(&pi_prime, &self.keys[i].1.cs);
-                }
-                hashes.push(pi_prime);    
-            }
-        }
 
         let mut child = TreeNode::<T> {
             path: parent.path.clone(),
             value: child_val,
             key_states,
             key_values,
-            hashes: hashes,
+            hashes: vec![],
         };
 
         child.path.push(dir);
