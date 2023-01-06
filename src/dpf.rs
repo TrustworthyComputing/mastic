@@ -158,16 +158,16 @@ where
         let last_cor_word: CorWord<U> = gen_cor_word::<U>(
             alpha_bits[values.len()], value_last.clone(), &mut bits, &mut seeds);
 
-        let mut bit_str_0 = bits_to_bitstring(alpha_bits);
-        let mut bit_str_1 = bit_str_0.clone();
-        bit_str_0.push_str(&String::from_utf8_lossy(&seeds.0.key));
-        bit_str_1.push_str(&String::from_utf8_lossy(&seeds.1.key));
+        let bit_str_0 = bits_to_bitstring(alpha_bits);
+        let bit_str_1 = bit_str_0.clone();
         
         let mut hasher = Sha256::new();
         hasher.update(bit_str_0);
+        hasher.update(&seeds.0.key);
         let pi_0 = hasher.finalize_reset().to_vec();
 
         hasher.update(bit_str_1);
+        hasher.update(&seeds.1.key);
         let pi_1 = hasher.finalize().to_vec();
         let pi = crate::xor_vec(&pi_0, &pi_1);
 

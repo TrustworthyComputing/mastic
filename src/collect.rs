@@ -126,23 +126,35 @@ where
             if self.keys[i].0 {
                 child_val.add_lazy(&v);
 
-                // if _hh {
-                //     // pre_image = x | seed_b
-                //     let mut pre_image = bit_str.clone();
-                //     pre_image.push_str(&String::from_utf8_lossy(&ks.seed.key));
-    
-                //     hasher.update(pre_image);
-                //     let mut pi_prime = hasher.finalize_reset().to_vec();
-            
-                //     // Correction operation
-                //     if ks.bit {
-                //         pi_prime = xor_vec(&pi_prime, &self.keys[i].1.cs);
-                //     }
-                //     hashes.push(pi_prime);
+                // // pre_image = x | seed_b
+                // hasher.update(bit_str.clone());
+                // hasher.update(&ks.seed.key);
+                // let mut pi_prime = hasher.finalize_reset().to_vec();
+        
+                // // Correction operation
+                // if ks.bit {
+                //     pi_prime = xor_vec(&pi_prime, &self.keys[i].1.cs);
                 // }
+                // hashes.push(pi_prime);
             }
         }
         child_val.reduce();
+
+        let _hashes = key_states
+            .par_iter()
+            .enumerate()
+            .map(|(i, ks)| {
+                let mut hasher = Sha256::new();
+                hasher.update(bit_str.clone());
+                hasher.update(ks.seed.key);
+                let mut pi_prime = hasher.finalize().to_vec();
+                // Correction operation
+                if ks.bit {
+                    pi_prime = xor_vec(&pi_prime, &self.keys[i].1.cs);
+                }
+                pi_prime
+            })
+            .collect::<Vec<_>>();
 
         let mut child = TreeNode::<T> {
             path: parent.path.clone(),
@@ -175,21 +187,21 @@ where
 
         let mut hashes = vec![];
         if !dir {
-            let mut hasher = Sha256::new();
-            for (i, ks) in key_states.iter().enumerate() {
-                // pre_image = x | seed_b
-                let mut pre_image = bit_str.clone();
-                pre_image.push_str(&String::from_utf8_lossy(&ks.seed.key));
-
-                hasher.update(pre_image);
-                let mut pi_prime = hasher.finalize_reset().to_vec();
-        
-                // Correction operation
-                if ks.bit {
-                    pi_prime = xor_vec(&pi_prime, &self.keys[i].1.cs);
-                }
-                hashes.push(pi_prime);    
-            }
+            hashes = key_states
+                .par_iter()
+                .enumerate()
+                .map(|(i, ks)| {
+                    let mut hasher = Sha256::new();
+                    hasher.update(bit_str.clone());
+                    hasher.update(ks.seed.key);
+                    let mut pi_prime = hasher.finalize().to_vec();
+                    // Correction operation
+                    if ks.bit {
+                        pi_prime = xor_vec(&pi_prime, &self.keys[i].1.cs);
+                    }
+                    pi_prime
+                })
+                .collect::<Vec<_>>();
         }
         let mut path = parent.path.clone();
         path.push(dir);
