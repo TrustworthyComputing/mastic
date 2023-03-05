@@ -763,7 +763,7 @@ async fn main() -> io::Result<()> {
         run_level(&cfg, &clients, nreqs).await?;
         println!("Time for level {} :{:?}", _level, start_level.elapsed().as_secs_f64());
     }
-    println!("Time for {} levels: {:?}", bitlen, start.elapsed().as_secs_f64());
+    println!("\nTime for {} levels: {:?}", bitlen, start.elapsed().as_secs_f64());
 
     let start_last = Instant::now();
     run_level_last(&clients, nreqs).await?;

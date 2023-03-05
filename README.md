@@ -1,10 +1,10 @@
-# Incremental Distributed Point Functions for Plus Codes
-## WARNING: This is not production-ready code.
+# PLASMA: Private, Lightweight Aggregated Statistics against Malicious Adversaries with Full Security
+### WARNING: This is not production-ready code.
 
 This is software for a research prototype. Please
 do *NOT* use this code in production.
-
 This repository builds upon [heavy-hitters](https://github.com/henrycg/heavyhitters).
+
 
 ## Getting started
 First, make sure that you have a working Rust installation:
@@ -21,80 +21,68 @@ cargo 1.65.0-nightly
 cargo build --release
 ```
 
-### Run tets
-```bash
-$ cargo test
-... lots of output ...
-```
-
 ## Heavy Hitters
 
 Server 0:
 ```bash
-$ cargo run --release --bin hh-server -- --config src/bin/test.json --server_id 0
+$ cargo run --release --bin hh-server -- --config src/bin/config_32.json --server_id 0
 ```
 
 Server 1:
 ```bash
-$ cargo run --release --bin hh-server -- --config src/bin/test.json --server_id 1
+$ cargo run --release --bin hh-server -- --config src/bin/config_32.json --server_id 1
 ```
 
 Server 2:
 ```bash
-$ cargo run --release --bin hh-server -- --config src/bin/test.json --server_id 2
+$ cargo run --release --bin hh-server -- --config src/bin/config_32.json --server_id 2
 ```
 
 Now, the servers should be ready to process client requests. In a third shell, run the following command to send 100 client requests to the servers (this will take some time):
 
 Clients:
 ```bash
-$ cargo run --release --bin hh-leader -- --config src/bin/test.json -n 100
+$ cargo run --release --bin hh-leader -- --config src/bin/config_32.json -n 100
 ```
 
 ## Histogram
 
 Server 0:
 ```bash
-$ cargo run --release --bin histogram-server -- --config src/bin/config.json --server_id 0
+$ cargo run --release --bin histogram-server -- --config src/bin/config_8_histogram.json --server_id 0
 ```
 
 Server 1:
 ```bash
-$ cargo run --release --bin histogram-server -- --config src/bin/config.json --server_id 1
+$ cargo run --release --bin histogram-server -- --config src/bin/config_8_histogram.json --server_id 1
 ```
 
 Server 2:
 ```bash
-$ cargo run --release --bin histogram-server -- --config src/bin/config.json --server_id 2
-```
-
-Server 2:
-```bash
-$ cargo run --release --bin histogram-server -- --config src/bin/histogram.json --server_id 2
+$ cargo run --release --bin histogram-server -- --config src/bin/config_8_histogram.json --server_id 2
 ```
 
 Now, the servers should be ready to process client requests. In a third shell, run the following command to send 100 client requests to the servers (this will take some time):
 
 Clients:
 ```bash
-$ cargo run --release --bin histogram-leader -- --config src/bin/config.json -n 100
+$ cargo run --release --bin histogram-leader -- --config src/bin/config_8_histogram.json -n 100
 ```
 
 
 ## The config file
 
-The client and servers use a common configuration file, which contains the parameters for the system. An example of one such file is in `src/bin/test.json`. The contents of that file are here:
+The client and servers use a common configuration file, which contains the parameters for the system. An example of one such file is in `src/bin/config_32.json`. The contents of that file are here:
 
 ```
 {
-  "data_bytes": 512, // in iDPF this is #bits, in Histograms this is #bytes
-  "threshold": 0.001,
-  "server0": "0.0.0.0:8000",
-  "server1": "0.0.0.0:8001",
+  "data_bytes": 4,
+  "threshold": 0.01,
+  "server_0": "0.0.0.0:8000",
+  "server_1": "0.0.0.0:8001",
+  "server_2": "0.0.0.0:8002",
   "addkey_batch_size": 100,
-  "sketch_batch_size": 100000,
-  "sketch_batch_size_last": 25000,
-  "unique_buckets": 10000,
+  "unique_buckets": 10,
   "zipf_exponent": 1.03
 }
 ```

@@ -182,7 +182,7 @@ pub fn check_hashes_and_taus(
             if h0.len() != h0.iter().zip_eq(h1.iter()).filter(|&(h0, h1)| h0 == h1).count() 
                 || t.value().to_usize().unwrap() != tau_check {
                 *v = false;
-                println!("t vs t_check: {:?} {}", t.value(), tau_check);
+                // println!("t vs t_check: {:?} {}", t.value(), tau_check);
             }
         });
 }
