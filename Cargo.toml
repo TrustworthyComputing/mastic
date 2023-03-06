@@ -1,10 +1,10 @@
 [package]
 name = "plasma"
-description = "Library for translating between GPS coordinates (WGS84) and Open Location Code"
+description = "PLASMA: Private, Lightweight Aggregated Statistics against Malicious Adversaries with Full Security"
 version = "0.1.0"
 edition = "2021"
 authors = ["Dimitris Mouris <jimouris@udel.edu>"]
-keywords = ["cryptography", "secret-sharing", "distributed-point-functions", "dpf", "fss", "geography", "geospatial", "gis", "gps", "olc"]
+keywords = ["cryptography", "secret-sharing", "distributed-point-functions", "DPF", "VIDPF", "PLASMA"]
 license = "MIT"
 
 
@@ -21,6 +21,7 @@ geo = "0.16.0"
 hex = "0.4.3"
 itertools = "0.10.5"
 lazy_static = "1.4"
+rs_merkle = "1.2"
 num = "0.4.0"
 num-bigint = { version = "0.4.3", features = ["rand", "serde"] }
 num-traits = "0.2.15"

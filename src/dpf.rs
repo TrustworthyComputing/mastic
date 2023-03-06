@@ -1,6 +1,5 @@
 use crate::prg;
 use crate::Group;
-use crate::bits_to_bitstring;
 
 use sha2::{Sha256, Digest};
 use serde::Deserialize;
@@ -19,7 +18,7 @@ pub struct DPFKey<T,U> {
     root_seed: prg::PrgSeed,
     cor_words: Vec<CorWord<T>>,
     cor_word_last: CorWord<U>,
-    pub cs: Vec<u8>,
+    pub cs: Vec<Vec<u8>>,
 }
 
 #[derive(Clone, Debug)]
@@ -149,33 +148,28 @@ where
         let mut seeds = root_seeds.clone();
         let mut bits = root_bits;
 
+        let mut hasher = Sha256::new();
         let mut cor_words: Vec<CorWord<T>> = Vec::new();
+        let mut cs: Vec<Vec<u8>> = Vec::new();
+        let mut bit_str: String = "".to_string();
         for i in 0..(alpha_bits.len()-1) {
             let bit = alpha_bits[i];
+            bit_str.push_str(if bit { "1" } else { "0" });
             let cw = gen_cor_word::<T>(bit, values[i].clone(), &mut bits, &mut seeds);
             cor_words.push(cw);
+            
+            hasher.update(&bit_str);
+            hasher.update(&seeds.0.key);
+            let pi_0 = hasher.finalize_reset().to_vec();
+    
+            hasher.update(&bit_str);
+            hasher.update(&seeds.1.key);
+            let pi_1 = hasher.finalize_reset().to_vec();
+            cs.push(crate::xor_vec(&pi_0, &pi_1));
+
         }
         let last_cor_word: CorWord<U> = gen_cor_word::<U>(
             alpha_bits[values.len()], value_last.clone(), &mut bits, &mut seeds);
-
-        let bit_str_0 = bits_to_bitstring(alpha_bits);
-        let bit_str_1 = bit_str_0.clone();
-        
-        let mut hasher = Sha256::new();
-        hasher.update(bit_str_0);
-        hasher.update(&seeds.0.key);
-        let pi_0 = hasher.finalize_reset().to_vec();
-
-        hasher.update(bit_str_1);
-        hasher.update(&seeds.1.key);
-        let pi_1 = hasher.finalize().to_vec();
-        let pi = crate::xor_vec(&pi_0, &pi_1);
-
-        // println!("CW(n) {:?}", last_cor_word);
-        // println!("pi_0(n) {:?}", pi_0);
-        // println!("pi_1(n) {:?}", pi_1);
-        // println!("pi(n) {:?}", pi);
-        // println!();
 
         (
             DPFKey::<T,U> {
@@ -183,14 +177,14 @@ where
                 root_seed: root_seeds.0,
                 cor_words: cor_words.clone(),
                 cor_word_last: last_cor_word.clone(),
-                cs: pi.clone(),
+                cs: cs.clone(),
             },
             DPFKey::<T,U> {
                 key_idx: true,
                 root_seed: root_seeds.1,
-                cor_words,
+                cor_words: cor_words,
                 cor_word_last: last_cor_word,
-                cs: pi,
+                cs: cs,
             },
         )
     }

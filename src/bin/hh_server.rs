@@ -87,13 +87,17 @@ impl Collector for BatchCollectorServer {
 
     async fn tree_crawl(self, 
         _: context::Context, req: HHTreeCrawlRequest
-    ) -> Vec<FE> {
+    ) -> (Vec<FE>, Vec<Vec<Vec<u8>>>){
         // let start = Instant::now();
         let client_idx = req.client_idx as usize;
         debug_assert!(client_idx <= 2);
         let mut coll = self.cs[client_idx].arc.lock().unwrap();
         let res = coll.hh_tree_crawl();
         // println!("session {:?}: hh_tree_crawl: {:?}", client_idx, start.elapsed().as_secs_f64());
+        if res.1[0][0][0] != 0 {
+            println!("index {:?}: Hash : {:?}", client_idx, res.1[0][0].iter().map(|x| format!("{:02x}", x)).collect::<String>());
+        }
+
         res
     }
 

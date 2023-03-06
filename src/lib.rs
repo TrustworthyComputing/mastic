@@ -179,10 +179,11 @@ pub fn check_hashes_and_taus(
         .zip(hashes_1)
         .zip(tau_vals)
         .for_each(|(((v, h0), h1), t)| {
-            if h0.len() != h0.iter().zip_eq(h1.iter()).filter(|&(h0, h1)| h0 == h1).count() 
-                || t.value().to_usize().unwrap() != tau_check {
+            if h0.len() != h0.iter().zip_eq(h1.iter()).filter(|&(h0, h1)| h0 == h1).count() {
+                if t.value().to_usize().unwrap() != tau_check {
+                    println!("t vs t_check: {:?} {}", t.value(), tau_check);
+                }
                 *v = false;
-                // println!("t vs t_check: {:?} {}", t.value(), tau_check);
             }
         });
 }

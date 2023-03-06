@@ -1,16 +1,33 @@
 use crate::dpf;
 use crate::prg;
-use crate::xor_vec;
+use crate::{xor_vec, xor_three_vecs};
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 use bitvec::prelude::*;
+use rs_merkle::MerkleTree;
 use rand::Rng;
 use rand::distributions::Standard;
 use rand::prelude::Distribution;
 use fast_math::log2_raw;
 use core::convert::TryFrom;
+
+use rs_merkle::{Hasher};
+use sha2::{digest::FixedOutput};
+
+#[derive(Clone)]
+pub struct Sha256Algorithm {}
+
+impl Hasher for Sha256Algorithm {
+    type Hash = [u8; 32];
+
+    fn hash(data: &[u8]) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(data);
+        <[u8; 32]>::from(hasher.finalize_fixed())
+    }
+}
 
 #[derive(Clone)]
 struct TreeNode<T> {
@@ -28,6 +45,7 @@ unsafe impl<T> Sync for TreeNode<T> {}
 pub struct KeyCollection<T,U> {
     depth: usize,
     pub keys: Vec<(bool, dpf::DPFKey<T,U>)>,
+    pub pis: Vec<Vec<Vec<u8>>>,
     frontier: Vec<TreeNode<T>>,
     frontier_last: Vec<TreeNode<U>>,
     frontier_intermediate: Vec<(TreeNode<U>, TreeNode<U>)>,
@@ -74,6 +92,7 @@ where
         KeyCollection::<T,U> {
             depth,
             keys: vec![],
+            pis: vec![],
             frontier: vec![],
             frontier_last: vec![],
             frontier_intermediate: vec![],
@@ -81,6 +100,7 @@ where
     }
 
     pub fn add_key(&mut self, key: dpf::DPFKey<T,U>) {
+        self.pis.push(key.cs.clone());
         self.keys.push((true, key));
     }
 
@@ -125,43 +145,46 @@ where
             // Add in only live values
             if self.keys[i].0 {
                 child_val.add_lazy(&v);
-
-                // // pre_image = x | seed_b
-                // hasher.update(bit_str.clone());
-                // hasher.update(&ks.seed.key);
-                // let mut pi_prime = hasher.finalize_reset().to_vec();
-        
-                // // Correction operation
-                // if ks.bit {
-                //     pi_prime = xor_vec(&pi_prime, &self.keys[i].1.cs);
-                // }
-                // hashes.push(pi_prime);
             }
         }
         child_val.reduce();
 
-        let _hashes = key_states
+        let hashes: Vec<[u8; 32]> = key_states
             .par_iter()
             .enumerate()
             .map(|(i, ks)| {
                 let mut hasher = Sha256::new();
-                hasher.update(bit_str.clone());
+                hasher.update(&bit_str);
                 hasher.update(ks.seed.key);
-                let mut pi_prime = hasher.finalize().to_vec();
+                let pi_prime = hasher.finalize_reset().to_vec();
+
                 // Correction operation
-                if ks.bit {
-                    pi_prime = xor_vec(&pi_prime, &self.keys[i].1.cs);
+                let h: [u8; 32];
+                if !ks.bit {
+                    // H(pi ^ correct(pi_prime, cs, t0)) = H(pi ^ pi_prime)
+                    h = xor_vec(&self.pis[i][0], &pi_prime).try_into().unwrap();
+                } else {
+                    // H(pi ^ correct(pi_prime, cs, t0)) = H(pi ^ pi_prime)
+                    let cs_t = &self.keys[i].1.cs[0];
+                    h = xor_three_vecs(&self.pis[i][0], &pi_prime, cs_t).try_into().unwrap();
                 }
-                pi_prime
+                hasher.update(h);
+                xor_vec(&hasher.finalize().to_vec(), &self.pis[i][0]).try_into().unwrap()
             })
             .collect::<Vec<_>>();
+        let mut root = [0u8; 32];
+        if bit_str.len() < 2 {
+            let mt = MerkleTree::<Sha256Algorithm>::from_leaves(hashes.as_slice());
+            root = mt.root().unwrap();
+        }
 
         let mut child = TreeNode::<T> {
+            // path: parent.path.clone(),
             path: parent.path.clone(),
             value: child_val,
             key_states,
             key_values,
-            hashes: vec![],
+            hashes: vec![root.to_vec()],
         };
 
         child.path.push(dir);
@@ -180,11 +203,9 @@ where
             })
             .unzip();
 
-        // Construct path: parent.path | bit
-        // pi_b = H(x | seed_b)
-        let mut bit_str = crate::bits_to_bitstring(parent.path.as_slice());
-        bit_str.push(if dir {'1'} else {'0'});
-
+        let bit_str = crate::bits_to_bitstring(parent.path.as_slice());
+        // bit_str.push(if dir {'1'} else {'0'});
+        let depth = bit_str.len();
         let mut hashes = vec![];
         if !dir {
             hashes = key_states
@@ -192,14 +213,19 @@ where
                 .enumerate()
                 .map(|(i, ks)| {
                     let mut hasher = Sha256::new();
-                    hasher.update(bit_str.clone());
-                    hasher.update(ks.seed.key);
-                    let mut pi_prime = hasher.finalize().to_vec();
+                    hasher.update(&bit_str);
+                    hasher.update(&parent.key_states[i].seed.key);
+                    let pi_prime = hasher.finalize().to_vec();
                     // Correction operation
-                    if ks.bit {
-                        pi_prime = xor_vec(&pi_prime, &self.keys[i].1.cs);
+                    let h: Vec<u8>;
+                    if !ks.bit {
+                        // H(pi ^ correct(pi_prime, cs, t0)) = H(pi ^ pi_prime)
+                        h = xor_vec(&self.pis[i][depth-1], &pi_prime);
+                    } else {
+                        // H(pi ^ correct(pi_prime, cs, t0)) = H(pi ^ pi_prime)
+                        h = xor_three_vecs(&self.pis[i][depth-1], &pi_prime, &self.keys[i].1.cs[depth-1]);
                     }
-                    pi_prime
+                    h
                 })
                 .collect::<Vec<_>>();
         }
@@ -233,7 +259,7 @@ where
         }
     }
 
-    pub fn hh_tree_crawl(&mut self) -> Vec<T> {
+    pub fn hh_tree_crawl(&mut self) -> (Vec<T>, Vec<Vec<Vec<u8>>>) {
         let next_frontier = self
             .frontier
             .par_iter()
@@ -252,8 +278,13 @@ where
             .map(|node| node.value.clone())
             .collect::<Vec<T>>();
 
+        let hashes = next_frontier
+            .par_iter()
+            .map(|node| node.hashes.clone())
+            .collect::<Vec<_>>();
+
         self.frontier = next_frontier;
-        values
+        (values, hashes)
     }
 
     pub fn histogram_tree_crawl(&mut self) {
@@ -308,7 +339,9 @@ where
             final_hashes = final_hashes
                 .par_iter_mut()
                 .zip_eq(&node.0.hashes)
-                .map(|(v1, v2)| xor_vec(&v1, &v2))
+                .map(|(v1, v2)| {
+                    xor_vec(&v1, &v2)
+                })
                 .collect();
 
             tau_vals = tau_vals
@@ -360,9 +393,6 @@ where
             })
             .flatten()
             .collect::<Vec<TreeNode<U>>>();
-
-        // self.frontier_last = next_frontier; //.clone();
-
         next_frontier
             .par_iter()
             .map(|node| Result::<U> {
@@ -427,12 +457,12 @@ where
             vals_0_one.add(&vals0[i]);
             let lt = Self::lt_const(thresh, &vals_0_one, &vals1[i]);
 
-            if cfg!(debug_assertions) {
-                let mut v = T::zero();
-                v.add(&vals0[i]);
-                v.add(&vals1[i]);
-                assert_eq!(v >= *threshold, lt, "lt_const: v >= *threshold, lt");
-            }            
+            // if cfg!(debug_assertions) {
+            //     let mut v = T::zero();
+            //     v.add(&vals0[i]);
+            //     v.add(&vals1[i]);
+            //     assert_eq!(v >= *threshold, lt, "lt_const: v >= *threshold, lt");
+            // }            
 
             // Keep nodes that are above threshold
             keep.push(lt);

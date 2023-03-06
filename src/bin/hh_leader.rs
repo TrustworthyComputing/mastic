@@ -101,11 +101,11 @@ async fn reset_servers(
         long_context(), HHResetRequest { client_idx: 0 }
     ));
     responses.push(clients[0].reset(
-        long_context(), HHResetRequest { client_idx: 1 }
+        long_context(), HHResetRequest { client_idx: 2 }
     ));
 
     responses.push(clients[0].reset(
-        long_context(), HHResetRequest { client_idx: 2 }
+        long_context(), HHResetRequest { client_idx: 1 }
     ));
     responses.push(clients[1].reset(
         long_context(), HHResetRequest { client_idx: 2 }
@@ -159,7 +159,7 @@ async fn tree_init(
     let cl = clients[0].clone();
     responses.push(tokio::spawn(async move { 
         cl.tree_init(long_context(), HHTreeInitRequest { 
-            client_idx: 1
+            client_idx: 2
         }).await
     }));
 
@@ -167,7 +167,7 @@ async fn tree_init(
     let cl = clients[0].clone();
     responses.push(tokio::spawn(async move { 
         cl.tree_init(long_context(), HHTreeInitRequest { 
-            client_idx: 2
+            client_idx: 1
         }).await
     }));
     let cl = clients[1].clone();
@@ -227,8 +227,8 @@ async fn add_keys(
             client_idx: 0, keys: keys
         }).await
     }));
-    let cl = clients[2].clone();
     let keys = addkeys_1[1].clone();
+    let cl = clients[2].clone();
     responses.push(tokio::spawn(async move { 
         cl.add_keys(long_context(), HHAddKeysRequest { 
             client_idx: 1, keys: keys
@@ -236,31 +236,31 @@ async fn add_keys(
     }));
 
     // Session 2
-    let cl = clients[2].clone();
     let keys = addkeys_0[2].clone();
+    let cl = clients[2].clone();
     responses.push(tokio::spawn(async move { 
         cl.add_keys(long_context(), HHAddKeysRequest { 
             client_idx: 0, keys: keys
         }).await
     }));
-    let cl = clients[0].clone();
     let keys = addkeys_1[2].clone();
-    responses.push(tokio::spawn(async move { 
-        cl.add_keys(long_context(), HHAddKeysRequest { 
-            client_idx: 1, keys: keys
-        }).await
-    }));
-    
-    // extra
     let cl = clients[0].clone();
-    let keys = addkeys_0[2].clone();
     responses.push(tokio::spawn(async move { 
         cl.add_keys(long_context(), HHAddKeysRequest { 
             client_idx: 2, keys: keys
         }).await
     }));
+    
+    // extra
+    let keys = addkeys_1[1].clone();
+    let cl = clients[0].clone();
+    responses.push(tokio::spawn(async move { 
+        cl.add_keys(long_context(), HHAddKeysRequest { 
+            client_idx: 1, keys: keys
+        }).await
+    }));
+    let keys = addkeys_0[2].clone();
     let cl = clients[1].clone();
-    let keys = addkeys_1[2].clone();
     responses.push(tokio::spawn(async move { 
         cl.add_keys(long_context(), HHAddKeysRequest { 
             client_idx: 2, keys: keys
@@ -310,28 +310,28 @@ async fn run_level(
         }).await
     }));
 
-    // Session 2
-    let cl = clients[2].clone();
-    responses.push(tokio::spawn(async move { 
-        cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
-            client_idx: 0,
-        }).await
-    }));
+    // extra
     let cl = clients[0].clone();
     responses.push(tokio::spawn(async move { 
         cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
             client_idx: 1,
         }).await
     }));
-
-    // extra
-    let cl = clients[0].clone();
-    let response_00 = tokio::spawn(async move { 
+    let cl = clients[1].clone();
+    responses.push(tokio::spawn(async move { 
         cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
             client_idx: 2,
         }).await
+    }));
+
+    // Session 2
+    let cl = clients[2].clone();
+    let response_00 = tokio::spawn(async move { 
+        cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
+            client_idx: 0,
+        }).await
     });
-    let cl = clients[1].clone();
+    let cl = clients[0].clone();
     let response_01 = tokio::spawn(async move { 
         cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
             client_idx: 2,
@@ -340,11 +340,16 @@ async fn run_level(
 
     join_all(responses).await;
 
-    let (vals0, vals1) = (response_00.await?.unwrap(), response_01.await?.unwrap());
+    let ((vals0, root0), (vals1, root1)) = (response_00.await?.unwrap(), response_01.await?.unwrap());
 
     debug_assert_eq!(vals0.len(), vals1.len());
     let mut responses = vec![];
     let keep = collect::KeyCollection::<fastfield::FE,FieldElm>::keep_values_cmp(&threshold, &vals0, &vals1);
+
+    if root0[0][0][0] != 0 {
+        println!("S2 index 0: Hash : {:?}", root0[0][0].iter().map(|x| format!("{:02x}", x)).collect::<String>());
+        println!("S0 index 2: Hash : {:?}", root1[0][0].iter().map(|x| format!("{:02x}", x)).collect::<String>());
+    }
 
     // Tree prune
     // Session 0
@@ -391,7 +396,7 @@ async fn run_level(
     let k = keep.clone();
     responses.push(tokio::spawn(async move { 
         cl.tree_prune(long_context(), HHTreePruneRequest { 
-            client_idx: 1, keep: k,
+            client_idx: 2, keep: k,
         }).await
     }));
     
@@ -400,7 +405,7 @@ async fn run_level(
     let k = keep.clone();
     responses.push(tokio::spawn(async move { 
         cl.tree_prune(long_context(), HHTreePruneRequest { 
-            client_idx: 2, keep: k,
+            client_idx: 1, keep: k,
         }).await
     }));
     let cl = clients[1].clone();
@@ -460,7 +465,7 @@ async fn run_level_last(
     let cl = clients[0].clone();
     let response_20 = tokio::spawn(async move { 
         cl.tree_crawl_last(long_context(), HHTreeCrawlLastRequest { 
-            client_idx: 1,
+            client_idx: 2,
         }).await
     });
 
@@ -468,7 +473,7 @@ async fn run_level_last(
     let cl = clients[0].clone();
     let response_020 = tokio::spawn(async move { 
         cl.tree_crawl_last(long_context(), HHTreeCrawlLastRequest { 
-            client_idx: 2,
+            client_idx: 1,
         }).await
     });
     let cl = clients[1].clone();
@@ -493,14 +498,10 @@ async fn run_level_last(
     let mut ver_0 = vec![true; num_clients];
     let mut ver_1 = vec![true; num_clients];
     let mut ver_2 = vec![true; num_clients];
-
-    // Check that \tau_2,0 and \pi_2,0 from S0 and S2 are the same
-    plasma::check_hashes(&mut ver_0, &hashes_020, &hashes_22);
-    plasma::check_taus(&mut ver_0, &tau_vals_020, &tau_vals_22);
-    // Check that \tau_2,1 and \pi_2,1 from S0 and S2 are the same
-    plasma::check_hashes(&mut ver_1, &hashes_021, &hashes_20);
-    plasma::check_taus(&mut ver_1, &tau_vals_021, &tau_vals_20);
-
+    plasma::check_hashes(&mut ver_0, &hashes_020, &hashes_12);
+    plasma::check_taus(&mut ver_0, &tau_vals_020, &tau_vals_12);
+    plasma::check_hashes(&mut ver_1, &hashes_021, &hashes_22);
+    plasma::check_taus(&mut ver_1, &tau_vals_021, &tau_vals_22);
     let tau_vals_0 = &collect::KeyCollection::<fastfield::FE, FieldElm>::reconstruct_shares(
         &tau_vals_00, &tau_vals_01
     );
@@ -510,7 +511,6 @@ async fn run_level_last(
     let tau_vals_2 = &collect::KeyCollection::<fastfield::FE, FieldElm>::reconstruct_shares(
         &tau_vals_22, &tau_vals_20
     );
-
     // Check s0, s1 hashes and taus
     plasma::check_hashes_and_taus(&mut ver_0, &hashes_00, &hashes_01, &tau_vals_0, num_clients);
     // Check s1, s2 hashes and taus
@@ -590,7 +590,7 @@ async fn run_level_last(
     let response_20 = tokio::spawn(async move { 
         cl.add_leaves_between_clients(long_context(), 
             HHAddLeavesBetweenClientsRequest { 
-                client_idx: 1, verified: v2,
+                client_idx: 2, verified: v2,
         }).await
     });
 
@@ -600,89 +600,16 @@ async fn run_level_last(
         (response_11.await?.unwrap(), response_12.await?.unwrap());
     let (shares_22, shares_20) = 
         (response_22.await?.unwrap(), response_20.await?.unwrap());
-
-    // let keep = collect::KeyCollection::<fastfield::FE,FieldElm>::keep_values_last(num_clients, &threshold, &shares_00, &shares_01);
-    // println!("KeepLast : {:?}", keep);
-    // println!("KeepLen Last: {:?}", keep.len());
-
-    let hist_0 = &collect::KeyCollection::<fastfield::FE, FieldElm>::final_values(
+    let hh_0 = &collect::KeyCollection::<fastfield::FE, FieldElm>::final_values(
         &shares_00, &shares_01
     );
-    let hist_1 = &collect::KeyCollection::<fastfield::FE, FieldElm>::final_values(
+    let hh_1 = &collect::KeyCollection::<fastfield::FE, FieldElm>::final_values(
         &shares_11, &shares_12
     );
-    let hist_2 = &collect::KeyCollection::<fastfield::FE, FieldElm>::final_values(
+    let hh_2 = &collect::KeyCollection::<fastfield::FE, FieldElm>::final_values(
         &shares_22, &shares_20
     );
-
-    // // Tree prune last
-    // let mut responses = vec![];
-    // // Session 0
-    // let cl = clients[0].clone();
-    // let k = keep.clone();
-    // responses.push(tokio::spawn(async move { 
-    //     cl.tree_prune_last(long_context(), HHTreePruneLastRequest { 
-    //         client_idx: 0, keep: k,
-    //     }).await
-    // }));
-    // let cl = clients[1].clone();
-    // let k = keep.clone();
-    // responses.push(tokio::spawn(async move { 
-    //     cl.tree_prune_last(long_context(), HHTreePruneLastRequest { 
-    //         client_idx: 1, keep: k,
-    //     }).await
-    // }));
-
-    // // Session 1
-    // let cl = clients[1].clone();
-    // let k = keep.clone();
-    // responses.push(tokio::spawn(async move { 
-    //     cl.tree_prune_last(long_context(), HHTreePruneLastRequest { 
-    //         client_idx: 0, keep: k,
-    //     }).await
-    // }));
-    // let cl = clients[2].clone();
-    // let k = keep.clone();
-    // responses.push(tokio::spawn(async move { 
-    //     cl.tree_prune_last(long_context(), HHTreePruneLastRequest { 
-    //         client_idx: 1, keep: k,
-    //     }).await
-    // }));
-
-    // // Session 2
-    // let cl = clients[2].clone();
-    // let k = keep.clone();
-    // responses.push(tokio::spawn(async move { 
-    //     cl.tree_prune_last(long_context(), HHTreePruneLastRequest { 
-    //         client_idx: 0, keep: k,
-    //     }).await
-    // }));
-    // let cl = clients[0].clone();
-    // let k = keep.clone();
-    // responses.push(tokio::spawn(async move { 
-    //     cl.tree_prune_last(long_context(), HHTreePruneLastRequest { 
-    //         client_idx: 1, keep: k,
-    //     }).await
-    // }));
-    
-    // // Session 2
-    // let cl = clients[0].clone();
-    // let k = keep.clone();
-    // responses.push(tokio::spawn(async move { 
-    //     cl.tree_prune_last(long_context(), HHTreePruneLastRequest { 
-    //         client_idx: 2, keep: k,
-    //     }).await
-    // }));
-    // let cl = clients[1].clone();
-    // let k = keep.clone();
-    // responses.push(tokio::spawn(async move { 
-    //     cl.tree_prune_last(long_context(), HHTreePruneLastRequest { 
-    //         client_idx: 2, keep: k,
-    //     }).await
-    // }));
-    // join_all(responses).await;
-
-    for ((res_0, res_1), res_2) in hist_0.iter().zip_eq(hist_1).zip_eq(hist_2) {
+    for ((res_0, res_1), res_2) in hh_0.iter().zip_eq(hh_1).zip_eq(hh_2) {
         debug_assert_eq!(res_0.value.value(), res_1.value.value());
         debug_assert_eq!(res_0.value.value(), res_2.value.value());
         let bits = plasma::bits_to_bitstring(&res_0.path);
@@ -702,7 +629,6 @@ async fn main() -> io::Result<()> {
 
     env_logger::init();
     let (cfg, _, nreqs) = config::get_args("Leader", false, true);
-    debug_assert_eq!(cfg.data_bytes % 8, 0);
 
     let client_0 = Client::new(
         client::Config::default(),
