@@ -87,17 +87,22 @@ impl Collector for BatchCollectorServer {
 
     async fn tree_crawl(self, 
         _: context::Context, req: HHTreeCrawlRequest
-    ) -> (Vec<FE>, Vec<Vec<Vec<u8>>>){
+    ) -> (Vec<FE>, Vec<Vec<Vec<u8>>>) {
         // let start = Instant::now();
         let client_idx = req.client_idx as usize;
+        let split_by = req.split_by;
+        let malicious = req.malicious;
+        let is_last = req.is_last;
         debug_assert!(client_idx <= 2);
         let mut coll = self.cs[client_idx].arc.lock().unwrap();
-        let res = coll.hh_tree_crawl();
+        let res = coll.hh_tree_crawl(client_idx, split_by, &malicious, is_last);
         // println!("session {:?}: hh_tree_crawl: {:?}", client_idx, start.elapsed().as_secs_f64());
-        if res.1[0][0][0] != 0 {
-            println!("index {:?}: Hash : {:?}", client_idx, res.1[0][0].iter().map(|x| format!("{:02x}", x)).collect::<String>());
-        }
-
+        // if res.1.len() > 0 && res.1[0].len() > 0 {
+        //     let root = &res.1[0][0];
+        //     if root[0] != 0 {
+        //         println!("index {:?}: Hash : {:?}", client_idx, root.iter().map(|x| format!("{:02x}", x)).collect::<String>());
+        //     }
+        // }
         res
     }
 
@@ -198,7 +203,7 @@ impl Collector for BatchCollectorServer {
 async fn main() -> io::Result<()> {
     env_logger::init();
 
-    let (cfg, sid, _) = config::get_args("Server", true, false);
+    let (cfg, sid, _, _) = config::get_args("Server", true, false, false);
     let server_addr = match sid {
         0 => cfg.server_0,
         1 => cfg.server_1,

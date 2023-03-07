@@ -549,7 +549,7 @@ async fn main() -> io::Result<()> {
     //rayon::ThreadPoolBuilder::new().num_threads(1).build_global().unwrap();
 
     env_logger::init();
-    let (cfg, _, nreqs) = config::get_args("Leader", false, true);
+    let (cfg, _, nreqs, _) = config::get_args("Leader", false, true, false);
 
     let client_0 = Client::new(
         client::Config::default(),

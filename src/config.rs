@@ -46,7 +46,9 @@ pub fn get_config(filename: &str) -> Config {
     }
 }
 
-pub fn get_args(name: &str, get_server_id: bool, get_n_reqs: bool) -> (Config, i8, usize) {
+pub fn get_args(
+    name: &str, get_server_id: bool, get_n_reqs: bool, get_malicious: bool
+) -> (Config, i8, usize, f32) {
     let mut flags = App::new(name)
         .version("0.1")
         .about("Privacy-preserving heavy-hitters for location data.")
@@ -59,7 +61,6 @@ pub fn get_args(name: &str, get_server_id: bool, get_n_reqs: bool) -> (Config, i
                 .required(true)
                 .takes_value(true),
         );
-
     if get_server_id {
         flags = flags.arg(
             Arg::with_name("server_id")
@@ -71,7 +72,6 @@ pub fn get_args(name: &str, get_server_id: bool, get_n_reqs: bool) -> (Config, i
                 .takes_value(true),
         );
     }
-
     if get_n_reqs {
         flags = flags.arg(
             Arg::with_name("num_requests")
@@ -80,6 +80,17 @@ pub fn get_args(name: &str, get_server_id: bool, get_n_reqs: bool) -> (Config, i
                 .value_name("NUMBER")
                 .help("Number of client requests to generate")
                 .required(true)
+                .takes_value(true),
+        );
+    }
+    if get_malicious {
+        flags = flags.arg(
+            Arg::with_name("malicious")
+                .short("m")
+                .long("malicious")
+                .value_name("NUMBER")
+                .help("Percentage of malicious clients")
+                .required(false)
                 .takes_value(true),
         );
     }
@@ -96,9 +107,15 @@ pub fn get_args(name: &str, get_server_id: bool, get_n_reqs: bool) -> (Config, i
         n_reqs = flags.value_of("num_requests").unwrap().parse().unwrap();
     }
 
+    let mut malicious = 0.0;
+    if flags.is_present("malicious") {
+        malicious = flags.value_of("malicious").unwrap().parse::<f32>().unwrap();
+    }
+
     (
         get_config(flags.value_of("config").unwrap()),
         server_id,
         n_reqs,
+        malicious
     )
 }

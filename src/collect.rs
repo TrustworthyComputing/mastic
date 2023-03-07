@@ -46,7 +46,9 @@ pub struct KeyCollection<T,U> {
     depth: usize,
     pub keys: Vec<(bool, dpf::DPFKey<T,U>)>,
     pub pis: Vec<Vec<Vec<u8>>>,
+    honest_clients: Vec<bool>,
     frontier: Vec<TreeNode<T>>,
+    prev_frontier: Vec<TreeNode<T>>,
     frontier_last: Vec<TreeNode<U>>,
     frontier_intermediate: Vec<(TreeNode<U>, TreeNode<U>)>,
 }
@@ -93,7 +95,9 @@ where
             depth,
             keys: vec![],
             pis: vec![],
+            honest_clients: vec![],
             frontier: vec![],
+            prev_frontier: vec![],
             frontier_last: vec![],
             frontier_intermediate: vec![],
         }
@@ -102,6 +106,7 @@ where
     pub fn add_key(&mut self, key: dpf::DPFKey<T,U>) {
         self.pis.push(key.cs.clone());
         self.keys.push((true, key));
+        self.honest_clients.push(true);
     }
 
     pub fn tree_init(&mut self) {
@@ -124,7 +129,9 @@ where
         self.frontier.push(root);
     }
 
-    fn make_tree_node(&self, parent: &TreeNode<T>, dir: bool, _hh: bool) -> TreeNode<T> {
+    fn make_tree_node(
+        &self, parent: &TreeNode<T>, dir: bool, split_by: usize
+    ) -> TreeNode<T> {
         let (key_states, key_values): (Vec<dpf::EvalState>, Vec<T>) = self
             .keys
             .par_iter()
@@ -133,17 +140,12 @@ where
                 key.1.eval_bit(&parent.key_states[i], dir)
             })
             .unzip();
-
-        // let mut hashes = vec![];
-        // let mut hasher = Sha256::new();
         let mut bit_str = crate::bits_to_bitstring(parent.path.as_slice());
         bit_str.push(if dir {'1'} else {'0'});
-
         let mut child_val = T::zero();
-        // for (i, (v, ks)) in key_values.iter().zip(key_states.iter()).enumerate() {
-        for (i, v) in key_values.iter().enumerate() {
+        for ((i, v), &honest_client) in key_values.iter().enumerate().zip(&self.honest_clients) {
             // Add in only live values
-            if self.keys[i].0 {
+            if self.keys[i].0 && honest_client {
                 child_val.add_lazy(&v);
             }
         }
@@ -151,40 +153,51 @@ where
 
         let hashes: Vec<[u8; 32]> = key_states
             .par_iter()
+            .zip(&self.honest_clients)
             .enumerate()
-            .map(|(i, ks)| {
-                let mut hasher = Sha256::new();
-                hasher.update(&bit_str);
-                hasher.update(ks.seed.key);
-                let pi_prime = hasher.finalize_reset().to_vec();
-
-                // Correction operation
-                let h: [u8; 32];
-                if !ks.bit {
-                    // H(pi ^ correct(pi_prime, cs, t0)) = H(pi ^ pi_prime)
-                    h = xor_vec(&self.pis[i][0], &pi_prime).try_into().unwrap();
+            .map(|(i, (ks, honest_client))| {
+                if !honest_client {
+                    [0u8; 32]
                 } else {
-                    // H(pi ^ correct(pi_prime, cs, t0)) = H(pi ^ pi_prime)
-                    let cs_t = &self.keys[i].1.cs[0];
-                    h = xor_three_vecs(&self.pis[i][0], &pi_prime, cs_t).try_into().unwrap();
+                    let mut hasher = Sha256::new();
+                    hasher.update(&bit_str);
+                    hasher.update(ks.seed.key);
+                    let pi_prime = hasher.finalize_reset().to_vec();
+                    // Correction operation
+                    let h: [u8; 32];
+                    if !ks.bit {
+                        // H(pi ^ correct(pi_prime, cs, t0)) = H(pi ^ pi_prime)
+                        h = xor_vec(&self.pis[i][0], &pi_prime).try_into().unwrap();
+                    } else {
+                        // H(pi ^ correct(pi_prime, cs, t0)) = H(pi ^ pi_prime)
+                        let cs_t = &self.keys[i].1.cs[0];
+                        h = xor_three_vecs(&self.pis[i][0], &pi_prime, cs_t).try_into().unwrap();
+                    }
+                    hasher.update(h);
+                    xor_vec(&hasher.finalize().to_vec(), &self.pis[i][0]).try_into().unwrap()
                 }
-                hasher.update(h);
-                xor_vec(&hasher.finalize().to_vec(), &self.pis[i][0]).try_into().unwrap()
             })
             .collect::<Vec<_>>();
-        let mut root = [0u8; 32];
+        // let mut root = [0u8; 32];
+        let mut roots = Vec::new();
         if bit_str.len() < 2 {
-            let mt = MerkleTree::<Sha256Algorithm>::from_leaves(hashes.as_slice());
-            root = mt.root().unwrap();
+            let chunk_sz = (hashes.len() as f32 / split_by as f32).ceil() as usize;
+            // println!("split_by: {}", chunk_sz);
+            let chunks_list: Vec<&[[u8; 32]]> = hashes.chunks(chunk_sz).collect();
+            // println!("chunks_list len: {}, each of which are {}", chunks_list.len(), chunks_list[0].len());
+            for i in 0..chunks_list.len() {
+                let mt = MerkleTree::<Sha256Algorithm>::from_leaves(chunks_list[i]);
+                let root = mt.root().unwrap();
+                roots.push(root.to_vec());
+            }
         }
 
         let mut child = TreeNode::<T> {
-            // path: parent.path.clone(),
             path: parent.path.clone(),
             value: child_val,
             key_states,
             key_values,
-            hashes: vec![root.to_vec()],
+            hashes: roots,
         };
 
         child.path.push(dir);
@@ -210,22 +223,27 @@ where
         if !dir {
             hashes = key_states
                 .par_iter()
+                .zip(&self.honest_clients)
                 .enumerate()
-                .map(|(i, ks)| {
-                    let mut hasher = Sha256::new();
-                    hasher.update(&bit_str);
-                    hasher.update(&parent.key_states[i].seed.key);
-                    let pi_prime = hasher.finalize().to_vec();
-                    // Correction operation
-                    let h: Vec<u8>;
-                    if !ks.bit {
-                        // H(pi ^ correct(pi_prime, cs, t0)) = H(pi ^ pi_prime)
-                        h = xor_vec(&self.pis[i][depth-1], &pi_prime);
+                .map(|(i, (ks, honest_client))| {
+                    if !honest_client {
+                        vec![0u8; 32]
                     } else {
-                        // H(pi ^ correct(pi_prime, cs, t0)) = H(pi ^ pi_prime)
-                        h = xor_three_vecs(&self.pis[i][depth-1], &pi_prime, &self.keys[i].1.cs[depth-1]);
+                        let mut hasher = Sha256::new();
+                        hasher.update(&bit_str);
+                        hasher.update(&parent.key_states[i].seed.key);
+                        let pi_prime = hasher.finalize().to_vec();
+                        // Correction operation
+                        let h: Vec<u8>;
+                        if !ks.bit {
+                            // H(pi ^ correct(pi_prime, cs, t0)) = H(pi ^ pi_prime)
+                            h = xor_vec(&self.pis[i][depth-1], &pi_prime);
+                        } else {
+                            // H(pi ^ correct(pi_prime, cs, t0)) = H(pi ^ pi_prime)
+                            h = xor_three_vecs(&self.pis[i][depth-1], &pi_prime, &self.keys[i].1.cs[depth-1]);
+                        }
+                        h
                     }
-                    h
                 })
                 .collect::<Vec<_>>();
         }
@@ -235,16 +253,16 @@ where
         (key_values, hashes, path)
     }
 
-    // Adds values for "path" accross multiple clients.
+    // Adds values for "path" across multiple clients.
     fn add_leaf_values(&self,
         key_values: &Vec<U>,
         path: &Vec<bool>,
         verified: &Vec<bool>
     ) -> TreeNode<U> {
         let mut child_val = U::zero();
-        for (kv, ver) in key_values.iter().zip(verified) {
+        for ((kv, ver), honest_client) in key_values.iter().zip(verified).zip(&self.honest_clients) {
             // Add in only live values
-            if *ver {
+            if *ver && *honest_client {
                 child_val.add_lazy(&kv);
             }
         }
@@ -259,14 +277,29 @@ where
         }
     }
 
-    pub fn hh_tree_crawl(&mut self) -> (Vec<T>, Vec<Vec<Vec<u8>>>) {
+    pub fn hh_tree_crawl(
+        &mut self, session_index: usize, split_by: usize, malicious: &Vec<usize>, is_last: bool
+    ) -> (Vec<T>, Vec<Vec<Vec<u8>>>) {
+        if malicious.len() > 0 {
+            if is_last {
+                for &malicious_client in malicious {
+                    self.honest_clients[ malicious_client ] = false;
+                    println!("Session index {}) removing malicious client {}", 
+                        session_index, malicious_client
+                    );
+                }
+            }
+            self.frontier = self.prev_frontier.clone();
+        }
+        // println!("Number of honest clients: {}", self.honest_clients.iter().filter(|&n| *n).count());
+
         let next_frontier = self
             .frontier
             .par_iter()
             .map(|node| {
                 assert!(node.path.len() <= self.depth);
-                let child0 = self.make_tree_node(node, false, true);
-                let child1 = self.make_tree_node(node, true, true);
+                let child0 = self.make_tree_node(node, false, split_by);
+                let child1 = self.make_tree_node(node, true, split_by);
 
                 vec![child0, child1]
             })
@@ -283,7 +316,9 @@ where
             .map(|node| node.hashes.clone())
             .collect::<Vec<_>>();
 
+        self.prev_frontier = self.frontier.clone();
         self.frontier = next_frontier;
+
         (values, hashes)
     }
 
@@ -293,8 +328,8 @@ where
             .par_iter()
             .map(|node| {
                 // assert!(node.path.len() <= self.depth);
-                let child0 = self.make_tree_node(node, false, false);
-                let child1 = self.make_tree_node(node, true, false);
+                let child0 = self.make_tree_node(node, false, 1);
+                let child1 = self.make_tree_node(node, true, 1);
 
                 vec![child0, child1]
             })
@@ -339,8 +374,13 @@ where
             final_hashes = final_hashes
                 .par_iter_mut()
                 .zip_eq(&node.0.hashes)
-                .map(|(v1, v2)| {
-                    xor_vec(&v1, &v2)
+                .zip_eq(&self.honest_clients)
+                .map(|((v1, v2), honest_client)| {
+                    if *honest_client {
+                        xor_vec(&v1, &v2)
+                    } else {
+                        vec![0u8; 32]
+                    }
                 })
                 .collect();
 
@@ -348,9 +388,12 @@ where
                 .par_iter_mut()
                 .zip_eq(&node.0.key_values)
                 .zip_eq(&node.1.key_values)
-                .map(|((t, v0), v1)| {
-                    t.add(&v0);
-                    t.add(&v1);
+                .zip_eq(&self.honest_clients)
+                .map(|(((t, v0), v1), honest_client)| {
+                    if *honest_client {
+                        t.add(&v0);
+                        t.add(&v1);
+                    }
                     t.clone()
                 })
                 .collect();

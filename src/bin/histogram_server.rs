@@ -174,7 +174,7 @@ impl Collector for BatchCollectorServer {
 async fn main() -> io::Result<()> {
     env_logger::init();
 
-    let (cfg, sid, _) = config::get_args("Server", true, false);
+    let (cfg, sid, _, _) = config::get_args("Server", true, false, false);
     let server_addr = match sid {
         0 => cfg.server_0,
         1 => cfg.server_1,

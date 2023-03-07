@@ -18,7 +18,6 @@ use plasma::{
 };
 
 use futures::future::join_all;
-// use futures::try_join;
 use itertools::Itertools;
 use num_traits::cast::ToPrimitive;
 use rand::{Rng, distributions::Alphanumeric,};
@@ -187,6 +186,7 @@ async fn add_keys(
     clients: &Vec<&Client>,
     keys: &Vec<(Vec<dpf::DPFKey<fastfield::FE,FieldElm>>, Vec<dpf::DPFKey<fastfield::FE,FieldElm>>)>,
     nreqs: usize,
+    malicious_percentage: f32,
 ) -> io::Result<()> {
     use rand::distributions::Distribution;
     let mut rng = rand::thread_rng();
@@ -198,7 +198,13 @@ async fn add_keys(
         let idx = zipf.sample(&mut rng) - 1;
         for i in 0..3 {
             addkeys_0[i].push(keys[i].0[idx].clone());
-            addkeys_1[i].push(keys[i].1[idx].clone());
+            if rand::thread_rng().gen_range(0.0..1.0) < malicious_percentage {
+            // if r == 0 {
+                println!("Malicious");
+                addkeys_1[i].push(keys[i].1[(idx+1) % cfg.unique_buckets].clone());
+            } else {
+                addkeys_1[i].push(keys[i].1[idx].clone());
+            }
         }
     }
 
@@ -279,79 +285,114 @@ async fn run_level(
 ) -> io::Result<()> {
     let threshold64 = core::cmp::max(1, (cfg.threshold * (nreqs as f64)) as u64);
     let threshold = fastfield::FE::new(threshold64 as u64);
+    let mut keep;
+    let mut split = 1usize;
+    let mut malicious = Vec::<usize>::new();
+    let mut is_last = false;
+    loop {
+        let mut responses = vec![];
 
-    let mut responses = vec![];
+        // Session 0
+        let cl = clients[0].clone();
+        let ml = malicious.clone();
+        responses.push(tokio::spawn(async move { 
+            cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
+                client_idx: 0, split_by: split, malicious: ml, is_last: is_last
+            }).await
+        }));
+        let cl = clients[1].clone();
+        let ml = malicious.clone();
+        responses.push(tokio::spawn(async move { 
+            cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
+                client_idx: 1, split_by: split, malicious: ml, is_last: is_last
+            }).await
+        }));
 
-    // Session 0
-    let cl = clients[0].clone();
-    responses.push(tokio::spawn(async move { 
-        cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
-            client_idx: 0,
-        }).await
-    }));
-    let cl = clients[1].clone();
-    responses.push(tokio::spawn(async move { 
-        cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
-            client_idx: 1,
-        }).await
-    }));
+        // Session 1
+        let cl = clients[1].clone();
+        let ml = malicious.clone();
+        responses.push(tokio::spawn(async move { 
+            cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
+                client_idx: 0, split_by: split, malicious: ml, is_last: is_last
+            }).await
+        }));
+        let cl = clients[2].clone();
+        let ml = malicious.clone();
+        responses.push(tokio::spawn(async move { 
+            cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
+                client_idx: 1, split_by: split, malicious: ml, is_last: is_last
+            }).await
+        }));
 
-    // Session 1
-    let cl = clients[1].clone();
-    responses.push(tokio::spawn(async move { 
-        cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
-            client_idx: 0,
-        }).await
-    }));
-    let cl = clients[2].clone();
-    responses.push(tokio::spawn(async move { 
-        cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
-            client_idx: 1,
-        }).await
-    }));
+        // extra
+        let cl = clients[0].clone();
+        let ml = malicious.clone();
+        responses.push(tokio::spawn(async move { 
+            cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
+                client_idx: 1, split_by: split, malicious: ml, is_last: is_last
+            }).await
+        }));
+        let cl = clients[1].clone();
+        let ml = malicious.clone();
+        responses.push(tokio::spawn(async move { 
+            cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
+                client_idx: 2, split_by: split, malicious: ml, is_last: is_last
+            }).await
+        }));
 
-    // extra
-    let cl = clients[0].clone();
-    responses.push(tokio::spawn(async move { 
-        cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
-            client_idx: 1,
-        }).await
-    }));
-    let cl = clients[1].clone();
-    responses.push(tokio::spawn(async move { 
-        cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
-            client_idx: 2,
-        }).await
-    }));
+        // Session 2
+        let cl = clients[2].clone();
+        let ml = malicious.clone();
+        let response_00 = tokio::spawn(async move { 
+            cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
+                client_idx: 0, split_by: split, malicious: ml, is_last: is_last
+            }).await
+        });
+        let cl = clients[0].clone();
+        let ml = malicious.clone();
+        let response_01 = tokio::spawn(async move { 
+            cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
+                client_idx: 2, split_by: split, malicious: ml, is_last: is_last
+            }).await
+        });
 
-    // Session 2
-    let cl = clients[2].clone();
-    let response_00 = tokio::spawn(async move { 
-        cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
-            client_idx: 0,
-        }).await
-    });
-    let cl = clients[0].clone();
-    let response_01 = tokio::spawn(async move { 
-        cl.tree_crawl(long_context(), HHTreeCrawlRequest { 
-            client_idx: 2,
-        }).await
-    });
+        join_all(responses).await;
 
-    join_all(responses).await;
-
-    let ((vals0, root0), (vals1, root1)) = (response_00.await?.unwrap(), response_01.await?.unwrap());
-
-    debug_assert_eq!(vals0.len(), vals1.len());
-    let mut responses = vec![];
-    let keep = collect::KeyCollection::<fastfield::FE,FieldElm>::keep_values_cmp(&threshold, &vals0, &vals1);
-
-    if root0[0][0][0] != 0 {
-        println!("S2 index 0: Hash : {:?}", root0[0][0].iter().map(|x| format!("{:02x}", x)).collect::<String>());
-        println!("S0 index 2: Hash : {:?}", root1[0][0].iter().map(|x| format!("{:02x}", x)).collect::<String>());
+        let ((vals0, root0), (vals1, root1)) = (response_00.await?.unwrap(), response_01.await?.unwrap());
+        debug_assert_eq!(vals0.len(), vals1.len());
+        keep = collect::KeyCollection::<fastfield::FE,FieldElm>::keep_values_cmp(&threshold, &vals0, &vals1);
+        
+        if root0[0].len() == 0 {
+            break;
+        }
+        let left_root0 = &root0[0];
+        let left_root1 = &root1[0];
+        malicious = Vec::new();
+        for i in 0..left_root0.len() {
+            let hl0 = &left_root0[i].iter().map(|x| format!("{:02x}", x)).collect::<String>();
+            let hl1 = &left_root1[i].iter().map(|x| format!("{:02x}", x)).collect::<String>();
+            if hl0 != hl1 {
+                malicious.push(i);
+                // println!("{}) left different {} vs {}", i, hl0, hl1);
+            }
+        }
+        if malicious.len() == 0 {
+            break;
+        } else {
+            println!("Detected malicious {:?} out of {} clients", malicious, nreqs);
+            if split > nreqs {
+                if !is_last {
+                    is_last = true;
+                } else {
+                    break;
+                }
+            }
+            split *= 2;
+        }
     }
 
     // Tree prune
+    let mut responses = vec![];
     // Session 0
     let cl = clients[0].clone();
     let k = keep.clone();
@@ -628,8 +669,9 @@ async fn main() -> io::Result<()> {
     //rayon::ThreadPoolBuilder::new().num_threads(1).build_global().unwrap();
 
     env_logger::init();
-    let (cfg, _, nreqs) = config::get_args("Leader", false, true);
-
+    let (cfg, _, nreqs, malicious) = config::get_args("Leader", false, true, true);
+    assert!(0.0 <= malicious && malicious < 0.8);
+    println!("Running with {}% malicious clients", malicious * 100.0);
     let client_0 = Client::new(
         client::Config::default(),
         tcp::connect(cfg.server_0, Bincode::default).await?
@@ -661,7 +703,7 @@ async fn main() -> io::Result<()> {
     while left_to_go > 0 {
         let mut resps = vec![];
 
-        for _j in 0..reqs_in_flight {
+        for _ in 0..reqs_in_flight {
             let this_batch = std::cmp::min(left_to_go, cfg.addkey_batch_size);
             left_to_go -= this_batch;
 
@@ -671,6 +713,7 @@ async fn main() -> io::Result<()> {
                     &clients,
                     &keys,
                     this_batch,
+                    malicious,
                 ));
             }
         }
@@ -687,7 +730,7 @@ async fn main() -> io::Result<()> {
     for _level in 0..bitlen-1 {
         let start_level = Instant::now();
         run_level(&cfg, &clients, nreqs).await?;
-        println!("Time for level {} :{:?}", _level, start_level.elapsed().as_secs_f64());
+        println!("Time for level {}: {:?}", _level, start_level.elapsed().as_secs_f64());
     }
     println!("\nTime for {} levels: {:?}", bitlen, start.elapsed().as_secs_f64());
 

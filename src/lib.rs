@@ -165,6 +165,14 @@ pub fn check_taus(
         });
 }
 
+pub fn take<T>(vec: &mut Vec<T>, index: usize) -> Option<T> {
+    if vec.get(index).is_none() {
+        None
+    } else {
+        Some(vec.swap_remove(index))
+    }
+}
+
 pub fn check_hashes_and_taus(
     verified: &mut Vec<bool>,
     hashes_0: &Vec<Vec<u8>>,
@@ -180,8 +188,13 @@ pub fn check_hashes_and_taus(
         .zip(tau_vals)
         .for_each(|(((v, h0), h1), t)| {
             if h0.len() != h0.iter().zip_eq(h1.iter()).filter(|&(h0, h1)| h0 == h1).count() {
-                if t.value().to_usize().unwrap() != tau_check {
-                    println!("t vs t_check: {:?} {}", t.value(), tau_check);
+                match t.value().to_usize() {
+                    Some(size) => {
+                        if size != tau_check {
+                            println!("t vs t_check: {:?} {}", t.value(), tau_check);
+                        }
+                    },
+                    None => (), // println!("t of malicious client"),
                 }
                 *v = false;
             }
