@@ -194,17 +194,16 @@ async fn add_keys(
 
     let mut addkeys_0 = vec![Vec::with_capacity(nreqs); 3];
     let mut addkeys_1 = vec![Vec::with_capacity(nreqs); 3];
-    for _ in 0..nreqs {
-        let idx = zipf.sample(&mut rng) - 1;
+    for r in 0..nreqs {
+        let idx_1 = zipf.sample(&mut rng) - 1;
+        let mut idx_2 = idx_1;
+        if rand::thread_rng().gen_range(0.0..1.0) < malicious_percentage {
+            idx_2 += 1;
+            println!("Malicious {}", r);
+        }
         for i in 0..3 {
-            addkeys_0[i].push(keys[i].0[idx].clone());
-            if rand::thread_rng().gen_range(0.0..1.0) < malicious_percentage {
-            // if r == 0 {
-                println!("Malicious");
-                addkeys_1[i].push(keys[i].1[(idx+1) % cfg.unique_buckets].clone());
-            } else {
-                addkeys_1[i].push(keys[i].1[idx].clone());
-            }
+            addkeys_0[i].push(keys[i].0[idx_1].clone());
+            addkeys_1[i].push(keys[i].1[idx_2 % cfg.unique_buckets].clone());
         }
     }
 
@@ -358,7 +357,8 @@ async fn run_level(
 
         join_all(responses).await;
 
-        let ((vals0, root0), (vals1, root1)) = (response_00.await?.unwrap(), response_01.await?.unwrap());
+        let ((vals0, root0, indices0), (vals1, root1, _)) = 
+            (response_00.await?.unwrap(), response_01.await?.unwrap());
         debug_assert_eq!(vals0.len(), vals1.len());
         keep = collect::KeyCollection::<fastfield::FE,FieldElm>::keep_values_cmp(&threshold, &vals0, &vals1);
         
@@ -372,14 +372,14 @@ async fn run_level(
             let hl0 = &left_root0[i].iter().map(|x| format!("{:02x}", x)).collect::<String>();
             let hl1 = &left_root1[i].iter().map(|x| format!("{:02x}", x)).collect::<String>();
             if hl0 != hl1 {
-                malicious.push(i);
-                // println!("{}) left different {} vs {}", i, hl0, hl1);
+                malicious.push(indices0[0][i]);
+                // println!("{}) different {} vs {}", i, hl0, hl1);
             }
         }
         if malicious.len() == 0 {
             break;
         } else {
-            println!("Detected malicious {:?} out of {} clients", malicious, nreqs);
+            // println!("Detected malicious {:?} out of {} clients", malicious, nreqs);
             if split > nreqs {
                 if !is_last {
                     is_last = true;

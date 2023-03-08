@@ -36,6 +36,7 @@ struct TreeNode<T> {
     key_states: Vec<dpf::EvalState>,
     key_values: Vec<T>,
     hashes: Vec<Vec<u8>>,
+    indices: Vec<usize>
 }
 
 unsafe impl<T> Send for TreeNode<T> {}
@@ -116,6 +117,7 @@ where
             key_states: vec![],
             key_values: vec![],
             hashes: vec![],
+            indices: vec![],
         };
 
         for k in &self.keys {
@@ -130,7 +132,12 @@ where
     }
 
     fn make_tree_node(
-        &self, parent: &TreeNode<T>, dir: bool, split_by: usize
+        &self, 
+        parent: &TreeNode<T>,
+        dir: bool,
+        split_by: usize,
+        malicious_indices: &Vec<usize>,
+        is_last: bool,
     ) -> TreeNode<T> {
         let (key_states, key_values): (Vec<dpf::EvalState>, Vec<T>) = self
             .keys
@@ -178,17 +185,41 @@ where
                 }
             })
             .collect::<Vec<_>>();
-        // let mut root = [0u8; 32];
         let mut roots = Vec::new();
-        if bit_str.len() < 2 {
-            let chunk_sz = (hashes.len() as f32 / split_by as f32).ceil() as usize;
-            // println!("split_by: {}", chunk_sz);
+        let mut root_indices = Vec::new();
+        if bit_str.len() < 2 && !is_last {
+            let tree_size = 1 << (hashes.len() as f32).log2().ceil() as usize;
+            let chunk_sz = tree_size/ split_by;
             let chunks_list: Vec<&[[u8; 32]]> = hashes.chunks(chunk_sz).collect();
-            // println!("chunks_list len: {}, each of which are {}", chunks_list.len(), chunks_list[0].len());
-            for i in 0..chunks_list.len() {
-                let mt = MerkleTree::<Sha256Algorithm>::from_leaves(chunks_list[i]);
+            // println!("hashes.len(): {}\nchunk_sz: {}\ntree size: {}\nsplit_by: {}\n{} chunks, each of which has {} elements\nmalicious {:?}\n", 
+            //     hashes.len(),
+            //     chunk_sz,
+            //     tree_size,
+            //     split_by,
+            //     chunks_list.len(),
+            //     chunks_list[0].len(),
+            //     malicious_indices
+            // );
+            if split_by == 1 {
+                let mt = MerkleTree::<Sha256Algorithm>::from_leaves(chunks_list[0]);
                 let root = mt.root().unwrap();
                 roots.push(root.to_vec());
+                root_indices.push(0);
+            } else {
+                for &i in malicious_indices {
+                    let mt_left = MerkleTree::<Sha256Algorithm>::from_leaves(chunks_list[i * 2]);
+                    let root_left = mt_left.root().unwrap();
+                    roots.push(root_left.to_vec());
+                    root_indices.push(i * 2);
+
+                    if i * 2 + 1 >= chunks_list.len() {
+                        continue;
+                    }
+                    let mt_right = MerkleTree::<Sha256Algorithm>::from_leaves(chunks_list[i * 2 + 1]);
+                    let root_right = mt_right.root().unwrap();
+                    roots.push(root_right.to_vec());
+                    root_indices.push(i * 2 + 1);
+                }
             }
         }
 
@@ -198,6 +229,7 @@ where
             key_states,
             key_values,
             hashes: roots,
+            indices: root_indices,
         };
 
         child.path.push(dir);
@@ -274,12 +306,13 @@ where
             key_states: vec![],
             key_values: vec![],
             hashes: vec![],
+            indices: vec![],
         }
     }
 
     pub fn hh_tree_crawl(
         &mut self, session_index: usize, split_by: usize, malicious: &Vec<usize>, is_last: bool
-    ) -> (Vec<T>, Vec<Vec<Vec<u8>>>) {
+    ) -> (Vec<T>, Vec<Vec<Vec<u8>>>, Vec<Vec<usize>>) {
         if malicious.len() > 0 {
             if is_last {
                 for &malicious_client in malicious {
@@ -298,8 +331,8 @@ where
             .par_iter()
             .map(|node| {
                 assert!(node.path.len() <= self.depth);
-                let child0 = self.make_tree_node(node, false, split_by);
-                let child1 = self.make_tree_node(node, true, split_by);
+                let child0 = self.make_tree_node(node, false, split_by, malicious, is_last);
+                let child1 = self.make_tree_node(node, true, split_by, malicious, is_last);
 
                 vec![child0, child1]
             })
@@ -311,15 +344,15 @@ where
             .map(|node| node.value.clone())
             .collect::<Vec<T>>();
 
-        let hashes = next_frontier
+        let (hashes, indices) = next_frontier
             .par_iter()
-            .map(|node| node.hashes.clone())
-            .collect::<Vec<_>>();
+            .map(|node| (node.hashes.clone(), node.indices.clone()))
+            .collect::<(Vec<_>, Vec<_>)>();
 
         self.prev_frontier = self.frontier.clone();
         self.frontier = next_frontier;
 
-        (values, hashes)
+        (values, hashes, indices)
     }
 
     pub fn histogram_tree_crawl(&mut self) {
@@ -328,8 +361,8 @@ where
             .par_iter()
             .map(|node| {
                 // assert!(node.path.len() <= self.depth);
-                let child0 = self.make_tree_node(node, false, 1);
-                let child1 = self.make_tree_node(node, true, 1);
+                let child0 = self.make_tree_node(node, false, 1, &vec![], false);
+                let child1 = self.make_tree_node(node, true, 1, &vec![], false);
 
                 vec![child0, child1]
             })
@@ -354,6 +387,7 @@ where
                     key_states: vec![],
                     key_values: key_values_l,
                     hashes: hashes_l,
+                    indices: vec![],
                 },
                 TreeNode::<U> {
                     path: path_r,
@@ -361,6 +395,7 @@ where
                     key_states: vec![],
                     key_values: key_values_r,
                     hashes: hashes_r,
+                    indices: vec![],
                 })
             })
             .collect::<Vec<(TreeNode<U>, TreeNode<U>)>>();

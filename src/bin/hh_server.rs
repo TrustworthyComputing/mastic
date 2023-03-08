@@ -87,7 +87,7 @@ impl Collector for BatchCollectorServer {
 
     async fn tree_crawl(self, 
         _: context::Context, req: HHTreeCrawlRequest
-    ) -> (Vec<FE>, Vec<Vec<Vec<u8>>>) {
+    ) -> (Vec<FE>, Vec<Vec<Vec<u8>>>, Vec<Vec<usize>>) {
         // let start = Instant::now();
         let client_idx = req.client_idx as usize;
         let split_by = req.split_by;

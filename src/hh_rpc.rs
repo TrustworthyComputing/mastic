@@ -69,7 +69,7 @@ pub trait Collector {
     async fn reset(rst: HHResetRequest) -> String;
     async fn add_keys(add: HHAddKeysRequest) -> String;
     async fn tree_init(req: HHTreeInitRequest) -> String;
-    async fn tree_crawl(req: HHTreeCrawlRequest) -> (Vec<FE>, Vec<Vec<Vec<u8>>>);
+    async fn tree_crawl(req: HHTreeCrawlRequest) -> (Vec<FE>, Vec<Vec<Vec<u8>>>, Vec<Vec<usize>>);
     async fn tree_crawl_last(req: HHTreeCrawlLastRequest) -> (Vec<Vec<u8>>, Vec<FieldElm>);
     async fn tree_prune(req: HHTreePruneRequest) -> String;
     async fn tree_prune_last(req: HHTreePruneLastRequest) -> String;
