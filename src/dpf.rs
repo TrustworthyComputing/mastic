@@ -1,9 +1,9 @@
 use crate::prg;
 use crate::Group;
 
-use sha2::{Sha256, Digest};
 use serde::Deserialize;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct CorWord<T> {
@@ -13,7 +13,7 @@ struct CorWord<T> {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DPFKey<T,U> {
+pub struct DPFKey<T, U> {
     pub key_idx: bool,
     root_seed: prg::PrgSeed,
     cor_words: Vec<CorWord<T>>,
@@ -80,8 +80,14 @@ impl<T> TupleExt<T> for (T, T) {
     }
 }
 
-fn gen_cor_word<W>(bit: bool, value: W, bits: &mut (bool, bool), seeds: &mut (prg::PrgSeed, prg::PrgSeed)) -> CorWord<W>
-    where W: prg::FromRng + Clone + Group + std::fmt::Debug
+fn gen_cor_word<W>(
+    bit: bool,
+    value: W,
+    bits: &mut (bool, bool),
+    seeds: &mut (prg::PrgSeed, prg::PrgSeed),
+) -> CorWord<W>
+where
+    W: prg::FromRng + Clone + Group + std::fmt::Debug,
 {
     let data = seeds.map(|s| s.expand());
 
@@ -131,15 +137,13 @@ fn gen_cor_word<W>(bit: bool, value: W, bits: &mut (bool, bool), seeds: &mut (pr
     cw
 }
 
-
 /// All-prefix DPF implementation.
-impl<T,U> DPFKey<T,U>
+impl<T, U> DPFKey<T, U>
 where
     T: prg::FromRng + Clone + Group + std::fmt::Debug,
-    U: prg::FromRng + Clone + Group + std::fmt::Debug
+    U: prg::FromRng + Clone + Group + std::fmt::Debug,
 {
-
-    pub fn gen(alpha_bits: &[bool], values: &[T], value_last: &U) -> (DPFKey<T,U>, DPFKey<T,U>) {
+    pub fn gen(alpha_bits: &[bool], values: &[T], value_last: &U) -> (DPFKey<T, U>, DPFKey<T, U>) {
         debug_assert!(alpha_bits.len() == values.len() + 1);
 
         let root_seeds = (prg::PrgSeed::random(), prg::PrgSeed::random());
@@ -152,39 +156,42 @@ where
         let mut cor_words: Vec<CorWord<T>> = Vec::new();
         let mut cs: Vec<Vec<u8>> = Vec::new();
         let mut bit_str: String = "".to_string();
-        for i in 0..(alpha_bits.len()-1) {
+        for i in 0..(alpha_bits.len() - 1) {
             let bit = alpha_bits[i];
             bit_str.push_str(if bit { "1" } else { "0" });
             let cw = gen_cor_word::<T>(bit, values[i].clone(), &mut bits, &mut seeds);
             cor_words.push(cw);
-            
+
             hasher.update(&bit_str);
-            hasher.update(&seeds.0.key);
+            hasher.update(seeds.0.key);
             let pi_0 = hasher.finalize_reset().to_vec();
-    
+
             hasher.update(&bit_str);
-            hasher.update(&seeds.1.key);
+            hasher.update(seeds.1.key);
             let pi_1 = hasher.finalize_reset().to_vec();
             cs.push(crate::xor_vec(&pi_0, &pi_1));
-
         }
         let last_cor_word: CorWord<U> = gen_cor_word::<U>(
-            alpha_bits[values.len()], value_last.clone(), &mut bits, &mut seeds);
+            alpha_bits[values.len()],
+            value_last.clone(),
+            &mut bits,
+            &mut seeds,
+        );
 
         (
-            DPFKey::<T,U> {
+            DPFKey::<T, U> {
                 key_idx: false,
                 root_seed: root_seeds.0,
                 cor_words: cor_words.clone(),
                 cor_word_last: last_cor_word.clone(),
                 cs: cs.clone(),
             },
-            DPFKey::<T,U> {
+            DPFKey::<T, U> {
                 key_idx: true,
                 root_seed: root_seeds.1,
-                cor_words: cor_words,
+                cor_words,
                 cor_word_last: last_cor_word,
-                cs: cs,
+                cs,
             },
         )
     }
@@ -265,14 +272,13 @@ where
         }
     }
 
-    pub fn eval(&self, idx: &[bool]) -> (Vec<T>,U) {
+    pub fn eval(&self, idx: &[bool]) -> (Vec<T>, U) {
         debug_assert!(idx.len() <= self.domain_size());
         debug_assert!(!idx.is_empty());
         let mut out = vec![];
         let mut state = self.eval_init();
 
-        for i in 0..idx.len()-1 {
-            let bit = idx[i];
+        for &bit in idx.iter().take(idx.len() - 1) {
             let (state_new, word) = self.eval_bit(&state, bit);
             out.push(word);
             state = state_new;
@@ -285,7 +291,7 @@ where
 
     pub fn gen_from_str(s: &str) -> (Self, Self) {
         let bits = crate::string_to_bits(s);
-        let values = vec![T::one(); bits.len()-1];
+        let values = vec![T::one(); bits.len() - 1];
         DPFKey::gen(&bits, &values, &U::one())
     }
 

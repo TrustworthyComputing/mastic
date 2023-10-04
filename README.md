@@ -1,22 +1,21 @@
-<h1 align="center">PLASMA: Private, Lightweight Aggregated Statistics against Malicious Adversaries with Full Security <a href="https://github.com/TrustworthyComputing/plasma/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"></a> </h1>
-<h3 align="center">A Framework for Private Heavy-Hitters and Histograms</h3>
+<h1 align="center">Mastic: Private Aggregated Statistics through Fully Linear Proofs <a href="https://github.com/jimouris/mastic/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"></a> </h1>
 
 
 ### WARNING: This is not production-ready code.
 
-This is software for a research prototype. Please
-do *NOT* use this code in production.
-This repository builds upon [heavy-hitters](https://github.com/henrycg/heavyhitters).
+This is software for a research prototype. Please do *NOT* use this code in production.
+This repository builds upon [plasma](https://github.com/TrustworthyComputing/plasma) and
+[heavy-hitters](https://github.com/henrycg/heavyhitters).
 
 
 ## Getting started
 First, make sure that you have a working Rust installation:
 
 ```bash
-❯❯ rustc --version   
-rustc 1.67.1
+❯❯ rustc --version
+rustc 1.72.1
 ❯❯ cargo --version
-cargo 1.67.1
+cargo 1.72.1
 ```
 
 ### Build from sources
@@ -28,59 +27,33 @@ cargo build --release
 
 Server 0:
 ```bash
-cargo run --release --bin hh-server -- --config src/bin/config_32.json --server_id 0
+cargo run --release --bin server -- --config src/bin/config.json --server_id 0
 ```
 
 Server 1:
 ```bash
-cargo run --release --bin hh-server -- --config src/bin/config_32.json --server_id 1
+cargo run --release --bin server -- --config src/bin/config.json --server_id 1
 ```
 
-Server 2:
-```bash
-cargo run --release --bin hh-server -- --config src/bin/config_32.json --server_id 2
-```
 
-Now, the servers should be ready to process client requests. In a forth shell, run the following command to send 100 client requests to the servers:
+Now, the servers should be ready to process client requests.
+In a forth shell, run the following command to send 100 client requests to the servers:
 
 Clients:
 ```bash
-cargo run --release --bin hh-leader -- --config src/bin/config_32.json -n 100
+cargo run --release --bin leader -- --config src/bin/config.json -n 100
 ```
 
-To run with the presence of malicious clients include the `--malicious` flag followed by the percentage of malicious clients to generate ([0.0, 0.9]). For instance, to run with 5% malicious clients use:
+To run with the presence of malicious clients include the `--malicious` flag followed by the percentage of malicious clients to generate ([0.0, 0.9]).
+For instance, to run with 5% malicious clients use:
 ```bash
-cargo run --release --bin hh-leader -- --config src/bin/config_32.json -n 100 --malicious 0.05
-```
-
-
-## Histogram
-
-Server 0:
-```bash
-cargo run --release --bin histogram-server -- --config src/bin/config_8.json --server_id 0
-```
-
-Server 1:
-```bash
-cargo run --release --bin histogram-server -- --config src/bin/config_8.json --server_id 1
-```
-
-Server 2:
-```bash
-cargo run --release --bin histogram-server -- --config src/bin/config_8.json --server_id 2
-```
-
-Now, the servers should be ready to process client requests. In a forth shell, run the following command to send 100 client requests to the servers:
-
-Clients:
-```bash
-cargo run --release --bin histogram-leader -- --config src/bin/config_8.json -n 100
+cargo run --release --bin leader -- --config src/bin/config.json -n 100 --malicious 0.05
 ```
 
 
 ## The config file
-The client and servers use a common configuration file, which contains the parameters for the system. An example of one such file is in `src/bin/config_32.json`. The contents of that file are here:
+The client and servers use a common configuration file, which contains the parameters for the system.
+An example of one such file is in `src/bin/config.json`. The contents of that file are here:
 
 ```bash
 {

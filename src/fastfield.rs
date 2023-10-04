@@ -196,7 +196,7 @@ impl From<u16> for FE {
 }
 impl From<u32> for FE {
     fn from(v: u32) -> FE {
-        FE::new_raw(v as u32)
+        FE::new_raw(v)
     }
 }
 

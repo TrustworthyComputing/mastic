@@ -10,7 +10,6 @@ pub struct Config {
     pub zipf_exponent: f64,
     pub server_0: SocketAddr,
     pub server_1: SocketAddr,
-    pub server_2: SocketAddr,
 }
 
 fn parse_ip(v: &Value, error_msg: &str) -> SocketAddr {
@@ -25,14 +24,15 @@ pub fn get_config(filename: &str) -> Config {
     let addkey_batch_size: usize = v["addkey_batch_size"]
         .as_u64()
         .expect("Can't parse addkey_batch_size") as usize;
-    let unique_buckets: usize = v["unique_buckets"].as_u64().expect("Can't parse unique_buckets") as usize;
+    let unique_buckets: usize = v["unique_buckets"]
+        .as_u64()
+        .expect("Can't parse unique_buckets") as usize;
     let threshold = v["threshold"].as_f64().expect("Can't parse threshold");
     let zipf_exponent = v["zipf_exponent"]
         .as_f64()
         .expect("Can't parse zipf_exponent");
     let server_0 = parse_ip(&v["server_0"], "Can't parse server0 addr");
     let server_1 = parse_ip(&v["server_1"], "Can't parse server 1 addr");
-    let server_2 = parse_ip(&v["server_2"], "Can't parse server 2 addr");
 
     Config {
         data_bytes,
@@ -42,12 +42,14 @@ pub fn get_config(filename: &str) -> Config {
         zipf_exponent,
         server_0,
         server_1,
-        server_2,
     }
 }
 
 pub fn get_args(
-    name: &str, get_server_id: bool, get_n_reqs: bool, get_malicious: bool
+    name: &str,
+    get_server_id: bool,
+    get_n_reqs: bool,
+    get_malicious: bool,
 ) -> (Config, i8, usize, f32) {
     let mut flags = App::new(name)
         .version("0.1")
@@ -116,6 +118,6 @@ pub fn get_args(
         get_config(flags.value_of("config").unwrap()),
         server_id,
         n_reqs,
-        malicious
+        malicious,
     )
 }

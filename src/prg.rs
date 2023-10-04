@@ -2,10 +2,12 @@ use core::arch::x86_64::{
     __m128i, _mm_add_epi64, _mm_loadu_si128, _mm_set_epi64x, _mm_storeu_si128,
 };
 
-use aes::{ Aes128, Block, 
-    cipher::{ BlockEncrypt, KeyInit, KeyIvInit, StreamCipher,
-        generic_array::{GenericArray, typenum::{U8}}
-    }
+use aes::{
+    cipher::{
+        generic_array::{typenum::U8, GenericArray},
+        BlockEncrypt, KeyInit, KeyIvInit, StreamCipher,
+    },
+    Aes128, Block,
 };
 
 use rand::Rng;
@@ -108,13 +110,15 @@ impl PrgSeed {
     }
 
     pub fn zero() -> PrgSeed {
-        PrgSeed { key: [0; AES_KEY_SIZE], }
+        PrgSeed {
+            key: [0; AES_KEY_SIZE],
+        }
     }
 
     pub fn random() -> PrgSeed {
         let mut key: [u8; AES_KEY_SIZE] = [0; AES_KEY_SIZE];
         rand::thread_rng().fill(&mut key);
-        PrgSeed { key, }
+        PrgSeed { key }
     }
 }
 
@@ -159,7 +163,7 @@ impl rand::RngCore for PrgStream {
         for v in dest.iter() {
             debug_assert_eq!(*v, 0u8);
         }
-// TODO: encrypt
+        // TODO: encrypt
         // let mut rng = thread_rng();
 
         println!("dest {}", dest.len());
@@ -231,8 +235,8 @@ impl FixedKeyPrgStream {
         FixedKeyPrgStream::store(self.ctr, &mut self.buf[0..AES_BLOCK_SIZE]);
 
         let count_bytes = self.buf;
-        let mut gen = GenericArray::from_mut_slice(&mut self.buf[0..AES_BLOCK_SIZE]);
-        self.aes.encrypt_block(&mut gen);
+        let gen = GenericArray::from_mut_slice(&mut self.buf[0..AES_BLOCK_SIZE]);
+        self.aes.encrypt_block(gen);
 
         // Compute:   AES_0000(ctr) XOR ctr
         self.buf

@@ -40,7 +40,7 @@ impl FieldElm {
     }
 
     pub fn value(&self) -> BigUint {
-        return self.value.clone();
+        self.value.clone()
     }
 }
 
@@ -111,7 +111,6 @@ impl crate::Group for u64 {
 
         self
     }
-
 }
 
 impl crate::prg::FromRng for u64 {
@@ -179,7 +178,6 @@ impl crate::Group for FE {
         // println!("value {}: Group for FE", self.value());
         self.value() // TODO
     }
-
 }
 
 impl crate::prg::FromRng for FE {
