@@ -1,5 +1,6 @@
 use crate::prg;
 use crate::Group;
+use crate::{xor_three_vecs, xor_vec};
 
 use serde::Deserialize;
 use serde::Serialize;
@@ -272,16 +273,39 @@ where
         }
     }
 
-    pub fn eval(&self, idx: &[bool]) -> (Vec<T>, U) {
+    pub fn eval(&self, idx: &[bool], pi: &mut Vec<u8>) -> (Vec<T>, U) {
         debug_assert!(idx.len() <= self.domain_size());
         debug_assert!(!idx.is_empty());
         let mut out = vec![];
         let mut state = self.eval_init();
 
-        for &bit in idx.iter().take(idx.len() - 1) {
+        let mut bit_str: String = "".to_string();
+        let mut hasher = Sha256::new();
+
+        for (level, &bit) in idx.iter().take(idx.len() - 1).enumerate() {
             let (state_new, word) = self.eval_bit(&state, bit);
             out.push(word);
             state = state_new;
+
+            let pi_prime = {
+                bit_str.push(if bit { '1' } else { '0' });
+                hasher.update(&bit_str);
+                hasher.update(state.seed.key);
+                hasher.finalize_reset().to_vec()
+            };
+
+            let h2 = {
+                let h: [u8; 32] = if !state.bit {
+                    // H(pi ^ pi_prime)
+                    xor_vec(pi, &pi_prime).try_into().unwrap()
+                } else {
+                    //  H(pi ^ pi_prime ^ cs)
+                    xor_three_vecs(pi, &pi_prime, &self.cs[level]).try_into().unwrap()
+                };
+                hasher.update(h);
+                &hasher.finalize_reset()
+            };
+            *pi = xor_vec(h2, pi);
         }
 
         let (_, last) = self.eval_bit_last(&state, *idx.last().unwrap());

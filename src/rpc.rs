@@ -46,9 +46,7 @@ pub struct AddLeavesBetweenClientsRequest {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct FinalSharesRequest {
-    pub verified: Vec<bool>,
-}
+pub struct FinalSharesRequest {}
 
 #[tarpc::service]
 pub trait Collector {
@@ -63,5 +61,5 @@ pub trait Collector {
     async fn add_leaves_between_clients(
         req: AddLeavesBetweenClientsRequest,
     ) -> Vec<collect::Result<FieldElm>>;
-    // async fn final_shares(req: FinalSharesRequest) -> Vec<collect::Result<FieldElm>>;
+    async fn final_shares(req: FinalSharesRequest) -> Vec<collect::Result<FieldElm>>;
 }

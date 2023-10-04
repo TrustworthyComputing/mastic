@@ -437,13 +437,16 @@ where
             })
             .flatten()
             .collect::<Vec<TreeNode<U>>>();
-        next_frontier
+        let values = next_frontier
             .par_iter()
             .map(|node| Result::<U> {
                 path: node.path.clone(),
                 value: node.value.clone(),
             })
-            .collect::<Vec<Result<U>>>()
+            .collect::<Vec<Result<U>>>();
+        self.frontier_last = next_frontier;
+
+        values
     }
 
     pub fn tree_prune(&mut self, alive_vals: &[bool]) {
@@ -513,23 +516,14 @@ where
         reconstructed
     }
 
-    pub fn keep_values_last(
-        _nclients: usize,
-        threshold: &U,
-        vals0: &[Result<U>],
-        vals1: &[Result<U>],
-    ) -> Vec<bool> {
+    pub fn keep_values_last(threshold: &U, vals0: &[Result<U>], vals1: &[Result<U>]) -> Vec<bool> {
         assert_eq!(vals0.len(), vals1.len());
 
-        // let nclients = U::from(_nclients as u32);
         let mut keep = vec![];
         for i in 0..vals0.len() {
             let mut v = U::zero();
             v.add(&vals0[i].value);
             v.add(&vals1[i].value);
-            //println!("-> {:?} {:?} {:?}", v, *threshold, nclients);
-
-            // debug_assert!(v <= nclients);
 
             // Keep nodes that are above threshold
             keep.push(v >= *threshold);

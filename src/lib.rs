@@ -16,7 +16,7 @@ use rayon::prelude::*;
 extern crate lazy_static;
 
 pub use crate::field::FieldElm;
-pub use crate::rpc::CollectorClient as HHCollectorClient;
+pub use crate::rpc::CollectorClient;
 use itertools::Itertools;
 
 // Additive group, such as (Z_n, +)

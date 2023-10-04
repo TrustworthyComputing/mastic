@@ -1,10 +1,11 @@
 use mastic::{
     collect, config, dpf, fastfield,
     rpc::{
-        AddKeysRequest, AddLeavesBetweenClientsRequest, ComputeHashesRequest, ResetRequest,
-        TreeCrawlLastRequest, TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
+        AddKeysRequest, AddLeavesBetweenClientsRequest, ComputeHashesRequest, FinalSharesRequest,
+        ResetRequest, TreeCrawlLastRequest, TreeCrawlRequest, TreeInitRequest,
+        TreePruneLastRequest, TreePruneRequest,
     },
-    FieldElm, HHCollectorClient,
+    CollectorClient, FieldElm,
 };
 
 use futures::try_join;
@@ -19,7 +20,7 @@ use std::{
 use tarpc::{client, context, serde_transport::tcp, tokio_serde::formats::Bincode};
 
 type Key = dpf::DPFKey<fastfield::FE, FieldElm>;
-type Client = HHCollectorClient;
+type Client = CollectorClient;
 
 fn long_context() -> context::Context {
     let mut ctx = context::current();
@@ -38,15 +39,15 @@ fn sample_string(len: usize) -> String {
 }
 
 fn generate_keys(cfg: &config::Config) -> (Vec<Key>, Vec<Key>) {
-    let (keys01, keys10): (Vec<Key>, Vec<Key>) = rayon::iter::repeat(0)
+    let (keys_0, keys_1): (Vec<Key>, Vec<Key>) = rayon::iter::repeat(0)
         .take(cfg.unique_buckets)
         .map(|_| dpf::DPFKey::gen_from_str(&sample_string(cfg.data_bytes * 8)))
         .unzip();
 
-    let encoded: Vec<u8> = bincode::serialize(&keys01[0]).unwrap();
+    let encoded: Vec<u8> = bincode::serialize(&keys_0[0]).unwrap();
     println!("Key size: {:?} bytes", encoded.len());
 
-    (keys01, keys10)
+    (keys_0, keys_1)
 }
 
 async fn reset_servers(client_0: &Client, client_1: &Client) -> io::Result<()> {
@@ -75,17 +76,17 @@ async fn add_keys(
     client_1: &Client,
     keys_0: &[dpf::DPFKey<fastfield::FE, FieldElm>],
     keys_1: &[dpf::DPFKey<fastfield::FE, FieldElm>],
-    nreqs: usize,
+    num_clients: usize,
     malicious_percentage: f32,
 ) -> io::Result<()> {
     use rand::distributions::Distribution;
     let mut rng = rand::thread_rng();
     let zipf = zipf::ZipfDistribution::new(cfg.unique_buckets, cfg.zipf_exponent).unwrap();
 
-    let mut addkeys_0 = Vec::with_capacity(nreqs);
-    let mut addkeys_1 = Vec::with_capacity(nreqs);
+    let mut addkeys_0 = Vec::with_capacity(num_clients);
+    let mut addkeys_1 = Vec::with_capacity(num_clients);
 
-    for r in 0..nreqs {
+    for r in 0..num_clients {
         let idx_1 = zipf.sample(&mut rng) - 1;
         let mut idx_2 = idx_1;
         if rand::thread_rng().gen_range(0.0..1.0) < malicious_percentage {
@@ -108,9 +109,9 @@ async fn run_level(
     cfg: &config::Config,
     client_0: &Client,
     client_1: &Client,
-    nreqs: usize,
+    num_clients: usize,
 ) -> io::Result<()> {
-    let threshold64 = core::cmp::max(1, (cfg.threshold * (nreqs as f64)) as u64);
+    let threshold64 = core::cmp::max(1, (cfg.threshold * (num_clients as f64)) as u64);
     let threshold = fastfield::FE::new(threshold64 as u64);
     let mut keep;
     let mut split = 1usize;
@@ -126,7 +127,7 @@ async fn run_level(
 
         let response0 = client_0.tree_crawl(long_context(), req.clone());
         let response1 = client_1.tree_crawl(long_context(), req);
-        let ((vals_0, root0, indices0), (vals_1, root1, _)) =
+        let ((vals_0, root_0, indices_0), (vals_1, root_1, _)) =
             try_join!(response0, response1).unwrap();
 
         assert_eq!(vals_0.len(), vals_1.len());
@@ -134,31 +135,31 @@ async fn run_level(
             &threshold, &vals_0, &vals_1,
         );
 
-        if root0[0].is_empty() {
+        if root_0[0].is_empty() {
             break;
         }
-        let left_root0 = &root0[0];
-        let left_root1 = &root1[0];
+        let left_root_0 = &root_0[0];
+        let left_root_1 = &root_1[0];
         malicious = Vec::new();
-        for i in 0..left_root0.len() {
-            let hl0 = &left_root0[i]
+        for i in 0..left_root_0.len() {
+            let hl0 = &left_root_0[i]
                 .iter()
                 .map(|x| format!("{:02x}", x))
                 .collect::<String>();
-            let hl1 = &left_root1[i]
+            let hl1 = &left_root_1[i]
                 .iter()
                 .map(|x| format!("{:02x}", x))
                 .collect::<String>();
             if hl0 != hl1 {
-                malicious.push(indices0[0][i]);
+                malicious.push(indices_0[0][i]);
                 // println!("{}) different {} vs {}", i, hl0, hl1);
             }
         }
         if malicious.is_empty() {
             break;
         } else {
-            // println!("Detected malicious {:?} out of {} clients", malicious, nreqs);
-            if split > nreqs {
+            // println!("Detected malicious {:?} out of {} clients", malicious, num_clients);
+            if split > num_clients {
                 if !is_last {
                     is_last = true;
                 } else {
@@ -179,10 +180,13 @@ async fn run_level(
 }
 
 async fn run_level_last(
+    cfg: &config::Config,
     client_0: &Client,
     client_1: &Client,
     num_clients: usize,
 ) -> io::Result<()> {
+    let threshold = FieldElm::from(core::cmp::max(1, (cfg.threshold * (num_clients as f64)) as u32));
+
     let req = TreeCrawlLastRequest {};
     let response0 = client_0.tree_crawl_last(long_context(), req.clone());
     let response1 = client_1.tree_crawl_last(long_context(), req);
@@ -190,12 +194,11 @@ async fn run_level_last(
 
     assert_eq!(hashes_0.len(), hashes_1.len());
 
-    let mut ver_0 = vec![true; num_clients];
-    mastic::check_hashes(&mut ver_0, &hashes_0, &hashes_1);
-    // println!("1: ver_0 {:?}", ver_0);
+    let mut verified = vec![true; num_clients];
+    mastic::check_hashes(&mut verified, &hashes_0, &hashes_1);
 
-    // mastic::check_taus(&mut ver_0, &tau_vals_0, &tau_vals_1);
-    // println!("2: ver_0 {:?}", ver_0);
+    // TODO
+    // mastic::check_taus(&mut verified, &tau_vals_0, &tau_vals_1);
 
     let tau_vals_0 = &collect::KeyCollection::<fastfield::FE, FieldElm>::reconstruct_shares(
         &tau_vals_0,
@@ -203,24 +206,36 @@ async fn run_level_last(
     );
 
     // Check s0, s1 hashes and taus
-    mastic::check_hashes_and_taus(&mut ver_0, &hashes_0, &hashes_1, tau_vals_0, num_clients);
-    assert!(ver_0.iter().all(|&x| x));
+    mastic::check_hashes_and_taus(&mut verified, &hashes_0, &hashes_1, tau_vals_0, num_clients);
+    assert!(verified.iter().all(|&x| x));
 
     let req = ComputeHashesRequest {};
     let response0 = client_0.compute_hashes(long_context(), req.clone());
     let response1 = client_1.compute_hashes(long_context(), req);
     let (hashes_0, hashes_1) = try_join!(response0, response1).unwrap();
-    mastic::check_hashes(&mut ver_0, &hashes_0, &hashes_1);
+    mastic::check_hashes(&mut verified, &hashes_0, &hashes_1);
 
-    // TODO: prune last
-
-    let req = AddLeavesBetweenClientsRequest { verified: ver_0 };
+    let req = AddLeavesBetweenClientsRequest { verified };
     let response0 = client_0.add_leaves_between_clients(long_context(), req.clone());
     let response1 = client_1.add_leaves_between_clients(long_context(), req);
-    let (shares_00, shares_01) = try_join!(response0, response1).unwrap();
+    let (vals_0, vals_1) = try_join!(response0, response1).unwrap();
 
+    let keep = collect::KeyCollection::<FieldElm, FieldElm>::keep_values_last(
+        &threshold, &vals_0, &vals_1,
+    );
+
+    // Tree prune
+    let req = TreePruneLastRequest { keep };
+    let response0 = client_0.tree_prune_last(long_context(), req.clone());
+    let response1 = client_1.tree_prune_last(long_context(), req);
+    try_join!(response0, response1).unwrap();
+
+    let req = FinalSharesRequest {};
+    let response0 = client_0.final_shares(long_context(), req.clone());
+    let response1 = client_1.final_shares(long_context(), req);
+    let (shares_0, shares_1) = try_join!(response0, response1).unwrap();
     for res in
-        &collect::KeyCollection::<fastfield::FE, FieldElm>::final_values(&shares_00, &shares_01)
+        &collect::KeyCollection::<fastfield::FE, FieldElm>::final_values(&shares_0, &shares_1)
     {
         let bits = mastic::bits_to_bitstring(&res.path);
         if res.value.value().to_u32().unwrap() > 0 {
@@ -236,7 +251,7 @@ async fn main() -> io::Result<()> {
     // println!("Using only one thread!");
     // rayon::ThreadPoolBuilder::new().num_threads(1).build_global().unwrap();
 
-    let (cfg, _, nreqs, malicious) = config::get_args("Leader", false, true, true);
+    let (cfg, _, num_clients, malicious) = config::get_args("Leader", false, true, true);
     assert!((0.0..0.8).contains(&malicious));
     println!("Running with {}% malicious clients", malicious * 100.0);
     let client_0 = Client::new(
@@ -263,7 +278,7 @@ async fn main() -> io::Result<()> {
 
     reset_servers(&client_0, &client_1).await?;
 
-    let mut left_to_go = nreqs;
+    let mut left_to_go = num_clients;
     let reqs_in_flight = 1000;
     while left_to_go > 0 {
         let mut resps = vec![];
@@ -290,7 +305,7 @@ async fn main() -> io::Result<()> {
     let bitlen = cfg.data_bytes * 8; // bits
     for _level in 0..bitlen - 1 {
         let start_level = Instant::now();
-        run_level(&cfg, &client_0, &client_1, nreqs).await?;
+        run_level(&cfg, &client_0, &client_1, num_clients).await?;
         println!(
             "Time for level {}: {:?}",
             _level,
@@ -304,7 +319,7 @@ async fn main() -> io::Result<()> {
     );
 
     let start_last = Instant::now();
-    run_level_last(&client_0, &client_1, nreqs).await?;
+    run_level_last(&cfg, &client_0, &client_1, num_clients).await?;
     println!(
         "Time for last level: {:?}",
         start_last.elapsed().as_secs_f64()

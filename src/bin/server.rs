@@ -4,7 +4,7 @@ use mastic::{
     prg,
     rpc::{
         AddKeysRequest, AddLeavesBetweenClientsRequest, Collector, ComputeHashesRequest,
-        ResetRequest, TreeCrawlLastRequest, TreeCrawlRequest, TreeInitRequest,
+        FinalSharesRequest, ResetRequest, TreeCrawlLastRequest, TreeCrawlRequest, TreeInitRequest,
         TreePruneLastRequest, TreePruneRequest,
     },
     xor_vec, FieldElm,
@@ -122,7 +122,7 @@ impl Collector for CollectorServer {
             // }
             hashes.push(hasher.finalize_reset().to_vec());
         }
-        println!("hh_compute_hashes: {:?}", start.elapsed().as_secs_f64());
+        println!("compute_hashes: {:?}", start.elapsed().as_secs_f64());
 
         if mastic::consts::BATCH {
             let mut batched_hash = vec![0u8; 32];
@@ -144,10 +144,19 @@ impl Collector for CollectorServer {
         let mut coll = self.arc.lock().unwrap();
         let res = coll.add_leaves_between_clients(&req.verified);
         println!(
-            "hh_add_leaves_between_clients: {:?}",
+            "add_leaves_between_clients: {:?}",
             start.elapsed().as_secs_f64()
         );
         res
+    }
+
+    async fn final_shares(
+        self,
+        _: context::Context,
+        _req: FinalSharesRequest,
+    ) -> Vec<collect::Result<FieldElm>> {
+        let coll = self.arc.lock().unwrap();
+        coll.final_shares()
     }
 }
 

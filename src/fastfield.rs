@@ -12,17 +12,27 @@ use serde::{Deserialize, Serialize};
 use std::cmp::{Eq, PartialEq};
 use std::convert::From;
 use std::fmt::{self, Display, Formatter, LowerHex, UpperHex};
+use std::hash::{Hash, Hasher};
 use std::ops::{Add, Div, Mul, Neg, Rem, Sub};
 use std::ops::{AddAssign, DivAssign, MulAssign, RemAssign, SubAssign};
 
 // Here are the constants that determine our prime:
 //
 // number of bits in our field elements
-const N_BITS: u64 = 42;
+const N_BITS: u64 = 62;
 // Which bit (other than bit 0) do we clear in our prime?
 const OFFSET_BIT: u64 = 30;
 // order of the prime field
 const PRIME_ORDER: u64 = (1 << N_BITS) - (1 << OFFSET_BIT) - 1;
+// Mask to mask off all bits that aren't used in the field elements.
+const FULL_BITS_MASK: u64 = (1 << N_BITS) - 1;
+// Largest remaining value after we take a u64 and shift away the
+// bits that we want to use in our field.
+const MAX_EXCESS: u64 = (1 << (64 - N_BITS)) - 1;
+// Largest value to use in our field elements.  This will spill
+// over our regular bit mask by a little, since we don't store stuff
+// in a fully bit-reduced form.
+const FE_VAL_MAX: u64 = FULL_BITS_MASK + (MAX_EXCESS << OFFSET_BIT) + MAX_EXCESS;
 
 // There are some constraints on those constants, as described here:
 //
@@ -52,21 +62,6 @@ const PRIME_ORDER: u64 = (1 << N_BITS) - (1 << OFFSET_BIT) - 1;
 //  We accept format [0] for input.
 //
 //  We use formats [0] and [1] for intermediate calculations.
-
-// Mask to mask off all bits that aren't used in the field elements.
-const FULL_BITS_MASK: u64 = (1 << N_BITS) - 1;
-
-// We use these macros to check invariants.
-
-// Number of bits in a u64 which we don't use.
-const REMAINING_BITS: u64 = 64 - N_BITS;
-// Largest remaining value after we take a u64 and shift away the
-// bits that we want to use in our field.
-const MAX_EXCESS: u64 = (1 << REMAINING_BITS) - 1;
-// Largest value to use in our field elements.  This will spill
-// over our regular bit mask by a little, since we don't store stuff
-// in a fully bit-reduced form.
-const FE_VAL_MAX: u64 = FULL_BITS_MASK + (MAX_EXCESS << OFFSET_BIT) + MAX_EXCESS;
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct FE {
@@ -189,11 +184,13 @@ impl From<u8> for FE {
         FE::new_raw(v as u32)
     }
 }
+
 impl From<u16> for FE {
     fn from(v: u16) -> FE {
         FE::new_raw(v as u32)
     }
 }
+
 impl From<u32> for FE {
     fn from(v: u32) -> FE {
         FE::new_raw(v)
@@ -205,6 +202,7 @@ impl From<FE> for u64 {
         v.value()
     }
 }
+
 impl Zero for FE {
     fn zero() -> FE {
         FE::new_raw(0)
@@ -213,6 +211,7 @@ impl Zero for FE {
         self.value() == 0
     }
 }
+
 impl One for FE {
     fn one() -> FE {
         FE::new_raw(1)
@@ -250,6 +249,12 @@ impl PartialEq for FE {
     }
 }
 impl Eq for FE {}
+
+impl Hash for FE {
+    fn hash<H: Hasher>(&self, hasher: &mut H) {
+        hasher.write_u64(self.value())
+    }
+}
 
 impl AddAssign for FE {
     fn add_assign(&mut self, other: Self) {
@@ -340,11 +345,13 @@ impl MulAssign for FE {
         *self = *self * other;
     }
 }
+
 impl DivAssign for FE {
     fn div_assign(&mut self, other: Self) {
         *self = *self / other;
     }
 }
+
 impl RemAssign for FE {
     fn rem_assign(&mut self, other: Self) {
         *self = *self % other;
@@ -357,6 +364,7 @@ impl<'a> Add<&'a FE> for FE {
         self + *rhs
     }
 }
+
 impl<'a> Sub<&'a FE> for FE {
     type Output = Self;
     fn sub(self, rhs: &Self) -> FE {
@@ -378,12 +386,14 @@ impl<'a> Mul<&'a FE> for FE {
         self * *rhs
     }
 }
+
 impl<'a> Div<&'a FE> for FE {
     type Output = Self;
     fn div(self, rhs: &Self) -> FE {
         self / *rhs
     }
 }
+
 impl<'a> Rem<&'a FE> for FE {
     type Output = Self;
     fn rem(self, rhs: &Self) -> FE {
@@ -401,7 +411,6 @@ impl Num for FE {
 
 #[cfg(test)]
 mod tests {
-    //use math::*;
     use super::*;
 
     fn maxrep() -> FE {
@@ -420,11 +429,13 @@ mod tests {
         assert!(OFFSET_BIT < N_BITS / 2);
         assert!(OFFSET_BIT != 2);
     }
+
     #[test]
     fn prime_is_prime() {
         use primal;
         assert!(primal::is_prime(PRIME_ORDER));
     }
+
     #[test]
     fn test_values() {
         assert_eq!(FE::new(0).value(), 0);
@@ -437,6 +448,7 @@ mod tests {
         assert_eq!(FE::new(!0u64).value(), (!0u64) % PRIME_ORDER);
         assert_eq!(maxrep().value(), FE_VAL_MAX - PRIME_ORDER);
     }
+
     #[test]
     fn test_equivalence() {
         assert_eq!(FE::new(0), FE::new(PRIME_ORDER));
@@ -445,6 +457,7 @@ mod tests {
         assert_eq!(FE::new(PRIME_ORDER - 50), FE::new(PRIME_ORDER * 4 - 50));
         assert_eq!(maxrep(), FE::new(FE_VAL_MAX - PRIME_ORDER));
     }
+
     #[test]
     fn test_add_sub() {
         assert_eq!(FE::new(0) - FE::new(100), FE::new(PRIME_ORDER - 100));
@@ -468,6 +481,7 @@ mod tests {
         assert_eq!(-fullbits(), FE::new(PRIME_ORDER * 2 - FULL_BITS_MASK));
         assert_eq!(FE::zero() - fullbits(), -fullbits());
     }
+
     #[test]
     fn mult() {
         assert_eq!(FE::new(0) * FE::new(1000), FE::new(0));
@@ -491,6 +505,7 @@ mod tests {
             FE::new(FULL_BITS_MASK % PRIME_ORDER) * FE::new(FULL_BITS_MASK % PRIME_ORDER)
         )
     }
+
     #[test]
     fn recip() {
         assert_eq!(FE::new(1).recip(), FE::new(1));
@@ -498,6 +513,7 @@ mod tests {
         assert_eq!(FE::new(999).recip(), FE::new(2885188949795824624));
         assert_eq!(FE::new(999), FE::new(2885188949795824624).recip());
     }
+
     #[test]
     fn construct_maybe() {
         assert_eq!(FE::from_reduced(12345), Some(FE::new(12345)));
@@ -527,46 +543,4 @@ mod tests {
         assert_eq!(FE::from_u64_unbiased(PRIME_ORDER + hibit), None);
         assert_eq!(FE::from_u64_unbiased(PRIME_ORDER + hibit * 2), None);
     }
-
-    /*
-    fn mul_slow(a: FE, b: FE) -> FE {
-        use num::bigint::BigUint;
-        use num::traits::cast::FromPrimitive;
-        use num::traits::cast::ToPrimitive;
-        let a_big = BigUint::from_u64(a.val).unwrap();
-        let b_big = BigUint::from_u64(b.val).unwrap();
-        let product = (a_big * b_big) % PRIME_ORDER;
-        FE::new(product.to_u64().unwrap())
-    }
-    */
-
-    /*
-    use quickcheck::{Arbitrary, Gen};
-    impl Arbitrary for FE {
-        fn arbitrary<G: Gen>(g: &mut G) -> FE {
-            loop {
-                let v  = FE::from_u64_unbiased(g.next_u64());
-                match v {
-                    Some(x) => return x,
-                    None => continue,
-                }
-            }
-        }
-    }
-    quickcheck! {
-        fn p_multiply(a : FE, b : FE) -> bool {
-            // println!("{:?} * {:?}", a, b);
-            a * b == mul_slow(a,b)
-        }
-
-        fn p_recip(a : FE) -> bool {
-            // println!("1 / {:?}", a);
-            a * a.recip() == FE::new(1)
-        }
-
-        fn p_div(a : FE, b : FE) -> bool {
-            (a / b) * b == a
-        }
-    }
-    */
 }
