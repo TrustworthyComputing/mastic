@@ -1,17 +1,19 @@
 use mastic::{
-    collect, config,
+    collect,
+    config,
     fastfield::FE,
     prg,
     rpc::{
-        AddKeysRequest, AddLeavesBetweenClientsRequest, Collector, ComputeHashesRequest,
-        FinalSharesRequest, ResetRequest, TreeCrawlLastRequest, TreeCrawlRequest, TreeInitRequest,
+        AddKeysRequest, AddLeavesBetweenClientsRequest, Collector, FinalSharesRequest,
+        ResetRequest, TreeCrawlLastRequest, TreeCrawlRequest, TreeInitRequest,
         TreePruneLastRequest, TreePruneRequest,
     },
-    xor_vec, FieldElm,
+    // xor_vec,
+    FieldElm,
 };
 
 use futures::{future, prelude::*};
-use sha2::{Digest, Sha256};
+// use sha2::{Digest, Sha256};
 use std::time::Instant;
 use std::{
     io,
@@ -96,44 +98,44 @@ impl Collector for CollectorServer {
         "Done".to_string()
     }
 
-    async fn compute_hashes(self, _: context::Context, _req: ComputeHashesRequest) -> Vec<Vec<u8>> {
-        let start = Instant::now();
-        let coll_0 = self.arc.lock().unwrap();
-        let y_0 = coll_0.get_ys();
+    // async fn compute_hashes(self, _: context::Context, _req: ComputeHashesRequest) -> Vec<Vec<u8>> {
+    //     let start = Instant::now();
+    //     let coll_0 = self.arc.lock().unwrap();
+    //     let y_0 = coll_0.get_ys();
 
-        // let mut y0_y1: Vec<Vec<FieldElm>> = vec![];
-        // for i in 0..y_0[0].len() {
-        //     y0_y1.push(
-        //         y_0.par_iter()
-        //             // .zip_eq(y_1.par_iter())
-        //             .map(|(h0)| {
-        //                 let elm = h0[i].clone();
-        //                 // elm.sub(&h1[i]);
-        //                 elm
-        //             })
-        //             .collect(),
-        //     );
-        // }
-        let mut hashes: Vec<Vec<u8>> = vec![];
-        let mut hasher = Sha256::new();
-        for _client in 0..y_0.len() {
-            // for y in y0_y1[client].iter() {
-            //     hasher.update(y.value().to_string());
-            // }
-            hashes.push(hasher.finalize_reset().to_vec());
-        }
-        println!("compute_hashes: {:?}", start.elapsed().as_secs_f64());
+    //     // let mut y0_y1: Vec<Vec<FieldElm>> = vec![];
+    //     // for i in 0..y_0[0].len() {
+    //     //     y0_y1.push(
+    //     //         y_0.par_iter()
+    //     //             // .zip_eq(y_1.par_iter())
+    //     //             .map(|(h0)| {
+    //     //                 let elm = h0[i].clone();
+    //     //                 // elm.sub(&h1[i]);
+    //     //                 elm
+    //     //             })
+    //     //             .collect(),
+    //     //     );
+    //     // }
+    //     let mut hashes: Vec<Vec<u8>> = vec![];
+    //     let mut hasher = Sha256::new();
+    //     for _client in 0..y_0.len() {
+    //         // for y in y0_y1[client].iter() {
+    //         //     hasher.update(y.value().to_string());
+    //         // }
+    //         hashes.push(hasher.finalize_reset().to_vec());
+    //     }
+    //     println!("compute_hashes: {:?}", start.elapsed().as_secs_f64());
 
-        if mastic::consts::BATCH {
-            let mut batched_hash = vec![0u8; 32];
-            for hash in hashes {
-                batched_hash = xor_vec(&batched_hash, &hash);
-            }
-            vec![batched_hash]
-        } else {
-            hashes
-        }
-    }
+    //     if mastic::consts::BATCH {
+    //         let mut batched_hash = vec![0u8; 32];
+    //         for hash in hashes {
+    //             batched_hash = xor_vec(&batched_hash, &hash);
+    //         }
+    //         vec![batched_hash]
+    //     } else {
+    //         hashes
+    //     }
+    // }
 
     async fn add_leaves_between_clients(
         self,

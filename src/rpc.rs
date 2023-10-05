@@ -37,8 +37,8 @@ pub struct TreePruneLastRequest {
     pub keep: Vec<bool>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ComputeHashesRequest {}
+// #[derive(Clone, Debug, Serialize, Deserialize)]
+// pub struct ComputeHashesRequest {}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AddLeavesBetweenClientsRequest {
@@ -57,7 +57,7 @@ pub trait Collector {
     async fn tree_crawl_last(req: TreeCrawlLastRequest) -> (Vec<Vec<u8>>, Vec<FieldElm>);
     async fn tree_prune(req: TreePruneRequest) -> String;
     async fn tree_prune_last(req: TreePruneLastRequest) -> String;
-    async fn compute_hashes(req: ComputeHashesRequest) -> Vec<Vec<u8>>;
+    // async fn compute_hashes(req: ComputeHashesRequest) -> Vec<Vec<u8>>;
     async fn add_leaves_between_clients(
         req: AddLeavesBetweenClientsRequest,
     ) -> Vec<collect::Result<FieldElm>>;

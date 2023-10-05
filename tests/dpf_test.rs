@@ -26,7 +26,7 @@ fn dpf_complete() {
         let alpha_eval = u32_to_bits(num_bits, i);
 
         println!("Alpha: {:?}", alpha);
-        for j in 2..((num_bits-1) as usize) {
+        for j in 2..((num_bits - 1) as usize) {
             let eval_0 = key_0.eval(&alpha_eval[0..j].to_vec(), &mut pi_0);
             let eval_1 = key_1.eval(&alpha_eval[0..j].to_vec(), &mut pi_1);
 
@@ -35,7 +35,7 @@ fn dpf_complete() {
             tmp.add(&eval_0.0[j - 2]);
             tmp.add(&eval_1.0[j - 2]);
             println!("[{:?}] Tmp {:?} = {:?}", alpha_eval, j, tmp);
-            if alpha[0..j-1] == alpha_eval[0..j-1] {
+            if alpha[0..j - 1] == alpha_eval[0..j - 1] {
                 assert_eq!(
                     betas[j - 2],
                     tmp,

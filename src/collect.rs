@@ -1,6 +1,6 @@
 use crate::dpf;
 use crate::prg;
-use crate::{xor_three_vecs, xor_vec};
+use crate::xor_vec;
 
 use bitvec::prelude::*;
 use rand::Rng;
@@ -42,7 +42,7 @@ unsafe impl<T> Sync for TreeNode<T> {}
 pub struct KeyCollection<T, U> {
     depth: usize,
     pub keys: Vec<(bool, dpf::DPFKey<T, U>)>,
-    pub pis: Vec<Vec<Vec<u8>>>,
+    pub proofs: Vec<Vec<u8>>,
     honest_clients: Vec<bool>,
     frontier: Vec<TreeNode<T>>,
     prev_frontier: Vec<TreeNode<T>>,
@@ -76,7 +76,7 @@ where
         KeyCollection::<T, U> {
             depth,
             keys: vec![],
-            pis: vec![],
+            proofs: vec![],
             honest_clients: vec![],
             frontier: vec![],
             prev_frontier: vec![],
@@ -86,7 +86,7 @@ where
     }
 
     pub fn add_key(&mut self, key: dpf::DPFKey<T, U>) {
-        self.pis.push(key.cs.clone());
+        self.proofs.push(key.cs[0].clone());
         self.keys.push((true, key));
         self.honest_clients.push(true);
     }
@@ -120,14 +120,16 @@ where
         malicious_indices: &Vec<usize>,
         is_last: bool,
     ) -> TreeNode<T> {
+        let mut bit_str = crate::bits_to_bitstring(parent.path.as_slice());
+        bit_str.push(if dir { '1' } else { '0' });
+
         let (key_states, key_values): (Vec<dpf::EvalState>, Vec<T>) = self
             .keys
             .par_iter()
             .enumerate()
-            .map(|(i, key)| key.1.eval_bit(&parent.key_states[i], dir))
+            .map(|(i, key)| key.1.eval_bit(&parent.key_states[i], dir, &bit_str))
             .unzip();
-        let mut bit_str = crate::bits_to_bitstring(parent.path.as_slice());
-        bit_str.push(if dir { '1' } else { '0' });
+
         let mut child_val = T::zero();
         for ((i, v), &honest_client) in key_values.iter().enumerate().zip(&self.honest_clients) {
             // Add in only live values
@@ -137,42 +139,17 @@ where
         }
         child_val.reduce();
 
-        let hashes: Vec<[u8; 32]> = key_states
+        let proofs: Vec<[u8; 32]> = key_states
             .par_iter()
-            .zip(&self.honest_clients)
-            .enumerate()
-            .map(|(i, (ks, honest_client))| {
-                if !honest_client {
-                    [0u8; 32]
-                } else {
-                    let mut hasher = Sha256::new();
-                    hasher.update(&bit_str);
-                    hasher.update(ks.seed.key);
-                    let pi_prime = hasher.finalize_reset().to_vec();
-                    // Correction operation
-                    let h: [u8; 32] = if !ks.bit {
-                        // H(pi ^ correct(pi_prime, cs, t0)) = H(pi ^ pi_prime)
-                        xor_vec(&self.pis[i][0], &pi_prime).try_into().unwrap()
-                    } else {
-                        // H(pi ^ correct(pi_prime, cs, t0)) = H(pi ^ pi_prime)
-                        let cs_t = &self.keys[i].1.cs[0];
-                        xor_three_vecs(&self.pis[i][0], &pi_prime, cs_t)
-                            .try_into()
-                            .unwrap()
-                    };
-                    hasher.update(h);
-                    xor_vec(&hasher.finalize(), &self.pis[i][0])
-                        .try_into()
-                        .unwrap()
-                }
-            })
-            .collect::<Vec<_>>();
+            .map(|s| s.proof.clone().try_into().unwrap())
+            .collect();
+
         let mut roots = Vec::new();
         let mut root_indices = Vec::new();
         if bit_str.len() < 2 && !is_last {
-            let tree_size = 1 << (hashes.len() as f32).log2().ceil() as usize;
+            let tree_size = 1 << (proofs.len() as f32).log2().ceil() as usize;
             let chunk_sz = tree_size / split_by;
-            let chunks_list: Vec<&[[u8; 32]]> = hashes.chunks(chunk_sz).collect();
+            let chunks_list: Vec<&[[u8; 32]]> = proofs.chunks(chunk_sz).collect();
 
             if split_by == 1 {
                 let mt = MerkleTree::<Sha256Algorithm>::from_leaves(chunks_list[0]);
@@ -218,47 +195,22 @@ where
         parent: &TreeNode<T>,
         dir: bool,
     ) -> (Vec<U>, Vec<Vec<u8>>, Vec<bool>) {
+        let mut bit_str = crate::bits_to_bitstring(parent.path.as_slice());
+        bit_str.push(if dir { '1' } else { '0' });
+
         let (key_states, key_values): (Vec<dpf::EvalState>, Vec<U>) = self
             .keys
             .par_iter()
             .enumerate()
-            .map(|(i, key)| key.1.eval_bit_last(&parent.key_states[i], dir))
+            .map(|(i, key)| key.1.eval_bit_last(&parent.key_states[i], dir, &bit_str))
             .unzip();
 
-        let bit_str = crate::bits_to_bitstring(parent.path.as_slice());
-        // bit_str.push(if dir {'1'} else {'0'});
-        let depth = bit_str.len();
         let mut hashes = vec![];
         if !dir {
             hashes = key_states
                 .par_iter()
-                .zip(&self.honest_clients)
-                .enumerate()
-                .map(|(i, (ks, honest_client))| {
-                    if !honest_client {
-                        vec![0u8; 32]
-                    } else {
-                        let mut hasher = Sha256::new();
-                        hasher.update(&bit_str);
-                        hasher.update(parent.key_states[i].seed.key);
-                        let pi_prime = hasher.finalize().to_vec();
-                        // Correction operation
-                        let h: Vec<u8> = if !ks.bit {
-                            // H(pi ^ correct(pi_prime, cs, t0)) = H(pi ^ pi_prime)
-                            xor_vec(&self.pis[i][depth - 1], &pi_prime)
-                        } else {
-                            // H(pi ^ correct(pi_prime, cs, t0)) = H(pi ^ pi_prime)
-                            xor_three_vecs(
-                                &self.pis[i][depth - 1],
-                                &pi_prime,
-                                &self.keys[i].1.cs[depth - 1],
-                            )
-                        };
-
-                        h
-                    }
-                })
-                .collect::<Vec<_>>();
+                .map(|s| s.proof.clone())
+                .collect();
         }
         let mut path = parent.path.clone();
         path.push(dir);
@@ -417,13 +369,13 @@ where
         }
     }
 
-    pub fn get_ys(&self) -> Vec<&Vec<U>> {
-        self.frontier_intermediate
-            .par_iter()
-            .map(|node| vec![&node.0.key_values, &node.1.key_values])
-            .flatten()
-            .collect::<Vec<_>>()
-    }
+    // pub fn get_ys(&self) -> Vec<&Vec<U>> {
+    //     self.frontier_intermediate
+    //         .par_iter()
+    //         .map(|node| vec![&node.0.key_values, &node.1.key_values])
+    //         .flatten()
+    //         .collect::<Vec<_>>()
+    // }
 
     pub fn add_leaves_between_clients(&mut self, verified: &Vec<bool>) -> Vec<Result<U>> {
         let next_frontier = self

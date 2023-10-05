@@ -1,9 +1,9 @@
 use mastic::{
     collect, config, dpf, fastfield,
     rpc::{
-        AddKeysRequest, AddLeavesBetweenClientsRequest, ComputeHashesRequest, FinalSharesRequest,
-        ResetRequest, TreeCrawlLastRequest, TreeCrawlRequest, TreeInitRequest,
-        TreePruneLastRequest, TreePruneRequest,
+        AddKeysRequest, AddLeavesBetweenClientsRequest, FinalSharesRequest, ResetRequest,
+        TreeCrawlLastRequest, TreeCrawlRequest, TreeInitRequest, TreePruneLastRequest,
+        TreePruneRequest,
     },
     CollectorClient, FieldElm,
 };
@@ -51,8 +51,6 @@ fn generate_keys(cfg: &config::Config) -> (Vec<Key>, Vec<Key>) {
 }
 
 async fn reset_servers(client_0: &Client, client_1: &Client) -> io::Result<()> {
-    // responses.push(client_0.reset(long_context(), ResetRequest {  }));
-
     let req = ResetRequest {};
     let response_0 = client_0.reset(long_context(), req.clone());
     let response_1 = client_1.reset(long_context(), req);
@@ -185,7 +183,10 @@ async fn run_level_last(
     client_1: &Client,
     num_clients: usize,
 ) -> io::Result<()> {
-    let threshold = FieldElm::from(core::cmp::max(1, (cfg.threshold * (num_clients as f64)) as u32));
+    let threshold = FieldElm::from(core::cmp::max(
+        1,
+        (cfg.threshold * (num_clients as f64)) as u32,
+    ));
 
     let req = TreeCrawlLastRequest {};
     let response0 = client_0.tree_crawl_last(long_context(), req.clone());
@@ -209,11 +210,11 @@ async fn run_level_last(
     mastic::check_hashes_and_taus(&mut verified, &hashes_0, &hashes_1, tau_vals_0, num_clients);
     assert!(verified.iter().all(|&x| x));
 
-    let req = ComputeHashesRequest {};
-    let response0 = client_0.compute_hashes(long_context(), req.clone());
-    let response1 = client_1.compute_hashes(long_context(), req);
-    let (hashes_0, hashes_1) = try_join!(response0, response1).unwrap();
-    mastic::check_hashes(&mut verified, &hashes_0, &hashes_1);
+    // let req = ComputeHashesRequest {};
+    // let response0 = client_0.compute_hashes(long_context(), req.clone());
+    // let response1 = client_1.compute_hashes(long_context(), req);
+    // let (hashes_0, hashes_1) = try_join!(response0, response1).unwrap();
+    // mastic::check_hashes(&mut verified, &hashes_0, &hashes_1);
 
     let req = AddLeavesBetweenClientsRequest { verified };
     let response0 = client_0.add_leaves_between_clients(long_context(), req.clone());
@@ -281,20 +282,20 @@ async fn main() -> io::Result<()> {
     let mut left_to_go = num_clients;
     let reqs_in_flight = 1000;
     while left_to_go > 0 {
-        let mut resps = vec![];
+        let mut responses = vec![];
 
         for _ in 0..reqs_in_flight {
             let this_batch = std::cmp::min(left_to_go, cfg.addkey_batch_size);
             left_to_go -= this_batch;
 
             if this_batch > 0 {
-                resps.push(add_keys(
+                responses.push(add_keys(
                     &cfg, &client_0, &client_1, &keys_0, &keys_1, this_batch, malicious,
                 ));
             }
         }
 
-        for r in resps {
+        for r in responses {
             r.await?;
         }
     }
@@ -302,8 +303,8 @@ async fn main() -> io::Result<()> {
     tree_init(&client_0, &client_1).await?;
 
     let start = Instant::now();
-    let bitlen = cfg.data_bytes * 8; // bits
-    for _level in 0..bitlen - 1 {
+    let bit_len = cfg.data_bytes * 8; // bits
+    for _level in 0..bit_len - 1 {
         let start_level = Instant::now();
         run_level(&cfg, &client_0, &client_1, num_clients).await?;
         println!(
@@ -314,7 +315,7 @@ async fn main() -> io::Result<()> {
     }
     println!(
         "\nTime for {} levels: {:?}",
-        bitlen,
+        bit_len,
         start.elapsed().as_secs_f64()
     );
 

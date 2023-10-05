@@ -48,11 +48,7 @@ fn collect_test_eval() {
     let vals_1 = col_1.add_leaves_between_clients(&verified);
 
     assert_eq!(vals_0.len(), vals_1.len());
-    let keep = KeyCollection::<FieldElm, FieldElm>::keep_values_last(
-        &threshold,
-        &vals_0,
-        &vals_1,
-    );
+    let keep = KeyCollection::<FieldElm, FieldElm>::keep_values_last(&threshold, &vals_0, &vals_1);
 
     col_0.tree_prune_last(&keep);
     col_1.tree_prune_last(&keep);
@@ -115,7 +111,7 @@ fn collect_test_eval_full() {
     let threshold = FieldElm::from(2);
     let threshold_last = fastfield::FE::new(2);
     let malicious = Vec::<usize>::new();
-    for level in 0..strlen-1 {
+    for level in 0..strlen - 1 {
         println!("...start");
         let (vals_0, _, _) = col_0.tree_crawl(1usize, &malicious, false);
         let (vals_1, _, _) = col_1.tree_crawl(1usize, &malicious, false);
@@ -123,7 +119,8 @@ fn collect_test_eval_full() {
         println!("At level {:?} (size: {:?})", level, vals_0.len());
 
         assert_eq!(vals_0.len(), vals_1.len());
-        let keep = KeyCollection::<FieldElm, fastfield::FE>::keep_values(&threshold, &vals_0, &vals_1);
+        let keep =
+            KeyCollection::<FieldElm, fastfield::FE>::keep_values(&threshold, &vals_0, &vals_1);
 
         col_0.tree_prune(&keep);
         col_1.tree_prune(&keep);
@@ -139,7 +136,11 @@ fn collect_test_eval_full() {
     let vals_1 = col_1.add_leaves_between_clients(&verified);
 
     assert_eq!(vals_0.len(), vals_1.len());
-    let keep = KeyCollection::<FieldElm, fastfield::FE>::keep_values_last(&threshold_last, &vals_0, &vals_1);
+    let keep = KeyCollection::<FieldElm, fastfield::FE>::keep_values_last(
+        &threshold_last,
+        &vals_0,
+        &vals_1,
+    );
 
     col_0.tree_prune_last(&keep);
     col_1.tree_prune_last(&keep);
@@ -147,7 +148,7 @@ fn collect_test_eval_full() {
     let s0 = col_0.final_shares();
     let s1 = col_1.final_shares();
 
-    for res in &KeyCollection::<FieldElm,fastfield::FE>::final_values(&s0, &s1) {
+    for res in &KeyCollection::<FieldElm, fastfield::FE>::final_values(&s0, &s1) {
         println!("Path = {:?}", res.path);
         let s = crate::bits_to_string(&res.path);
         println!("Value: {:?} = {:?}", s, res.value);

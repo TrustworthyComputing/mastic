@@ -27,6 +27,7 @@ pub struct EvalState {
     level: usize,
     pub seed: prg::PrgSeed,
     pub bit: bool,
+    pub proof: Vec<u8>,
 }
 
 trait TupleMapToExt<T, U> {
@@ -163,41 +164,54 @@ where
             let cw = gen_cor_word::<T>(bit, values[i].clone(), &mut bits, &mut seeds);
             cor_words.push(cw);
 
-            hasher.update(&bit_str);
-            hasher.update(seeds.0.key);
-            let pi_0 = hasher.finalize_reset().to_vec();
-
-            hasher.update(&bit_str);
-            hasher.update(seeds.1.key);
-            let pi_1 = hasher.finalize_reset().to_vec();
+            let pi_0 = {
+                hasher.update(&bit_str);
+                hasher.update(seeds.0.key);
+                hasher.finalize_reset().to_vec()
+            };
+            let pi_1 = {
+                hasher.update(&bit_str);
+                hasher.update(seeds.1.key);
+                hasher.finalize_reset().to_vec()
+            };
             cs.push(crate::xor_vec(&pi_0, &pi_1));
         }
-        let last_cor_word: CorWord<U> = gen_cor_word::<U>(
-            alpha_bits[values.len()],
-            value_last.clone(),
-            &mut bits,
-            &mut seeds,
-        );
+
+        let bit = alpha_bits[values.len()];
+        bit_str.push_str(if bit { "1" } else { "0" });
+        let last_cw = gen_cor_word::<U>(bit, value_last.clone(), &mut bits, &mut seeds);
+
+        let pi_0 = {
+            hasher.update(&bit_str);
+            hasher.update(seeds.0.key);
+            hasher.finalize_reset().to_vec()
+        };
+        let pi_1 = {
+            hasher.update(&bit_str);
+            hasher.update(seeds.1.key);
+            hasher.finalize_reset().to_vec()
+        };
+        cs.push(crate::xor_vec(&pi_0, &pi_1));
 
         (
             DPFKey::<T, U> {
                 key_idx: false,
                 root_seed: root_seeds.0,
                 cor_words: cor_words.clone(),
-                cor_word_last: last_cor_word.clone(),
+                cor_word_last: last_cw.clone(),
                 cs: cs.clone(),
             },
             DPFKey::<T, U> {
                 key_idx: true,
                 root_seed: root_seeds.1,
                 cor_words,
-                cor_word_last: last_cor_word,
+                cor_word_last: last_cw,
                 cs,
             },
         )
     }
 
-    pub fn eval_bit(&self, state: &EvalState, dir: bool) -> (EvalState, T) {
+    pub fn eval_bit(&self, state: &EvalState, dir: bool, bit_str: &String) -> (EvalState, T) {
         let tau = state.seed.expand_dir(!dir, dir);
         let mut seed = tau.seeds.get(dir).clone();
         let mut new_bit = *tau.bits.get(dir);
@@ -208,7 +222,7 @@ where
         }
 
         let converted = seed.convert::<T>();
-        seed = converted.seed;
+        let new_seed = converted.seed;
 
         let mut word = converted.word;
         if new_bit {
@@ -219,19 +233,39 @@ where
             word.negate()
         }
 
-        //println!("server: {:?}, tl = {:?}, Wl = {:?}", self.key_idx, new_bit, word);
+        // Compute proofs
+        let mut hasher = Sha256::new();
+        let pi_prime = {
+            hasher.update(bit_str);
+            hasher.update(new_seed.key);
+            hasher.finalize_reset().to_vec()
+        };
+        let h2 = {
+            let h: [u8; 32] = if !new_bit {
+                // H(pi ^ pi_prime)
+                xor_vec(&state.proof, &pi_prime).try_into().unwrap()
+            } else {
+                //  H(pi ^ pi_prime ^ cs)
+                xor_three_vecs(&state.proof, &pi_prime, &self.cs[state.level])
+                    .try_into()
+                    .unwrap()
+            };
+            hasher.update(h);
+            &hasher.finalize_reset()
+        };
 
         (
             EvalState {
                 level: state.level + 1,
-                seed,
+                seed: new_seed,
                 bit: new_bit,
+                proof: xor_vec(h2, &state.proof),
             },
             word,
         )
     }
 
-    pub fn eval_bit_last(&self, state: &EvalState, dir: bool) -> (EvalState, U) {
+    pub fn eval_bit_last(&self, state: &EvalState, dir: bool, bit_str: &String) -> (EvalState, U) {
         let tau = state.seed.expand_dir(!dir, dir);
         let mut seed = tau.seeds.get(dir).clone();
         let mut new_bit = *tau.bits.get(dir);
@@ -242,7 +276,7 @@ where
         }
 
         let converted = seed.convert::<U>();
-        seed = converted.seed;
+        let new_seed = converted.seed;
 
         let mut word = converted.word;
         if new_bit {
@@ -253,13 +287,33 @@ where
             word.negate()
         }
 
-        //println!("server: {:?}, tl = {:?}, Wl = {:?}", self.key_idx, new_bit, word);
+        // Compute proofs
+        let mut hasher = Sha256::new();
+        let pi_prime = {
+            hasher.update(bit_str);
+            hasher.update(new_seed.key);
+            hasher.finalize_reset().to_vec()
+        };
+        let h2 = {
+            let h: [u8; 32] = if !new_bit {
+                // H(pi ^ pi_prime)
+                xor_vec(&state.proof, &pi_prime).try_into().unwrap()
+            } else {
+                //  H(pi ^ pi_prime ^ cs)
+                xor_three_vecs(&state.proof, &pi_prime, &self.cs[state.level])
+                    .try_into()
+                    .unwrap()
+            };
+            hasher.update(h);
+            &hasher.finalize_reset()
+        };
 
         (
             EvalState {
                 level: state.level + 1,
                 seed,
                 bit: new_bit,
+                proof: xor_vec(h2, &state.proof),
             },
             word,
         )
@@ -270,6 +324,7 @@ where
             level: 0,
             seed: self.root_seed.clone(),
             bit: self.key_idx,
+            proof: vec![0u8; 32],
         }
     }
 
@@ -280,35 +335,18 @@ where
         let mut state = self.eval_init();
 
         let mut bit_str: String = "".to_string();
-        let mut hasher = Sha256::new();
+        state.proof = pi.to_vec();
 
-        for (level, &bit) in idx.iter().take(idx.len() - 1).enumerate() {
-            let (state_new, word) = self.eval_bit(&state, bit);
+        for &bit in idx.iter().take(idx.len() - 1) {
+            bit_str.push(if bit { '1' } else { '0' });
+
+            let (state_new, word) = self.eval_bit(&state, bit, &bit_str);
             out.push(word);
             state = state_new;
-
-            let pi_prime = {
-                bit_str.push(if bit { '1' } else { '0' });
-                hasher.update(&bit_str);
-                hasher.update(state.seed.key);
-                hasher.finalize_reset().to_vec()
-            };
-
-            let h2 = {
-                let h: [u8; 32] = if !state.bit {
-                    // H(pi ^ pi_prime)
-                    xor_vec(pi, &pi_prime).try_into().unwrap()
-                } else {
-                    //  H(pi ^ pi_prime ^ cs)
-                    xor_three_vecs(pi, &pi_prime, &self.cs[level]).try_into().unwrap()
-                };
-                hasher.update(h);
-                &hasher.finalize_reset()
-            };
-            *pi = xor_vec(h2, pi);
         }
 
-        let (_, last) = self.eval_bit_last(&state, *idx.last().unwrap());
+        let (_, last) = self.eval_bit_last(&state, *idx.last().unwrap(), &bit_str);
+        *pi = state.proof;
 
         (out, last)
     }
