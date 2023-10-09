@@ -423,6 +423,15 @@ mod tests {
     }
 
     #[test]
+    fn mytest() {
+        let t = FE::new(421980845347679186);
+        let t2 = FE::new(4189705172005966893);
+        //    let t2 = FieldElm::from(421980845347679186);
+        let res = t.add(&t2);
+        println!("res: {}", res.value());
+    }
+
+    #[test]
     fn constants_in_range() {
         assert!(N_BITS % 2 == 0);
         assert!(N_BITS <= 62);

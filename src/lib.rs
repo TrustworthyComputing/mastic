@@ -1,16 +1,10 @@
-// extern crate cpuprofiler;
-
 pub mod collect;
 pub mod config;
-pub mod consts;
 pub mod dpf;
 pub mod fastfield;
 mod field;
 pub mod prg;
 pub mod rpc;
-
-use num_traits::cast::ToPrimitive;
-use rayon::prelude::*;
 
 #[macro_use]
 extern crate lazy_static;
@@ -120,6 +114,12 @@ pub fn xor_vec(v1: &[u8], v2: &[u8]) -> Vec<u8> {
         .collect()
 }
 
+pub fn xor_in_place(v1: &mut [u8], v2: &[u8]) {
+    for (x1, &x2) in v1.iter_mut().zip_eq(v2.iter()) {
+        *x1 ^= x2;
+    }
+}
+
 pub fn xor_three_vecs(v1: &[u8], v2: &[u8], v3: &[u8]) -> Vec<u8> {
     v1.iter()
         .zip_eq(v2.iter())
@@ -128,77 +128,12 @@ pub fn xor_three_vecs(v1: &[u8], v2: &[u8], v3: &[u8]) -> Vec<u8> {
         .collect()
 }
 
-pub fn check_hashes(verified: &mut Vec<bool>, hashes_0: &Vec<Vec<u8>>, hashes_1: &Vec<Vec<u8>>) {
-    verified
-        .par_iter_mut()
-        .zip(hashes_0)
-        .zip(hashes_1)
-        .for_each(|((v, h0), h1)| {
-            if h0.len()
-                != h0
-                    .iter()
-                    .zip_eq(h1.iter())
-                    .filter(|&(h0, h1)| h0 == h1)
-                    .count()
-            {
-                *v = false;
-            }
-        });
-}
-
-pub fn check_taus(
-    verified: &mut Vec<bool>,
-    tau_vals_0: &Vec<FieldElm>,
-    tau_vals_1: &Vec<FieldElm>,
-) {
-    verified
-        .par_iter_mut()
-        .zip(tau_vals_0)
-        .zip(tau_vals_1)
-        .for_each(|((v, t0), t1)| {
-            if t0.value() != t1.value() {
-                *v = false;
-            }
-        });
-}
-
 pub fn take<T>(vec: &mut Vec<T>, index: usize) -> Option<T> {
     if vec.get(index).is_none() {
         None
     } else {
         Some(vec.swap_remove(index))
     }
-}
-
-pub fn check_hashes_and_taus(
-    verified: &mut Vec<bool>,
-    hashes_0: &Vec<Vec<u8>>,
-    hashes_1: &Vec<Vec<u8>>,
-    tau_vals: &Vec<FieldElm>,
-    nreqs: usize,
-) {
-    let tau_check = if consts::BATCH { nreqs } else { 1 };
-    verified
-        .par_iter_mut()
-        .zip(hashes_0)
-        .zip(hashes_1)
-        .zip(tau_vals)
-        .for_each(|(((v, h0), h1), t)| {
-            if h0.len()
-                != h0
-                    .iter()
-                    .zip_eq(h1.iter())
-                    .filter(|&(h0, h1)| h0 == h1)
-                    .count()
-            {
-                if let Some(size) = t.value().to_usize() {
-                    if size != tau_check {
-                        println!("t vs t_check: {:?} {}", t.value(), tau_check);
-                    }
-                }
-                *v = false;
-            }
-        });
 }
 
 #[cfg(test)]

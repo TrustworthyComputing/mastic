@@ -107,8 +107,6 @@ impl crate::Group for u64 {
 
     #[inline]
     fn value(self) -> u64 {
-        println!("value: Group for u64");
-
         self
     }
 }

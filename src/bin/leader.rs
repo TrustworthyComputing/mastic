@@ -1,16 +1,13 @@
 use mastic::{
-    collect, config, dpf, fastfield,
+    collect, config, dpf,
     rpc::{
-        AddKeysRequest, AddLeavesBetweenClientsRequest, FinalSharesRequest, ResetRequest,
-        TreeCrawlLastRequest, TreeCrawlRequest, TreeInitRequest, TreePruneLastRequest,
-        TreePruneRequest,
+        AddKeysRequest, FinalSharesRequest, ResetRequest, TreeCrawlLastRequest, TreeCrawlRequest,
+        TreeInitRequest, TreePruneLastRequest, TreePruneRequest,
     },
-    CollectorClient, FieldElm,
+    CollectorClient,
 };
 
 use futures::try_join;
-
-use num_traits::cast::ToPrimitive;
 use rand::{distributions::Alphanumeric, Rng};
 use rayon::prelude::*;
 use std::{
@@ -19,7 +16,7 @@ use std::{
 };
 use tarpc::{client, context, serde_transport::tcp, tokio_serde::formats::Bincode};
 
-type Key = dpf::DPFKey<fastfield::FE, FieldElm>;
+type Key = dpf::DPFKey<u64, u64>;
 type Client = CollectorClient;
 
 fn long_context() -> context::Context {
@@ -61,9 +58,9 @@ async fn reset_servers(client_0: &Client, client_1: &Client) -> io::Result<()> {
 
 async fn tree_init(client_0: &Client, client_1: &Client) -> io::Result<()> {
     let req = TreeInitRequest {};
-    let response0 = client_0.tree_init(long_context(), req.clone());
-    let response1 = client_1.tree_init(long_context(), req);
-    try_join!(response0, response1).unwrap();
+    let response_0 = client_0.tree_init(long_context(), req.clone());
+    let response_1 = client_1.tree_init(long_context(), req);
+    try_join!(response_0, response_1).unwrap();
 
     Ok(())
 }
@@ -72,8 +69,8 @@ async fn add_keys(
     cfg: &config::Config,
     client_0: &Client,
     client_1: &Client,
-    keys_0: &[dpf::DPFKey<fastfield::FE, FieldElm>],
-    keys_1: &[dpf::DPFKey<fastfield::FE, FieldElm>],
+    keys_0: &[dpf::DPFKey<u64, u64>],
+    keys_1: &[dpf::DPFKey<u64, u64>],
     num_clients: usize,
     malicious_percentage: f32,
 ) -> io::Result<()> {
@@ -81,8 +78,8 @@ async fn add_keys(
     let mut rng = rand::thread_rng();
     let zipf = zipf::ZipfDistribution::new(cfg.unique_buckets, cfg.zipf_exponent).unwrap();
 
-    let mut addkeys_0 = Vec::with_capacity(num_clients);
-    let mut addkeys_1 = Vec::with_capacity(num_clients);
+    let mut add_keys_0 = Vec::with_capacity(num_clients);
+    let mut add_keys_1 = Vec::with_capacity(num_clients);
 
     for r in 0..num_clients {
         let idx_1 = zipf.sample(&mut rng) - 1;
@@ -92,13 +89,13 @@ async fn add_keys(
             println!("Malicious {}", r);
         }
 
-        addkeys_0.push(keys_0[idx_1].clone());
-        addkeys_1.push(keys_1[idx_2 % cfg.unique_buckets].clone());
+        add_keys_0.push(keys_0[idx_1].clone());
+        add_keys_1.push(keys_1[idx_2 % cfg.unique_buckets].clone());
     }
 
-    let resp_0 = client_0.add_keys(long_context(), AddKeysRequest { keys: addkeys_0 });
-    let resp_1 = client_1.add_keys(long_context(), AddKeysRequest { keys: addkeys_1 });
-    try_join!(resp_0, resp_1).unwrap();
+    let response_0 = client_0.add_keys(long_context(), AddKeysRequest { keys: add_keys_0 });
+    let response_1 = client_1.add_keys(long_context(), AddKeysRequest { keys: add_keys_1 });
+    try_join!(response_0, response_1).unwrap();
 
     Ok(())
 }
@@ -109,8 +106,7 @@ async fn run_level(
     client_1: &Client,
     num_clients: usize,
 ) -> io::Result<()> {
-    let threshold64 = core::cmp::max(1, (cfg.threshold * (num_clients as f64)) as u64);
-    let threshold = fastfield::FE::new(threshold64 as u64);
+    let threshold = core::cmp::max(1, (cfg.threshold * (num_clients as f64)) as u64);
     let mut keep;
     let mut split = 1usize;
     let mut malicious = Vec::<usize>::new();
@@ -123,56 +119,53 @@ async fn run_level(
             is_last,
         };
 
-        let response0 = client_0.tree_crawl(long_context(), req.clone());
-        let response1 = client_1.tree_crawl(long_context(), req);
-        let ((vals_0, root_0, indices_0), (vals_1, root_1, _)) =
-            try_join!(response0, response1).unwrap();
+        let response_0 = client_0.tree_crawl(long_context(), req.clone());
+        let response_1 = client_1.tree_crawl(long_context(), req);
+        let ((cnt_values_0, mt_root_0, indices_0), (cnt_values_1, mt_root_1, indices_1)) =
+            try_join!(response_0, response_1).unwrap();
 
-        assert_eq!(vals_0.len(), vals_1.len());
-        keep = collect::KeyCollection::<fastfield::FE, FieldElm>::keep_values(
-            &threshold, &vals_0, &vals_1,
+        assert_eq!(cnt_values_0.len(), cnt_values_1.len());
+        keep = collect::KeyCollection::<u64, u64>::keep_values(
+            &threshold,
+            &cnt_values_0,
+            &cnt_values_1,
         );
-
-        if root_0[0].is_empty() {
+        if mt_root_0[0].is_empty() {
             break;
         }
-        let left_root_0 = &root_0[0];
-        let left_root_1 = &root_1[0];
+
         malicious = Vec::new();
-        for i in 0..left_root_0.len() {
-            let hl0 = &left_root_0[i]
-                .iter()
-                .map(|x| format!("{:02x}", x))
-                .collect::<String>();
-            let hl1 = &left_root_1[i]
-                .iter()
-                .map(|x| format!("{:02x}", x))
-                .collect::<String>();
-            if hl0 != hl1 {
-                malicious.push(indices_0[0][i]);
+        for i in 0..mt_root_0.len() {
+            if mt_root_0[i] != mt_root_1[i] {
+                assert_eq!(indices_0[i], indices_1[i]);
+                malicious.push(indices_0[i]);
                 // println!("{}) different {} vs {}", i, hl0, hl1);
             }
         }
         if malicious.is_empty() {
             break;
         } else {
-            // println!("Detected malicious {:?} out of {} clients", malicious, num_clients);
-            if split > num_clients {
-                if !is_last {
-                    is_last = true;
-                } else {
+            println!(
+                "Detected malicious {:?} out of {} clients",
+                malicious, num_clients
+            );
+            if split >= num_clients {
+                if is_last {
                     break;
+                } else {
+                    is_last = true;
                 }
+            } else {
+                split *= 2;
             }
-            split *= 2;
         }
     }
 
     // Tree prune
     let req = TreePruneRequest { keep };
-    let response0 = client_0.tree_prune(long_context(), req.clone());
-    let response1 = client_1.tree_prune(long_context(), req);
-    try_join!(response0, response1).unwrap();
+    let response_0 = client_0.tree_prune(long_context(), req.clone());
+    let response_1 = client_1.tree_prune(long_context(), req);
+    try_join!(response_0, response_1).unwrap();
 
     Ok(())
 }
@@ -183,64 +176,43 @@ async fn run_level_last(
     client_1: &Client,
     num_clients: usize,
 ) -> io::Result<()> {
-    let threshold = FieldElm::from(core::cmp::max(
-        1,
-        (cfg.threshold * (num_clients as f64)) as u32,
-    ));
+    let threshold = core::cmp::max(1, (cfg.threshold * (num_clients as f64)) as u64);
 
     let req = TreeCrawlLastRequest {};
-    let response0 = client_0.tree_crawl_last(long_context(), req.clone());
-    let response1 = client_1.tree_crawl_last(long_context(), req);
-    let ((hashes_0, tau_vals_0), (hashes_1, tau_vals_1)) = try_join!(response0, response1).unwrap();
+    let response_0 = client_0.tree_crawl_last(long_context(), req.clone());
+    let response_1 = client_1.tree_crawl_last(long_context(), req);
+    let ((cnt_values_0, hashes_0), (cnt_values_1, hashes_1)) =
+        try_join!(response_0, response_1).unwrap();
 
+    assert_eq!(cnt_values_0.len(), cnt_values_1.len());
     assert_eq!(hashes_0.len(), hashes_1.len());
 
-    let mut verified = vec![true; num_clients];
-    mastic::check_hashes(&mut verified, &hashes_0, &hashes_1);
+    let verified = hashes_0
+        .par_iter()
+        .zip(hashes_1.par_iter())
+        .all(|(&h0, &h1)| h0 == h1);
+    assert!(verified);
 
-    // TODO
-    // mastic::check_taus(&mut verified, &tau_vals_0, &tau_vals_1);
-
-    let tau_vals_0 = &collect::KeyCollection::<fastfield::FE, FieldElm>::reconstruct_shares(
-        &tau_vals_0,
-        &tau_vals_1,
-    );
-
-    // Check s0, s1 hashes and taus
-    mastic::check_hashes_and_taus(&mut verified, &hashes_0, &hashes_1, tau_vals_0, num_clients);
-    assert!(verified.iter().all(|&x| x));
-
-    // let req = ComputeHashesRequest {};
-    // let response0 = client_0.compute_hashes(long_context(), req.clone());
-    // let response1 = client_1.compute_hashes(long_context(), req);
-    // let (hashes_0, hashes_1) = try_join!(response0, response1).unwrap();
-    // mastic::check_hashes(&mut verified, &hashes_0, &hashes_1);
-
-    let req = AddLeavesBetweenClientsRequest { verified };
-    let response0 = client_0.add_leaves_between_clients(long_context(), req.clone());
-    let response1 = client_1.add_leaves_between_clients(long_context(), req);
-    let (vals_0, vals_1) = try_join!(response0, response1).unwrap();
-
-    let keep = collect::KeyCollection::<FieldElm, FieldElm>::keep_values_last(
-        &threshold, &vals_0, &vals_1,
+    let keep = collect::KeyCollection::<u64, u64>::keep_values_last(
+        &threshold,
+        &cnt_values_0,
+        &cnt_values_1,
     );
 
     // Tree prune
     let req = TreePruneLastRequest { keep };
-    let response0 = client_0.tree_prune_last(long_context(), req.clone());
-    let response1 = client_1.tree_prune_last(long_context(), req);
-    try_join!(response0, response1).unwrap();
+    let response_0 = client_0.tree_prune_last(long_context(), req.clone());
+    let response_1 = client_1.tree_prune_last(long_context(), req);
+    try_join!(response_0, response_1).unwrap();
 
     let req = FinalSharesRequest {};
-    let response0 = client_0.final_shares(long_context(), req.clone());
-    let response1 = client_1.final_shares(long_context(), req);
-    let (shares_0, shares_1) = try_join!(response0, response1).unwrap();
-    for res in
-        &collect::KeyCollection::<fastfield::FE, FieldElm>::final_values(&shares_0, &shares_1)
-    {
+    let response_0 = client_0.final_shares(long_context(), req.clone());
+    let response_1 = client_1.final_shares(long_context(), req);
+    let (shares_0, shares_1) = try_join!(response_0, response_1).unwrap();
+    for res in &collect::KeyCollection::<u64, u64>::final_values(&shares_0, &shares_1) {
         let bits = mastic::bits_to_bitstring(&res.path);
-        if res.value.value().to_u32().unwrap() > 0 {
-            println!("Value ({}) \t Count: {:?}", bits, res.value.value());
+        if res.value > 0 {
+            println!("Value ({}) \t Count: {:?}", bits, res.value);
         }
     }
 
