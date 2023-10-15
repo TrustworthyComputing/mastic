@@ -12,7 +12,7 @@ fn dpf_complete() {
         FieldElm::from(2u32),
         FieldElm::from(0u32),
     ];
-    let beta_last = fastfield::FE::from(32u32);
+    let beta_last = FieldElm::from(32u32);
     let (key_0, key_1) = DPFKey::gen(&alpha, &betas, &beta_last);
 
     let (mut pi_0, mut pi_1) = {

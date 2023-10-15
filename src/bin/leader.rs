@@ -2,7 +2,7 @@ use mastic::{
     collect, config, dpf,
     rpc::{
         AddKeysRequest, FinalSharesRequest, ResetRequest, TreeCrawlLastRequest, TreeCrawlRequest,
-        TreeInitRequest, TreePruneLastRequest, TreePruneRequest,
+        TreeInitRequest, TreePruneRequest,
     },
     CollectorClient,
 };
@@ -125,12 +125,8 @@ async fn run_level(
             try_join!(response_0, response_1).unwrap();
 
         assert_eq!(cnt_values_0.len(), cnt_values_1.len());
-        keep = collect::KeyCollection::<u64, u64>::keep_values(
-            &threshold,
-            &cnt_values_0,
-            &cnt_values_1,
-        );
-        if mt_root_0[0].is_empty() {
+        keep = collect::KeyCollection::<u64>::keep_values(&threshold, &cnt_values_0, &cnt_values_1);
+        if mt_root_0.is_empty() {
             break;
         }
 
@@ -193,23 +189,19 @@ async fn run_level_last(
         .all(|(&h0, &h1)| h0 == h1);
     assert!(verified);
 
-    let keep = collect::KeyCollection::<u64, u64>::keep_values_last(
-        &threshold,
-        &cnt_values_0,
-        &cnt_values_1,
-    );
+    let keep = collect::KeyCollection::<u64>::keep_values(&threshold, &cnt_values_0, &cnt_values_1);
 
     // Tree prune
-    let req = TreePruneLastRequest { keep };
-    let response_0 = client_0.tree_prune_last(long_context(), req.clone());
-    let response_1 = client_1.tree_prune_last(long_context(), req);
+    let req = TreePruneRequest { keep };
+    let response_0 = client_0.tree_prune(long_context(), req.clone());
+    let response_1 = client_1.tree_prune(long_context(), req);
     try_join!(response_0, response_1).unwrap();
 
     let req = FinalSharesRequest {};
     let response_0 = client_0.final_shares(long_context(), req.clone());
     let response_1 = client_1.final_shares(long_context(), req);
     let (shares_0, shares_1) = try_join!(response_0, response_1).unwrap();
-    for res in &collect::KeyCollection::<u64, u64>::final_values(&shares_0, &shares_1) {
+    for res in &collect::KeyCollection::<u64>::final_values(&shares_0, &shares_1) {
         let bits = mastic::bits_to_bitstring(&res.path);
         if res.value > 0 {
             println!("Value ({}) \t Count: {:?}", bits, res.value);

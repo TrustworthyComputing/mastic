@@ -2,7 +2,7 @@ use mastic::{
     collect, config, prg,
     rpc::{
         AddKeysRequest, Collector, FinalSharesRequest, ResetRequest, TreeCrawlLastRequest,
-        TreeCrawlRequest, TreeInitRequest, TreePruneLastRequest, TreePruneRequest,
+        TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
     },
 };
 
@@ -24,7 +24,7 @@ struct CollectorServer {
     server_id: i8,
     seed: prg::PrgSeed,
     data_bytes: usize,
-    arc: Arc<Mutex<collect::KeyCollection<u64, u64>>>,
+    arc: Arc<Mutex<collect::KeyCollection<u64>>>,
 }
 
 #[tarpc::server]
@@ -40,7 +40,7 @@ impl Collector for CollectorServer {
         for k in req.keys {
             coll.add_key(k);
         }
-        if coll.keys.len() % 1000 == 0 {
+        if coll.keys.len() % 10000 == 0 {
             println!("Number of keys: {:?}", coll.keys.len());
         }
         "Done".to_string()
@@ -82,13 +82,7 @@ impl Collector for CollectorServer {
 
     async fn tree_prune(self, _: context::Context, req: TreePruneRequest) -> String {
         let mut coll = self.arc.lock().unwrap();
-        coll.tree_prune(&req.keep, false);
-        "Done".to_string()
-    }
-
-    async fn tree_prune_last(self, _: context::Context, req: TreePruneLastRequest) -> String {
-        let mut coll = self.arc.lock().unwrap();
-        coll.tree_prune(&req.keep, true);
+        coll.tree_prune(&req.keep);
         "Done".to_string()
     }
 

@@ -8,6 +8,7 @@ use rs_merkle::MerkleTree;
 use serde::{Deserialize, Serialize};
 use sha2::digest::FixedOutput;
 use sha2::{Digest, Sha256};
+// use prio::field::Field64;
 
 #[derive(Clone)]
 pub struct Sha256Algorithm {}
@@ -34,14 +35,13 @@ unsafe impl<T> Send for TreeNode<T> {}
 unsafe impl<T> Sync for TreeNode<T> {}
 
 #[derive(Clone)]
-pub struct KeyCollection<T, U> {
+pub struct KeyCollection<T> {
     server_id: i8,
     depth: usize,
-    pub keys: Vec<(bool, dpf::DPFKey<T, U>)>,
+    pub keys: Vec<(bool, dpf::DPFKey<T, T>)>,
     honest_clients: Vec<bool>,
     frontier: Vec<TreeNode<T>>,
     prev_frontier: Vec<TreeNode<T>>,
-    frontier_last: Vec<TreeNode<U>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,7 +50,7 @@ pub struct Result<T> {
     pub value: T,
 }
 
-impl<T, U> KeyCollection<T, U>
+impl<T> KeyCollection<T>
 where
     T: crate::Share
         + std::fmt::Debug
@@ -59,26 +59,19 @@ where
         + Send
         + Sync
         + 'static,
-    U: crate::Share
-        + std::fmt::Debug
-        + std::cmp::PartialOrd
-        + std::convert::From<u32>
-        + Send
-        + Sync,
 {
-    pub fn new(server_id: i8, _seed: &prg::PrgSeed, depth: usize) -> KeyCollection<T, U> {
-        KeyCollection::<T, U> {
+    pub fn new(server_id: i8, _seed: &prg::PrgSeed, depth: usize) -> KeyCollection<T> {
+        KeyCollection::<T> {
             server_id,
             depth,
             keys: vec![],
             honest_clients: vec![],
             frontier: vec![],
             prev_frontier: vec![],
-            frontier_last: vec![],
         }
     }
 
-    pub fn add_key(&mut self, key: dpf::DPFKey<T, U>) {
+    pub fn add_key(&mut self, key: dpf::DPFKey<T, T>) {
         self.keys.push((true, key));
         self.honest_clients.push(true);
     }
@@ -97,7 +90,6 @@ where
         }
 
         self.frontier.clear();
-        self.frontier_last.clear();
         self.frontier.push(root);
     }
 
@@ -133,18 +125,18 @@ where
         child
     }
 
-    fn make_tree_node_last(&self, parent: &TreeNode<T>, dir: bool) -> TreeNode<U> {
+    fn make_tree_node_last(&self, parent: &TreeNode<T>, dir: bool) -> TreeNode<T> {
         let mut bit_str = crate::bits_to_bitstring(parent.path.as_slice());
         bit_str.push(if dir { '1' } else { '0' });
 
-        let (key_states, key_values): (Vec<dpf::EvalState>, Vec<U>) = self
+        let (key_states, key_values): (Vec<dpf::EvalState>, Vec<T>) = self
             .keys
             .par_iter()
             .enumerate()
             .map(|(i, key)| key.1.eval_bit_last(&parent.key_states[i], dir, &bit_str))
             .unzip();
 
-        let mut child_val = U::zero();
+        let mut child_val = T::zero();
         for ((i, v), &honest_client) in key_values.iter().enumerate().zip(&self.honest_clients) {
             // Add in only live values
             if self.keys[i].0 && honest_client {
@@ -153,7 +145,7 @@ where
         }
         child_val.reduce();
 
-        let mut child = TreeNode::<U> {
+        let mut child = TreeNode::<T> {
             path: parent.path.clone(),
             value: child_val,
             key_states,
@@ -339,7 +331,7 @@ where
         (cnt_values, mtree_roots, mtree_indices)
     }
 
-    pub fn tree_crawl_last(&mut self) -> (Vec<U>, Vec<[u8; 32]>) {
+    pub fn tree_crawl_last(&mut self) -> (Vec<T>, Vec<[u8; 32]>) {
         let next_frontier = self
             .frontier
             .par_iter()
@@ -350,13 +342,13 @@ where
 
                 vec![child_0, child_1]
             })
-            .collect::<Vec<TreeNode<U>>>();
+            .collect::<Vec<TreeNode<T>>>();
 
         // These are summed evaluations y for different prefixes.
         let cnt_values = next_frontier
             .par_iter()
             .map(|node| node.value.clone())
-            .collect::<Vec<U>>();
+            .collect::<Vec<T>>();
 
         let num_clients = next_frontier.get(0).map_or(0, |node| node.key_states.len());
         let mut key_proofs: Vec<_> = vec![[0u8; 32]; num_clients];
@@ -372,26 +364,18 @@ where
                 }
             });
 
-        self.frontier_last = next_frontier;
+        self.frontier = next_frontier;
 
         (cnt_values, key_proofs)
     }
 
-    pub fn tree_prune(&mut self, alive_vals: &[bool], is_last: bool) {
-        if is_last {
-            assert_eq!(alive_vals.len(), self.frontier_last.len());
-        } else {
-            assert_eq!(alive_vals.len(), self.frontier.len());
-        }
+    pub fn tree_prune(&mut self, alive_vals: &[bool]) {
+        assert_eq!(alive_vals.len(), self.frontier.len());
 
         // Remove from back to front to preserve indices
         for i in (0..alive_vals.len()).rev() {
             if !alive_vals[i] {
-                if is_last {
-                    self.frontier_last.remove(i);
-                } else {
-                    self.frontier.remove(i);
-                }
+                self.frontier.remove(i);
             }
         }
     }
@@ -410,26 +394,10 @@ where
             .collect::<Vec<_>>()
     }
 
-    pub fn keep_values_last(threshold: &U, cnt_values_0: &[U], cnt_values_1: &[U]) -> Vec<bool> {
-        assert_eq!(cnt_values_0.len(), cnt_values_1.len());
-
-        cnt_values_0
+    pub fn final_shares(&self) -> Vec<Result<T>> {
+        self.frontier
             .par_iter()
-            .zip(cnt_values_1.par_iter())
-            .map(|(value_0, value_1)| {
-                let mut v = U::zero();
-                v.add(value_0);
-                v.add(value_1);
-
-                v >= *threshold
-            })
-            .collect::<Vec<_>>()
-    }
-
-    pub fn final_shares(&self) -> Vec<Result<U>> {
-        self.frontier_last
-            .par_iter()
-            .map(|n| Result::<U> {
+            .map(|n| Result::<T> {
                 path: n.path.clone(),
                 value: n.value.clone(),
             })
@@ -437,14 +405,14 @@ where
     }
 
     // Reconstruct counters based on shares
-    pub fn reconstruct_shares(results_0: &[U], results_1: &[U]) -> Vec<U> {
+    pub fn reconstruct_shares(results_0: &[T], results_1: &[T]) -> Vec<T> {
         assert_eq!(results_0.len(), results_1.len());
 
         results_0
             .par_iter()
             .zip_eq(results_1)
             .map(|(v1, v2)| {
-                let mut v = U::zero();
+                let mut v = T::zero();
                 v.add(v1);
                 v.add(v2);
                 v
@@ -453,7 +421,7 @@ where
     }
 
     // Reconstruct counters based on shares
-    pub fn final_values(results_0: &[Result<U>], results_1: &[Result<U>]) -> Vec<Result<U>> {
+    pub fn final_values(results_0: &[Result<T>], results_1: &[Result<T>]) -> Vec<Result<T>> {
         assert_eq!(results_0.len(), results_1.len());
 
         results_0
@@ -462,7 +430,7 @@ where
             .map(|(r0, r1)| {
                 assert_eq!(r0.path, r1.path);
 
-                let mut v = U::zero();
+                let mut v = T::zero();
                 v.add(&r0.value);
                 v.add(&r1.value);
 
@@ -471,7 +439,7 @@ where
                     value: v,
                 }
             })
-            .filter(|result| result.value > U::zero())
+            .filter(|result| result.value > T::zero())
             .collect::<Vec<_>>()
     }
 }

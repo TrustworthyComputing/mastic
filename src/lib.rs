@@ -1,7 +1,6 @@
 pub mod collect;
 pub mod config;
 pub mod dpf;
-pub mod fastfield;
 mod field;
 pub mod prg;
 pub mod rpc;

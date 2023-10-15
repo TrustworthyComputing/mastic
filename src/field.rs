@@ -1,4 +1,3 @@
-use crate::fastfield::FE;
 #[cfg(test)]
 use crate::Share;
 
@@ -7,8 +6,6 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::cmp::Ordering;
 use std::convert::TryInto;
-use std::u32;
-// use std::any::Any;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct FieldElm {
@@ -122,92 +119,6 @@ impl crate::prg::FromRng for u64 {
 }
 
 impl crate::Share for u64 {}
-
-impl crate::Group for FE {
-    #[inline]
-    fn zero() -> Self {
-        FE::from(0u8)
-    }
-
-    #[inline]
-    fn one() -> Self {
-        FE::from(1u8)
-    }
-
-    #[inline]
-    fn add(&mut self, other: &Self) {
-        use std::ops::Add;
-        *self = <FE as Add>::add(*self, *other);
-    }
-
-    #[inline]
-    fn mul(&mut self, other: &Self) {
-        use std::ops::Mul;
-        *self = <FE as Mul>::mul(*self, *other);
-    }
-
-    #[inline]
-    fn add_lazy(&mut self, other: &Self) {
-        self.add(other);
-    }
-
-    #[inline]
-    fn mul_lazy(&mut self, other: &Self) {
-        self.mul(other);
-    }
-
-    #[inline]
-    fn reduce(&mut self) {}
-
-    #[inline]
-    fn sub(&mut self, other: &Self) {
-        use std::ops::Sub;
-        *self = <FE as Sub>::sub(*self, *other);
-    }
-
-    #[inline]
-    fn negate(&mut self) {
-        use std::ops::Neg;
-        *self = self.neg();
-    }
-
-    #[inline]
-    fn value(self) -> u64 {
-        // println!("value {}: Group for FE", self.value());
-        self.value() // TODO
-    }
-}
-
-impl crate::prg::FromRng for FE {
-    fn from_rng(&mut self, rng: &mut impl rand::Rng) {
-        loop {
-            let v = FE::from_u64_unbiased(rng.next_u64());
-            match v {
-                Some(x) => {
-                    *self = x;
-                    break;
-                }
-                None => continue,
-            }
-        }
-    }
-}
-
-impl crate::Share for FE {}
-
-impl Ord for FE {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.value().cmp(&other.value())
-    }
-}
-
-impl PartialOrd for FE {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.value().cmp(&other.value()))
-    }
-}
-
-/*******/
 
 impl From<u32> for FieldElm {
     #[inline]
@@ -369,8 +280,6 @@ where
         self.0.add(&inv0);
         self.1.add(&inv1);
     }
-
-    // fn get<T: Behaviour + std::any::Any>(&mut self, name: &str) -> Option<& T> {
 
     #[inline]
     fn value(self) -> u64 {

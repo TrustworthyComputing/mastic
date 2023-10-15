@@ -31,11 +31,6 @@ pub struct TreePruneRequest {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TreePruneLastRequest {
-    pub keep: Vec<bool>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FinalSharesRequest {}
 
 #[tarpc::service]
@@ -46,6 +41,5 @@ pub trait Collector {
     async fn tree_crawl(req: TreeCrawlRequest) -> (Vec<u64>, Vec<Vec<u8>>, Vec<usize>);
     async fn tree_crawl_last(req: TreeCrawlLastRequest) -> (Vec<u64>, Vec<[u8; 32]>);
     async fn tree_prune(req: TreePruneRequest) -> String;
-    async fn tree_prune_last(req: TreePruneLastRequest) -> String;
     async fn final_shares(req: FinalSharesRequest) -> Vec<collect::Result<u64>>;
 }

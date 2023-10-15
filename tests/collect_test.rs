@@ -2,6 +2,7 @@ use mastic::collect::*;
 use mastic::prg;
 use mastic::*;
 use rayon::prelude::*;
+// use prio::field::Field64;
 
 #[test]
 fn collect_test_eval_groups() {
@@ -32,10 +33,10 @@ fn collect_test_eval_groups() {
         let (cnt_values_1, _, _) = col_1.tree_crawl(1usize, &malicious, false);
 
         assert_eq!(cnt_values_0.len(), cnt_values_1.len());
-        let keep = KeyCollection::<u64, u64>::keep_values(&threshold, &cnt_values_0, &cnt_values_1);
+        let keep = KeyCollection::<u64>::keep_values(&threshold, &cnt_values_0, &cnt_values_1);
 
-        col_0.tree_prune(&keep, false);
-        col_1.tree_prune(&keep, false);
+        col_0.tree_prune(&keep);
+        col_1.tree_prune(&keep);
     }
 
     let (cnt_values_0, hashes_0) = col_0.tree_crawl_last();
@@ -50,16 +51,15 @@ fn collect_test_eval_groups() {
         .all(|(&h0, &h1)| h0 == h1);
     assert!(verified);
 
-    let keep =
-        KeyCollection::<u64, u64>::keep_values_last(&threshold, &cnt_values_0, &cnt_values_1);
+    let keep = KeyCollection::<u64>::keep_values(&threshold, &cnt_values_0, &cnt_values_1);
 
-    col_0.tree_prune(&keep, true);
-    col_1.tree_prune(&keep, true);
+    col_0.tree_prune(&keep);
+    col_1.tree_prune(&keep);
 
     let shares_0 = col_0.final_shares();
     let shares_1 = col_1.final_shares();
 
-    for res in &KeyCollection::<u64, u64>::final_values(&shares_0, &shares_1) {
+    for res in &KeyCollection::<u64>::final_values(&shares_0, &shares_1) {
         println!("Path = {:?}", res.path);
         let s = crate::bits_to_string(&res.path);
         println!("fast: {:?} = {:?}", s, res.value);
@@ -121,10 +121,10 @@ fn collect_test_eval_full_groups() {
         println!("At level {:?} (size: {:?})", level, cnt_values_0.len());
 
         assert_eq!(cnt_values_0.len(), cnt_values_1.len());
-        let keep = KeyCollection::<u64, u64>::keep_values(&threshold, &cnt_values_0, &cnt_values_1);
+        let keep = KeyCollection::<u64>::keep_values(&threshold, &cnt_values_0, &cnt_values_1);
 
-        col_0.tree_prune(&keep, false);
-        col_1.tree_prune(&keep, false);
+        col_0.tree_prune(&keep);
+        col_1.tree_prune(&keep);
     }
 
     let (cnt_values_0, hashes_0) = col_0.tree_crawl_last();
@@ -139,16 +139,15 @@ fn collect_test_eval_full_groups() {
         .all(|(&h0, &h1)| h0 == h1);
     assert!(verified);
 
-    let keep =
-        KeyCollection::<u64, u64>::keep_values_last(&threshold, &cnt_values_0, &cnt_values_1);
+    let keep = KeyCollection::<u64>::keep_values(&threshold, &cnt_values_0, &cnt_values_1);
 
-    col_0.tree_prune(&keep, true);
-    col_1.tree_prune(&keep, true);
+    col_0.tree_prune(&keep);
+    col_1.tree_prune(&keep);
 
     let s0 = col_0.final_shares();
     let s1 = col_1.final_shares();
 
-    for res in &KeyCollection::<u64, u64>::final_values(&s0, &s1) {
+    for res in &KeyCollection::<u64>::final_values(&s0, &s1) {
         println!("Path = {:?}", res.path);
         let s = crate::bits_to_string(&res.path);
         println!("Value: {:?} = {:?}", s, res.value);
@@ -184,14 +183,10 @@ fn collect_test_eval_fields() {
         let (cnt_values_1, _, _) = col_1.tree_crawl(1usize, &malicious, false);
 
         assert_eq!(cnt_values_0.len(), cnt_values_1.len());
-        let keep = KeyCollection::<FieldElm, FieldElm>::keep_values(
-            &threshold,
-            &cnt_values_0,
-            &cnt_values_1,
-        );
+        let keep = KeyCollection::<FieldElm>::keep_values(&threshold, &cnt_values_0, &cnt_values_1);
 
-        col_0.tree_prune(&keep, false);
-        col_1.tree_prune(&keep, false);
+        col_0.tree_prune(&keep);
+        col_1.tree_prune(&keep);
     }
 
     let (cnt_values_0, hashes_0) = col_0.tree_crawl_last();
@@ -206,19 +201,15 @@ fn collect_test_eval_fields() {
         .all(|(&h0, &h1)| h0 == h1);
     assert!(verified);
 
-    let keep = KeyCollection::<FieldElm, FieldElm>::keep_values_last(
-        &threshold,
-        &cnt_values_0,
-        &cnt_values_1,
-    );
+    let keep = KeyCollection::<FieldElm>::keep_values(&threshold, &cnt_values_0, &cnt_values_1);
 
-    col_0.tree_prune(&keep, true);
-    col_1.tree_prune(&keep, true);
+    col_0.tree_prune(&keep);
+    col_1.tree_prune(&keep);
 
     let shares_0 = col_0.final_shares();
     let shares_1 = col_1.final_shares();
 
-    for res in &KeyCollection::<FieldElm, FieldElm>::final_values(&shares_0, &shares_1) {
+    for res in &KeyCollection::<FieldElm>::final_values(&shares_0, &shares_1) {
         println!("Path = {:?}", res.path);
         let s = crate::bits_to_string(&res.path);
         println!("fast: {:?} = {:?}", s, res.value);
@@ -253,7 +244,9 @@ fn collect_test_eval_full() {
     let mut keys = vec![];
     println!("Starting to generate keys");
     for s in &client_strings {
-        keys.push(dpf::DPFKey::<FieldElm, fastfield::FE>::gen_from_str(&s));
+        keys.push(dpf::DPFKey::<FieldElm, FieldElm>::gen_from_str(
+            &s,
+        ));
     }
     println!("Done generating keys");
 
@@ -271,7 +264,6 @@ fn collect_test_eval_full() {
     col_1.tree_init();
 
     let threshold = FieldElm::from(2);
-    let threshold_last = fastfield::FE::new(2);
     let malicious = Vec::<usize>::new();
     for level in 0..strlen - 1 {
         println!("...start");
@@ -281,14 +273,11 @@ fn collect_test_eval_full() {
         println!("At level {:?} (size: {:?})", level, cnt_values_0.len());
 
         assert_eq!(cnt_values_0.len(), cnt_values_1.len());
-        let keep = KeyCollection::<FieldElm, fastfield::FE>::keep_values(
-            &threshold,
-            &cnt_values_0,
-            &cnt_values_1,
-        );
+        let keep =
+            KeyCollection::<FieldElm>::keep_values(&threshold, &cnt_values_0, &cnt_values_1);
 
-        col_0.tree_prune(&keep, false);
-        col_1.tree_prune(&keep, false);
+        col_0.tree_prune(&keep);
+        col_1.tree_prune(&keep);
     }
 
     let (cnt_values_0, hashes_0) = col_0.tree_crawl_last();
@@ -303,19 +292,16 @@ fn collect_test_eval_full() {
         .all(|(&h0, &h1)| h0 == h1);
     assert!(verified);
 
-    let keep = KeyCollection::<FieldElm, fastfield::FE>::keep_values_last(
-        &threshold_last,
-        &cnt_values_0,
-        &cnt_values_1,
-    );
+    let keep =
+        KeyCollection::<FieldElm>::keep_values(&threshold, &cnt_values_0, &cnt_values_1);
 
-    col_0.tree_prune(&keep, true);
-    col_1.tree_prune(&keep, true);
+    col_0.tree_prune(&keep);
+    col_1.tree_prune(&keep);
 
     let s0 = col_0.final_shares();
     let s1 = col_1.final_shares();
 
-    for res in &KeyCollection::<FieldElm, fastfield::FE>::final_values(&s0, &s1) {
+    for res in &KeyCollection::<FieldElm>::final_values(&s0, &s1) {
         println!("Path = {:?}", res.path);
         let s = crate::bits_to_string(&res.path);
         println!("Value: {:?} = {:?}", s, res.value);
