@@ -1,18 +1,20 @@
 use mastic::dpf::*;
 use mastic::*;
+use prio::field::Field64;
 use sha2::{Digest, Sha256};
+use std::ops::Add;
 
 #[test]
 fn dpf_complete() {
     let num_bits = 5;
     let alpha = u32_to_bits(num_bits, 21);
     let betas = vec![
-        FieldElm::from(7u32),
-        FieldElm::from(17u32),
-        FieldElm::from(2u32),
-        FieldElm::from(0u32),
+        Field64::from(7u64),
+        Field64::from(17u64),
+        Field64::from(2u64),
+        Field64::from(0u64),
     ];
-    let beta_last = FieldElm::from(32u32);
+    let beta_last = Field64::from(32u64);
     let (key_0, key_1) = DPFKey::gen(&alpha, &betas, &beta_last);
 
     let (mut pi_0, mut pi_1) = {
@@ -30,10 +32,7 @@ fn dpf_complete() {
             let eval_0 = key_0.eval(&alpha_eval[0..j].to_vec(), &mut pi_0);
             let eval_1 = key_1.eval(&alpha_eval[0..j].to_vec(), &mut pi_1);
 
-            let mut tmp = FieldElm::zero();
-
-            tmp.add(&eval_0.0[j - 2]);
-            tmp.add(&eval_1.0[j - 2]);
+            let tmp = eval_0.0[j - 2].add(eval_1.0[j - 2]);
             println!("[{:?}] Tmp {:?} = {:?}", alpha_eval, j, tmp);
             if alpha[0..j - 1] == alpha_eval[0..j - 1] {
                 assert_eq!(
@@ -44,7 +43,7 @@ fn dpf_complete() {
                     alpha_eval
                 );
             } else {
-                assert_eq!(FieldElm::zero(), tmp);
+                assert_eq!(Field64::from(0), tmp);
             }
         }
 

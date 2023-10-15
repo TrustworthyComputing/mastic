@@ -7,6 +7,7 @@ use mastic::{
 };
 
 use futures::{future, prelude::*};
+use prio::field::Field64;
 use std::time::Instant;
 use std::{
     io,
@@ -24,7 +25,7 @@ struct CollectorServer {
     server_id: i8,
     seed: prg::PrgSeed,
     data_bytes: usize,
-    arc: Arc<Mutex<collect::KeyCollection<u64>>>,
+    arc: Arc<Mutex<collect::KeyCollection<Field64>>>,
 }
 
 #[tarpc::server]
@@ -58,7 +59,7 @@ impl Collector for CollectorServer {
         self,
         _: context::Context,
         req: TreeCrawlRequest,
-    ) -> (Vec<u64>, Vec<Vec<u8>>, Vec<usize>) {
+    ) -> (Vec<Field64>, Vec<Vec<u8>>, Vec<usize>) {
         // let start = Instant::now();
         let split_by = req.split_by;
         let malicious = req.malicious;
@@ -72,7 +73,7 @@ impl Collector for CollectorServer {
         self,
         _: context::Context,
         _req: TreeCrawlLastRequest,
-    ) -> (Vec<u64>, Vec<[u8; 32]>) {
+    ) -> (Vec<Field64>, Vec<[u8; 32]>) {
         let start = Instant::now();
         let mut coll = self.arc.lock().unwrap();
         let res = coll.tree_crawl_last();
@@ -90,7 +91,7 @@ impl Collector for CollectorServer {
         self,
         _: context::Context,
         _req: FinalSharesRequest,
-    ) -> Vec<collect::Result<u64>> {
+    ) -> Vec<collect::Result<Field64>> {
         let coll = self.arc.lock().unwrap();
         coll.final_shares()
     }

@@ -8,7 +8,6 @@ use rs_merkle::MerkleTree;
 use serde::{Deserialize, Serialize};
 use sha2::digest::FixedOutput;
 use sha2::{Digest, Sha256};
-// use prio::field::Field64;
 
 #[derive(Clone)]
 pub struct Sha256Algorithm {}
@@ -52,13 +51,14 @@ pub struct Result<T> {
 
 impl<T> KeyCollection<T>
 where
-    T: crate::Share
+    T: prio::field::FieldElement
         + std::fmt::Debug
         + std::cmp::PartialOrd
-        + std::convert::From<u32>
         + Send
         + Sync
+        + prg::FromRng
         + 'static,
+    u64: From<T>,
 {
     pub fn new(server_id: i8, _seed: &prg::PrgSeed, depth: usize) -> KeyCollection<T> {
         KeyCollection::<T> {
@@ -105,13 +105,13 @@ where
             .unzip();
 
         let mut child_val = T::zero();
-        for ((i, v), &honest_client) in key_values.iter().enumerate().zip(&self.honest_clients) {
+        for ((i, &v), &honest_client) in key_values.iter().enumerate().zip(&self.honest_clients) {
             // Add in only live values
             if self.keys[i].0 && honest_client {
-                child_val.add_lazy(v);
+                child_val.add_assign(v);
             }
         }
-        child_val.reduce();
+        // child_val.reduce();
 
         let mut child = TreeNode::<T> {
             path: parent.path.clone(),
@@ -137,13 +137,13 @@ where
             .unzip();
 
         let mut child_val = T::zero();
-        for ((i, v), &honest_client) in key_values.iter().enumerate().zip(&self.honest_clients) {
+        for ((i, &v), &honest_client) in key_values.iter().enumerate().zip(&self.honest_clients) {
             // Add in only live values
             if self.keys[i].0 && honest_client {
-                child_val.add_lazy(v);
+                child_val.add_assign(v);
             }
         }
-        child_val.reduce();
+        // child_val.reduce();
 
         let mut child = TreeNode::<T> {
             path: parent.path.clone(),
@@ -164,6 +164,8 @@ where
         is_last: bool,
     ) -> (Vec<T>, Vec<Vec<u8>>, Vec<usize>) {
         if !malicious.is_empty() {
+            println!("Malicious is not empty!!");
+
             if is_last {
                 for &malicious_client in malicious {
                     self.honest_clients[malicious_client] = false;
@@ -173,9 +175,14 @@ where
             self.frontier = self.prev_frontier.clone();
         }
 
+        if self.frontier.is_empty() {
+            println!("Frontier is empty!!");
+        } else {
+            let level = self.frontier[0].path.len();
+            debug_assert!(level < self.depth);
+            println!("Level {}", level);
+        }
         let level = self.frontier[0].path.len();
-        debug_assert!(level < self.depth);
-        // println!("Level {}", level);
 
         let next_frontier = self
             .frontier
@@ -189,10 +196,12 @@ where
             })
             .collect::<Vec<TreeNode<T>>>();
 
+        println!("next_frontier.len() {}", next_frontier.len());
+
         // These are summed evaluations y for different prefixes.
         let cnt_values = next_frontier
             .par_iter()
-            .map(|node| node.value.clone())
+            .map(|node| node.value)
             .collect::<Vec<T>>();
 
         // Combine the multiple proofs for each client into a single proof for each client.
@@ -226,9 +235,9 @@ where
                 node.key_values
                     .par_iter()
                     .enumerate()
-                    .map(|(client_index, y_p)| {
-                        let y_p0 = &node_left.key_values[client_index];
-                        let y_p1 = &node_right.key_values[client_index];
+                    .map(|(client_index, &y_p)| {
+                        let y_p0 = node_left.key_values[client_index];
+                        let y_p1 = node_right.key_values[client_index];
 
                         let mut value_check = T::zero();
 
@@ -236,23 +245,23 @@ where
                             // TODO(@jimouris): Replace level 0 with FLP
                             // (1 - server_id) + (-1)^server_id * (- y^{p||0} - y^{p||1})
                             if self.server_id == 0 {
-                                value_check.add(&T::one());
-                                value_check.sub(y_p0);
-                                value_check.sub(y_p1);
+                                value_check.add_assign(T::one());
+                                value_check.sub_assign(y_p0);
+                                value_check.sub_assign(y_p1);
                             } else {
-                                value_check.add(y_p0);
-                                value_check.add(y_p1);
+                                value_check.add_assign(y_p0);
+                                value_check.add_assign(y_p1);
                             }
                         } else {
                             // (-1)^server_id * (y^{p} - y^{p||0} - y^{p||1})
                             if self.server_id == 0 {
-                                value_check.add(y_p);
-                                value_check.sub(y_p0);
-                                value_check.sub(y_p1);
+                                value_check.add_assign(y_p);
+                                value_check.sub_assign(y_p0);
+                                value_check.sub_assign(y_p1);
                             } else {
-                                value_check.add(y_p0);
-                                value_check.add(y_p1);
-                                value_check.sub(y_p);
+                                value_check.add_assign(y_p0);
+                                value_check.add_assign(y_p1);
+                                value_check.sub_assign(y_p);
                             }
                         }
 
@@ -271,11 +280,12 @@ where
                 let mut hasher = Sha256::new();
                 if honest_client {
                     all_y_checks.iter().for_each(|checks_for_prefix| {
+                        let mut bytes = vec![];
+                        checks_for_prefix[client_index].encode(&mut bytes);
                         hasher.update(
-                            checks_for_prefix[client_index]
-                                .clone()
-                                .value()
-                                .to_le_bytes(),
+                            bytes, // .clone()
+                                  // .value()
+                                  // .to_le_bytes(),
                         );
                     });
                 }
@@ -284,6 +294,7 @@ where
             .collect::<Vec<_>>();
 
         debug_assert_eq!(key_proofs.len(), key_checks.len());
+        println!("key_proofs.len() {}", key_proofs.len());
 
         let combined_hashes = key_proofs
             .par_iter()
@@ -325,8 +336,12 @@ where
             }
         }
 
+        println!("self.frontier.len() {}", self.frontier.len());
+
         self.prev_frontier = self.frontier.clone();
         self.frontier = next_frontier;
+        println!("prev_frontier.len() {}", self.prev_frontier.len());
+        println!("self.frontier.len() {}", self.frontier.len());
 
         (cnt_values, mtree_roots, mtree_indices)
     }
@@ -347,7 +362,7 @@ where
         // These are summed evaluations y for different prefixes.
         let cnt_values = next_frontier
             .par_iter()
-            .map(|node| node.value.clone())
+            .map(|node| node.value)
             .collect::<Vec<T>>();
 
         let num_clients = next_frontier.get(0).map_or(0, |node| node.key_states.len());
@@ -372,24 +387,26 @@ where
     pub fn tree_prune(&mut self, alive_vals: &[bool]) {
         assert_eq!(alive_vals.len(), self.frontier.len());
 
+        println!("PRUNE: self.frontier.len() {}", self.frontier.len());
         // Remove from back to front to preserve indices
         for i in (0..alive_vals.len()).rev() {
             if !alive_vals[i] {
                 self.frontier.remove(i);
             }
         }
+        println!("after PRUNE: self.frontier.len() {}", self.frontier.len());
     }
 
-    pub fn keep_values(threshold: &T, cnt_values_0: &[T], cnt_values_1: &[T]) -> Vec<bool> {
+    pub fn keep_values(threshold: u64, cnt_values_0: &[T], cnt_values_1: &[T]) -> Vec<bool> {
+        println!("threshold: {:?}", threshold);
+
         cnt_values_0
             .par_iter()
             .zip(cnt_values_1.par_iter())
-            .map(|(value_0, value_1)| {
-                let mut v = T::zero();
-                v.add(value_0);
-                v.add(value_1);
+            .map(|(&value_0, &value_1)| {
+                let v = value_0 + value_1;
 
-                v >= *threshold
+                u64::from(v) >= threshold
             })
             .collect::<Vec<_>>()
     }
@@ -399,7 +416,7 @@ where
             .par_iter()
             .map(|n| Result::<T> {
                 path: n.path.clone(),
-                value: n.value.clone(),
+                value: n.value,
             })
             .collect::<Vec<_>>()
     }
@@ -411,10 +428,10 @@ where
         results_0
             .par_iter()
             .zip_eq(results_1)
-            .map(|(v1, v2)| {
+            .map(|(&v1, &v2)| {
                 let mut v = T::zero();
-                v.add(v1);
-                v.add(v2);
+                v.add_assign(v1);
+                v.add_assign(v2);
                 v
             })
             .collect()
@@ -431,8 +448,8 @@ where
                 assert_eq!(r0.path, r1.path);
 
                 let mut v = T::zero();
-                v.add(&r0.value);
-                v.add(&r1.value);
+                v.add_assign(r0.value);
+                v.add_assign(r1.value);
 
                 Result {
                     path: r0.path.clone(),

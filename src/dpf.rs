@@ -1,5 +1,4 @@
 use crate::prg;
-use crate::Group;
 use crate::{xor_three_vecs, xor_vec};
 
 use serde::Deserialize;
@@ -89,7 +88,7 @@ fn gen_cor_word<W>(
     seeds: &mut (prg::PrgSeed, prg::PrgSeed),
 ) -> CorWord<W>
 where
-    W: prg::FromRng + Clone + Group + std::fmt::Debug,
+    W: prg::FromRng + Clone + prio::field::FieldElement + std::fmt::Debug,
 {
     let data = seeds.map(|s| s.expand());
 
@@ -126,11 +125,11 @@ where
 
     let converted = seeds.map(|s| s.convert());
     cw.word = value;
-    cw.word.sub(&converted.0.word);
-    cw.word.add(&converted.1.word);
+    cw.word.sub_assign(converted.0.word);
+    cw.word.add_assign(converted.1.word);
 
     if bits.1 {
-        cw.word.negate();
+        cw.word = cw.word.neg();
     }
 
     seeds.0 = converted.0.seed;
@@ -142,8 +141,8 @@ where
 /// All-prefix DPF implementation.
 impl<T, U> DPFKey<T, U>
 where
-    T: prg::FromRng + Clone + Group + std::fmt::Debug,
-    U: prg::FromRng + Clone + Group + std::fmt::Debug,
+    T: prg::FromRng + Clone + prio::field::FieldElement + std::fmt::Debug,
+    U: prg::FromRng + Clone + prio::field::FieldElement + std::fmt::Debug,
 {
     pub fn gen(alpha_bits: &[bool], values: &[T], value_last: &U) -> (DPFKey<T, U>, DPFKey<T, U>) {
         debug_assert!(alpha_bits.len() == values.len() + 1);
@@ -161,7 +160,7 @@ where
         for i in 0..(alpha_bits.len() - 1) {
             let bit = alpha_bits[i];
             bit_str.push_str(if bit { "1" } else { "0" });
-            let cw = gen_cor_word::<T>(bit, values[i].clone(), &mut bits, &mut seeds);
+            let cw = gen_cor_word::<T>(bit, values[i], &mut bits, &mut seeds);
             cor_words.push(cw);
 
             let pi_0 = {
@@ -179,7 +178,7 @@ where
 
         let bit = alpha_bits[values.len()];
         bit_str.push_str(if bit { "1" } else { "0" });
-        let last_cw = gen_cor_word::<U>(bit, value_last.clone(), &mut bits, &mut seeds);
+        let last_cw = gen_cor_word::<U>(bit, *value_last, &mut bits, &mut seeds);
 
         let pi_0 = {
             hasher.update(&bit_str);
@@ -226,11 +225,11 @@ where
 
         let mut word = converted.word;
         if new_bit {
-            word.add(&self.cor_words[state.level].word);
+            word.add_assign(self.cor_words[state.level].word);
         }
 
         if self.key_idx {
-            word.negate()
+            word = word.neg();
         }
 
         // Compute proofs
@@ -280,11 +279,11 @@ where
 
         let mut word = converted.word;
         if new_bit {
-            word.add(&self.cor_word_last.word);
+            word.add_assign(self.cor_word_last.word);
         }
 
         if self.key_idx {
-            word.negate()
+            word = word.neg();
         }
 
         // Compute proofs

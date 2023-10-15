@@ -1,49 +1,19 @@
 pub mod collect;
 pub mod config;
 pub mod dpf;
-mod field;
 pub mod prg;
 pub mod rpc;
 
-#[macro_use]
 extern crate lazy_static;
 
-pub use crate::field::FieldElm;
 pub use crate::rpc::CollectorClient;
 use itertools::Itertools;
 
-// Additive group, such as (Z_n, +)
-pub trait Group {
-    fn zero() -> Self;
-    fn one() -> Self;
-    fn negate(&mut self);
-    fn reduce(&mut self);
-    fn add(&mut self, other: &Self);
-    fn add_lazy(&mut self, other: &Self);
-    fn mul(&mut self, other: &Self);
-    fn mul_lazy(&mut self, other: &Self);
-    fn sub(&mut self, other: &Self);
-    fn value(self) -> u64;
-}
+use prio::field::Field64;
 
-pub trait Share: Group + prg::FromRng + Clone {
-    fn random() -> Self {
-        let mut out = Self::zero();
-        out.randomize();
-        out
-    }
-
-    fn share(&self) -> (Self, Self) {
-        let mut s0 = Self::zero();
-        s0.randomize();
-        let mut s1 = self.clone();
-        s1.sub(&s0);
-
-        (s0, s1)
-    }
-
-    fn share_random() -> (Self, Self) {
-        (Self::random(), Self::random())
+impl crate::prg::FromRng for Field64 {
+    fn from_rng(&mut self, rng: &mut impl rand::Rng) {
+        *self = Field64::from(rng.next_u64());
     }
 }
 
@@ -138,16 +108,6 @@ pub fn take<T>(vec: &mut Vec<T>, index: usize) -> Option<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn share() {
-        let val = FieldElm::random();
-        let (s0, s1) = val.share();
-        let mut out = FieldElm::zero();
-        out.add(&s0);
-        out.add(&s1);
-        assert_eq!(out, val);
-    }
 
     #[test]
     fn to_bits() {

@@ -90,7 +90,7 @@ impl PrgSeed {
         self.expand_dir(true, true)
     }
 
-    pub fn convert<T: FromRng + crate::Group>(self: &PrgSeed) -> ConvertOutput<T> {
+    pub fn convert<T: FromRng + prio::field::FieldElement>(self: &PrgSeed) -> ConvertOutput<T> {
         let mut out = ConvertOutput {
             seed: PrgSeed::zero(),
             word: T::zero(),
