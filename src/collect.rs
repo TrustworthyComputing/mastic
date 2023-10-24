@@ -175,14 +175,8 @@ where
             self.frontier = self.prev_frontier.clone();
         }
 
-        if self.frontier.is_empty() {
-            println!("Frontier is empty!!");
-        } else {
-            let level = self.frontier[0].path.len();
-            debug_assert!(level < self.depth);
-            println!("Level {}", level);
-        }
         let level = self.frontier[0].path.len();
+        debug_assert!(level < self.depth);
 
         let next_frontier = self
             .frontier
@@ -195,8 +189,6 @@ where
                 vec![child_0, child_1]
             })
             .collect::<Vec<TreeNode<T>>>();
-
-        println!("next_frontier.len() {}", next_frontier.len());
 
         // These are summed evaluations y for different prefixes.
         let cnt_values = next_frontier
@@ -282,11 +274,7 @@ where
                     all_y_checks.iter().for_each(|checks_for_prefix| {
                         let mut bytes = vec![];
                         checks_for_prefix[client_index].encode(&mut bytes);
-                        hasher.update(
-                            bytes, // .clone()
-                                  // .value()
-                                  // .to_le_bytes(),
-                        );
+                        hasher.update(bytes);
                     });
                 }
                 hasher.finalize().to_vec()
@@ -294,7 +282,6 @@ where
             .collect::<Vec<_>>();
 
         debug_assert_eq!(key_proofs.len(), key_checks.len());
-        println!("key_proofs.len() {}", key_proofs.len());
 
         let combined_hashes = key_proofs
             .par_iter()
@@ -336,12 +323,8 @@ where
             }
         }
 
-        println!("self.frontier.len() {}", self.frontier.len());
-
         self.prev_frontier = self.frontier.clone();
         self.frontier = next_frontier;
-        println!("prev_frontier.len() {}", self.prev_frontier.len());
-        println!("self.frontier.len() {}", self.frontier.len());
 
         (cnt_values, mtree_roots, mtree_indices)
     }
@@ -387,19 +370,15 @@ where
     pub fn tree_prune(&mut self, alive_vals: &[bool]) {
         assert_eq!(alive_vals.len(), self.frontier.len());
 
-        println!("PRUNE: self.frontier.len() {}", self.frontier.len());
         // Remove from back to front to preserve indices
         for i in (0..alive_vals.len()).rev() {
             if !alive_vals[i] {
                 self.frontier.remove(i);
             }
         }
-        println!("after PRUNE: self.frontier.len() {}", self.frontier.len());
     }
 
     pub fn keep_values(threshold: u64, cnt_values_0: &[T], cnt_values_1: &[T]) -> Vec<bool> {
-        println!("threshold: {:?}", threshold);
-
         cnt_values_0
             .par_iter()
             .zip(cnt_values_1.par_iter())
