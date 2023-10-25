@@ -13,9 +13,9 @@ fn dpf_complete() {
         Field64::from(17u64),
         Field64::from(2u64),
         Field64::from(0u64),
+        Field64::from(32u64),
     ];
-    let beta_last = Field64::from(32u64);
-    let (key_0, key_1) = DPFKey::gen(&alpha, &betas, &beta_last);
+    let (key_0, key_1) = DPFKey::gen(&alpha, &betas);
 
     let (mut pi_0, mut pi_1) = {
         let mut hasher = Sha256::new();

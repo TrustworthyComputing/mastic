@@ -37,7 +37,7 @@ unsafe impl<T> Sync for TreeNode<T> {}
 pub struct KeyCollection<T> {
     server_id: i8,
     depth: usize,
-    pub keys: Vec<(bool, dpf::DPFKey<T, T>)>,
+    pub keys: Vec<(bool, dpf::DPFKey<T>)>,
     honest_clients: Vec<bool>,
     frontier: Vec<TreeNode<T>>,
     prev_frontier: Vec<TreeNode<T>>,
@@ -71,7 +71,7 @@ where
         }
     }
 
-    pub fn add_key(&mut self, key: dpf::DPFKey<T, T>) {
+    pub fn add_key(&mut self, key: dpf::DPFKey<T>) {
         self.keys.push((true, key));
         self.honest_clients.push(true);
     }
@@ -133,7 +133,7 @@ where
             .keys
             .par_iter()
             .enumerate()
-            .map(|(i, key)| key.1.eval_bit_last(&parent.key_states[i], dir, &bit_str))
+            .map(|(i, key)| key.1.eval_bit(&parent.key_states[i], dir, &bit_str))
             .unzip();
 
         let mut child_val = T::zero();

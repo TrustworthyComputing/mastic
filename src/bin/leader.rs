@@ -8,7 +8,7 @@ use mastic::{
 };
 
 use futures::try_join;
-use prio::field::Field64;
+use prio::field::{Field64, FieldElement};
 use rand::{distributions::Alphanumeric, Rng};
 use rayon::prelude::*;
 use std::{
@@ -17,7 +17,7 @@ use std::{
 };
 use tarpc::{client, context, serde_transport::tcp, tokio_serde::formats::Bincode};
 
-type Key = dpf::DPFKey<Field64, Field64>;
+type Key = dpf::DPFKey<Field64>;
 type Client = CollectorClient;
 
 fn long_context() -> context::Context {
@@ -39,7 +39,7 @@ fn sample_string(len: usize) -> String {
 fn generate_keys(cfg: &config::Config) -> (Vec<Key>, Vec<Key>) {
     let (keys_0, keys_1): (Vec<Key>, Vec<Key>) = rayon::iter::repeat(0)
         .take(cfg.unique_buckets)
-        .map(|_| dpf::DPFKey::gen_from_str(&sample_string(cfg.data_bytes * 8)))
+        .map(|_| dpf::DPFKey::gen_from_str(&sample_string(cfg.data_bytes * 8), Field64::one()))
         .unzip();
 
     let encoded: Vec<u8> = bincode::serialize(&keys_0[0]).unwrap();
@@ -70,8 +70,8 @@ async fn add_keys(
     cfg: &config::Config,
     client_0: &Client,
     client_1: &Client,
-    keys_0: &[dpf::DPFKey<Field64, Field64>],
-    keys_1: &[dpf::DPFKey<Field64, Field64>],
+    keys_0: &[dpf::DPFKey<Field64>],
+    keys_1: &[dpf::DPFKey<Field64>],
     num_clients: usize,
     malicious_percentage: f32,
 ) -> io::Result<()> {

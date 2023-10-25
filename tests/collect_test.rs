@@ -1,7 +1,7 @@
 use mastic::collect::*;
 use mastic::prg;
 use mastic::*;
-use prio::field::Field64;
+use prio::field::{Field64, FieldElement};
 use rayon::prelude::*;
 
 #[test]
@@ -17,7 +17,7 @@ fn collect_test_eval_groups() {
     let mut col_1 = KeyCollection::new(1, &seed, strlen);
 
     for cstr in &client_strings {
-        let (keys_0, keys_1) = dpf::DPFKey::<Field64, Field64>::gen_from_str(&cstr);
+        let (keys_0, keys_1) = dpf::DPFKey::<Field64>::gen_from_str(&cstr, Field64::one());
         col_0.add_key(keys_0);
         col_1.add_key(keys_1);
     }
@@ -75,81 +75,81 @@ fn collect_test_eval_groups() {
     }
 }
 
-// #[test]
-// fn collect_test_eval_full_groups() {
-//     let client_strings = [
-//         "01234567012345670123456701234567",
-//         "z12x45670y2345670123456701234567",
-//         "612x45670y2345670123456701234567",
-//         "912x45670y2345670123456701234567",
-//     ];
+#[test]
+fn collect_test_eval_full_groups() {
+    let client_strings = [
+        "01234567012345670123456701234567",
+        "z12x45670y2345670123456701234567",
+        "612x45670y2345670123456701234567",
+        "912x45670y2345670123456701234567",
+    ];
 
-//     let num_clients = 10;
-//     let strlen = crate::string_to_bits(&client_strings[0]).len();
+    let num_clients = 10;
+    let strlen = crate::string_to_bits(&client_strings[0]).len();
 
-//     let seed = prg::PrgSeed::random();
-//     let mut col_0 = KeyCollection::new(0, &seed, strlen);
-//     let mut col_1 = KeyCollection::new(1, &seed, strlen);
+    let seed = prg::PrgSeed::random();
+    let mut col_0 = KeyCollection::new(0, &seed, strlen);
+    let mut col_1 = KeyCollection::new(1, &seed, strlen);
 
-//     let mut keys = vec![];
-//     println!("Starting to generate keys");
-//     for s in &client_strings {
-//         keys.push(dpf::DPFKey::<Field64, Field64>::gen_from_str(&s));
-//     }
-//     println!("Done generating keys");
+    let mut keys = vec![];
+    println!("Starting to generate keys");
+    for s in &client_strings {
+        keys.push(dpf::DPFKey::<Field64>::gen_from_str(&s, Field64::one()));
+    }
+    println!("Done generating keys");
 
-//     for i in 0..num_clients {
-//         let copy_0 = keys[i % keys.len()].0.clone();
-//         let copy_1 = keys[i % keys.len()].1.clone();
-//         col_0.add_key(copy_0);
-//         col_1.add_key(copy_1);
-//         if i % 50 == 0 {
-//             println!("  Key {:?}", i);
-//         }
-//     }
+    for i in 0..num_clients {
+        let copy_0 = keys[i % keys.len()].0.clone();
+        let copy_1 = keys[i % keys.len()].1.clone();
+        col_0.add_key(copy_0);
+        col_1.add_key(copy_1);
+        if i % 50 == 0 {
+            println!("  Key {:?}", i);
+        }
+    }
 
-//     col_0.tree_init();
-//     col_1.tree_init();
+    col_0.tree_init();
+    col_1.tree_init();
 
-//     let threshold = Field64::from(2);
-//     let malicious = Vec::<usize>::new();
-//     for level in 0..strlen - 1 {
-//         println!("...start");
-//         let (cnt_values_0, _, _) = col_0.tree_crawl(1usize, &malicious, false);
-//         let (cnt_values_1, _, _) = col_1.tree_crawl(1usize, &malicious, false);
-//         println!("...done");
-//         println!("At level {:?} (size: {:?})", level, cnt_values_0.len());
+    let threshold = 2;
+    let malicious = Vec::<usize>::new();
+    for level in 0..strlen - 1 {
+        println!("...start");
+        let (cnt_values_0, _, _) = col_0.tree_crawl(1usize, &malicious, false);
+        let (cnt_values_1, _, _) = col_1.tree_crawl(1usize, &malicious, false);
+        println!("...done");
+        println!("At level {:?} (size: {:?})", level, cnt_values_0.len());
 
-//         assert_eq!(cnt_values_0.len(), cnt_values_1.len());
-//         let keep = KeyCollection::<Field64>::keep_values(&threshold, &cnt_values_0, &cnt_values_1);
+        assert_eq!(cnt_values_0.len(), cnt_values_1.len());
+        let keep = KeyCollection::<Field64>::keep_values(threshold, &cnt_values_0, &cnt_values_1);
 
-//         col_0.tree_prune(&keep);
-//         col_1.tree_prune(&keep);
-//     }
+        col_0.tree_prune(&keep);
+        col_1.tree_prune(&keep);
+    }
 
-//     let (cnt_values_0, hashes_0) = col_0.tree_crawl_last();
-//     let (cnt_values_1, hashes_1) = col_1.tree_crawl_last();
+    let (cnt_values_0, hashes_0) = col_0.tree_crawl_last();
+    let (cnt_values_1, hashes_1) = col_1.tree_crawl_last();
 
-//     assert_eq!(cnt_values_0.len(), cnt_values_1.len());
-//     assert_eq!(hashes_0.len(), hashes_1.len());
+    assert_eq!(cnt_values_0.len(), cnt_values_1.len());
+    assert_eq!(hashes_0.len(), hashes_1.len());
 
-//     let verified = hashes_0
-//         .par_iter()
-//         .zip(hashes_1.par_iter())
-//         .all(|(&h0, &h1)| h0 == h1);
-//     assert!(verified);
+    let verified = hashes_0
+        .par_iter()
+        .zip(hashes_1.par_iter())
+        .all(|(&h0, &h1)| h0 == h1);
+    assert!(verified);
 
-//     let keep = KeyCollection::<Field64>::keep_values(&threshold, &cnt_values_0, &cnt_values_1);
+    let keep = KeyCollection::<Field64>::keep_values(threshold, &cnt_values_0, &cnt_values_1);
 
-//     col_0.tree_prune(&keep);
-//     col_1.tree_prune(&keep);
+    col_0.tree_prune(&keep);
+    col_1.tree_prune(&keep);
 
-//     let s0 = col_0.final_shares();
-//     let s1 = col_1.final_shares();
+    let s0 = col_0.final_shares();
+    let s1 = col_1.final_shares();
 
-//     for res in &KeyCollection::<Field64>::final_values(&s0, &s1) {
-//         println!("Path = {:?}", res.path);
-//         let s = crate::bits_to_string(&res.path);
-//         println!("Value: {:?} = {:?}", s, res.value);
-//     }
-// }
+    for res in &KeyCollection::<Field64>::final_values(&s0, &s1) {
+        println!("Path = {:?}", res.path);
+        let s = crate::bits_to_string(&res.path);
+        println!("Value: {:?} = {:?}", s, res.value);
+    }
+}

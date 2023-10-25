@@ -10,7 +10,7 @@ pub struct ResetRequest {}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AddKeysRequest {
-    pub keys: Vec<dpf::DPFKey<Field64, Field64>>,
+    pub keys: Vec<dpf::DPFKey<Field64>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
