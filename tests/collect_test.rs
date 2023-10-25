@@ -1,7 +1,6 @@
-use mastic::collect::*;
-use mastic::prg;
-use mastic::*;
+use mastic::{collect::*, prg, *};
 use prio::field::{Field64, FieldElement};
+use rand::{thread_rng, Rng};
 use rayon::prelude::*;
 
 #[test]
@@ -13,8 +12,11 @@ fn collect_test_eval_groups() {
     let strlen = crate::string_to_bits(&client_strings[0]).len();
 
     let seed = prg::PrgSeed::random();
-    let mut col_0 = KeyCollection::new(0, &seed, strlen);
-    let mut col_1 = KeyCollection::new(1, &seed, strlen);
+    let mut verify_key = [0; 16];
+    thread_rng().fill(&mut verify_key);
+
+    let mut col_0 = KeyCollection::new(0, &seed, strlen, verify_key);
+    let mut col_1 = KeyCollection::new(1, &seed, strlen, verify_key);
 
     for cstr in &client_strings {
         let (keys_0, keys_1) = dpf::DPFKey::<Field64>::gen_from_str(&cstr, Field64::one());
@@ -88,8 +90,10 @@ fn collect_test_eval_full_groups() {
     let strlen = crate::string_to_bits(&client_strings[0]).len();
 
     let seed = prg::PrgSeed::random();
-    let mut col_0 = KeyCollection::new(0, &seed, strlen);
-    let mut col_1 = KeyCollection::new(1, &seed, strlen);
+    let mut verify_key = [0; 16];
+    thread_rng().fill(&mut verify_key);
+    let mut col_0 = KeyCollection::new(0, &seed, strlen, verify_key);
+    let mut col_1 = KeyCollection::new(1, &seed, strlen, verify_key);
 
     let mut keys = vec![];
     println!("Starting to generate keys");

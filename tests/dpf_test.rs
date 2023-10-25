@@ -1,8 +1,8 @@
-use mastic::dpf::*;
-use mastic::*;
+use std::ops::Add;
+
+use mastic::{dpf::*, *};
 use prio::field::Field64;
 use sha2::{Digest, Sha256};
-use std::ops::Add;
 
 #[test]
 fn dpf_complete() {

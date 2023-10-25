@@ -1,9 +1,7 @@
-use crate::prg;
-use crate::{xor_three_vecs, xor_vec};
-
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+use crate::{prg, xor_three_vecs, xor_vec};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct CorWord<T> {

@@ -1,6 +1,7 @@
+use std::{fs, net::SocketAddr};
+
 use clap::{App, Arg};
 use serde_json::Value;
-use std::{fs, net::SocketAddr};
 
 pub struct Config {
     pub data_bytes: usize,

@@ -1,22 +1,25 @@
-use mastic::{
-    collect, config, prg,
-    rpc::{
-        AddKeysRequest, Collector, FinalSharesRequest, ResetRequest, TreeCrawlLastRequest,
-        TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
-    },
-};
-
-use futures::{future, prelude::*};
-use prio::field::Field64;
-use std::time::Instant;
 use std::{
     io,
     sync::{Arc, Mutex},
+    time::Instant,
 };
+
+use futures::{future, prelude::*};
+use mastic::{
+    collect, config, prg,
+    rpc::{
+        AddFLPsRequest, AddKeysRequest, ApplyFLPResultsRequest, Collector, FinalSharesRequest,
+        ResetRequest, RunFlpQueriesRequest, TreeCrawlLastRequest, TreeCrawlRequest,
+        TreeInitRequest, TreePruneRequest,
+    },
+};
+use prio::field::Field64;
 use tarpc::{
     context,
     serde_transport::tcp,
-    server::{self, Channel},
+    server::{
+        Channel, {self},
+    },
     tokio_serde::formats::Bincode,
 };
 
@@ -30,9 +33,14 @@ struct CollectorServer {
 
 #[tarpc::server]
 impl Collector for CollectorServer {
-    async fn reset(self, _: context::Context, _req: ResetRequest) -> String {
+    async fn reset(self, _: context::Context, req: ResetRequest) -> String {
         let mut coll = self.arc.lock().unwrap();
-        *coll = collect::KeyCollection::new(self.server_id, &self.seed, self.data_bytes);
+        *coll = collect::KeyCollection::new(
+            self.server_id,
+            &self.seed,
+            self.data_bytes,
+            req.verify_key,
+        );
         "Done".to_string()
     }
 
@@ -40,6 +48,17 @@ impl Collector for CollectorServer {
         let mut coll = self.arc.lock().unwrap();
         for k in req.keys {
             coll.add_key(k);
+        }
+        if coll.keys.len() % 10000 == 0 {
+            println!("Number of keys: {:?}", coll.keys.len());
+        }
+        "Done".to_string()
+    }
+
+    async fn add_all_flp_proof_shares(self, _: context::Context, req: AddFLPsRequest) -> String {
+        let mut coll = self.arc.lock().unwrap();
+        for flp_proof_share in req.flp_proof_shares {
+            coll.add_flp_proof_share(flp_proof_share);
         }
         if coll.keys.len() % 10000 == 0 {
             println!("Number of keys: {:?}", coll.keys.len());
@@ -60,13 +79,28 @@ impl Collector for CollectorServer {
         _: context::Context,
         req: TreeCrawlRequest,
     ) -> (Vec<Field64>, Vec<Vec<u8>>, Vec<usize>) {
-        // let start = Instant::now();
         let split_by = req.split_by;
         let malicious = req.malicious;
         let is_last = req.is_last;
         let mut coll = self.arc.lock().unwrap();
 
         coll.tree_crawl(split_by, &malicious, is_last)
+    }
+
+    async fn run_flp_queries(
+        self,
+        _: context::Context,
+        _req: RunFlpQueriesRequest,
+    ) -> Vec<Vec<Field64>> {
+        let mut coll = self.arc.lock().unwrap();
+
+        coll.run_flp_queries()
+    }
+
+    async fn apply_flp_results(self, _: context::Context, req: ApplyFLPResultsRequest) -> String {
+        let mut coll = self.arc.lock().unwrap();
+        coll.apply_flp_results(&req.keep);
+        "Done".to_string()
     }
 
     async fn tree_crawl_last(
@@ -108,7 +142,7 @@ async fn main() -> io::Result<()> {
 
     let seed = prg::PrgSeed { key: [1u8; 16] };
 
-    let coll = collect::KeyCollection::new(server_id, &seed, cfg.data_bytes * 8);
+    let coll = collect::KeyCollection::new(server_id, &seed, cfg.data_bytes * 8, [0u8; 16]);
     let arc = Arc::new(Mutex::new(coll));
 
     println!("Server {} running at {:?}", server_id, server_addr);

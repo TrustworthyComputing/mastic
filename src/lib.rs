@@ -6,10 +6,10 @@ pub mod rpc;
 
 extern crate lazy_static;
 
-pub use crate::rpc::CollectorClient;
 use itertools::Itertools;
-
 use prio::field::Field64;
+
+pub use crate::rpc::CollectorClient;
 
 impl crate::prg::FromRng for Field64 {
     fn from_rng(&mut self, rng: &mut impl rand::Rng) {

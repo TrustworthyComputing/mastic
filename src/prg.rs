@@ -9,16 +9,14 @@ use aes::{
     },
     Aes128, Block,
 };
-
 use rand::Rng;
 
 type Aes128Ctr128LE = ctr::Ctr128LE<aes::Aes128>;
 
+use std::{cell::RefCell, ops};
+
 use rand_core::RngCore;
-use serde::Deserialize;
-use serde::Serialize;
-use std::cell::RefCell;
-use std::ops;
+use serde::{Deserialize, Serialize};
 
 // AES key size in bytes. We always use AES-128,
 // which has 16-byte keys.

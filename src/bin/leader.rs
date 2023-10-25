@@ -1,20 +1,24 @@
-use mastic::{
-    collect, config, dpf,
-    rpc::{
-        AddKeysRequest, FinalSharesRequest, ResetRequest, TreeCrawlLastRequest, TreeCrawlRequest,
-        TreeInitRequest, TreePruneRequest,
-    },
-    CollectorClient,
-};
-
-use futures::try_join;
-use prio::field::{Field64, FieldElement};
-use rand::{distributions::Alphanumeric, Rng};
-use rayon::prelude::*;
 use std::{
     io,
     time::{Duration, Instant, SystemTime},
 };
+
+use futures::try_join;
+use mastic::{
+    collect, config, dpf,
+    rpc::{
+        AddFLPsRequest, AddKeysRequest, ApplyFLPResultsRequest, FinalSharesRequest, ResetRequest,
+        RunFlpQueriesRequest, TreeCrawlLastRequest, TreeCrawlRequest, TreeInitRequest,
+        TreePruneRequest,
+    },
+    CollectorClient,
+};
+use prio::{
+    field::{random_vector, Field64},
+    flp::{types::Count, Type},
+};
+use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use rayon::prelude::*;
 use tarpc::{client, context, serde_transport::tcp, tokio_serde::formats::Bincode};
 
 type Key = dpf::DPFKey<Field64>;
@@ -36,20 +40,51 @@ fn sample_string(len: usize) -> String {
         .collect()
 }
 
-fn generate_keys(cfg: &config::Config) -> (Vec<Key>, Vec<Key>) {
+fn generate_keys(
+    cfg: &config::Config,
+) -> ((Vec<Key>, Vec<Key>), (Vec<Vec<Field64>>, Vec<Vec<Field64>>)) {
+    let beta = 1u64;
+    let count = Count::new();
+    let input_beta: Vec<Field64> = count.encode_measurement(&beta).unwrap();
+
     let (keys_0, keys_1): (Vec<Key>, Vec<Key>) = rayon::iter::repeat(0)
         .take(cfg.unique_buckets)
-        .map(|_| dpf::DPFKey::gen_from_str(&sample_string(cfg.data_bytes * 8), Field64::one()))
+        .map(|_| dpf::DPFKey::gen_from_str(&sample_string(cfg.data_bytes * 8), Field64::from(beta)))
+        .unzip();
+
+    let (proofs_0, proofs_1): (Vec<Vec<Field64>>, Vec<Vec<Field64>>) = rayon::iter::repeat(0)
+        .take(cfg.unique_buckets)
+        .map(|_| {
+            let prove_rand = random_vector(count.prove_rand_len()).unwrap();
+            let proof = count.prove(&input_beta, &prove_rand, &[]).unwrap();
+
+            let proof_0 = proof
+                .iter()
+                .map(|_| Field64::from(rand::thread_rng().gen::<u64>()))
+                .collect::<Vec<_>>();
+            let proof_1 = proof
+                .par_iter()
+                .zip(proof_0.par_iter())
+                .map(|(p_0, p_1)| p_0 - p_1)
+                .collect::<Vec<_>>();
+            (proof_0, proof_1)
+        })
         .unzip();
 
     let encoded: Vec<u8> = bincode::serialize(&keys_0[0]).unwrap();
     println!("Key size: {:?} bytes", encoded.len());
 
-    (keys_0, keys_1)
+    ((keys_0, keys_1), (proofs_0, proofs_1))
 }
 
-async fn reset_servers(client_0: &Client, client_1: &Client) -> io::Result<()> {
-    let req = ResetRequest {};
+async fn reset_servers(
+    client_0: &Client,
+    client_1: &Client,
+    verify_key: &[u8; 16],
+) -> io::Result<()> {
+    let req = ResetRequest {
+        verify_key: *verify_key,
+    };
     let response_0 = client_0.reset(long_context(), req.clone());
     let response_1 = client_1.reset(long_context(), req);
     try_join!(response_0, response_1).unwrap();
@@ -72,6 +107,8 @@ async fn add_keys(
     client_1: &Client,
     keys_0: &[dpf::DPFKey<Field64>],
     keys_1: &[dpf::DPFKey<Field64>],
+    proofs_0: &[Vec<Field64>],
+    proofs_1: &[Vec<Field64>],
     num_clients: usize,
     malicious_percentage: f32,
 ) -> io::Result<()> {
@@ -81,21 +118,77 @@ async fn add_keys(
 
     let mut add_keys_0 = Vec::with_capacity(num_clients);
     let mut add_keys_1 = Vec::with_capacity(num_clients);
-
+    let mut flp_proof_shares_0 = Vec::with_capacity(num_clients);
+    let mut flp_proof_shares_1 = Vec::with_capacity(num_clients);
     for r in 0..num_clients {
         let idx_1 = zipf.sample(&mut rng) - 1;
         let mut idx_2 = idx_1;
-        if rand::thread_rng().gen_range(0.0..1.0) < malicious_percentage {
-            idx_2 += 1;
+        let mut idx_3 = idx_1;
+        if rng.gen_range(0.0..1.0) < malicious_percentage {
+            if rng.gen() {
+                // Malicious key.
+                idx_2 += 1;
+            } else {
+                // Malicious FLP.
+                idx_3 += 1;
+            }
             println!("Malicious {}", r);
         }
-
         add_keys_0.push(keys_0[idx_1].clone());
         add_keys_1.push(keys_1[idx_2 % cfg.unique_buckets].clone());
+
+        flp_proof_shares_0.push(proofs_0[idx_1].clone());
+        flp_proof_shares_1.push(proofs_1[idx_3 % cfg.unique_buckets].clone());
     }
 
     let response_0 = client_0.add_keys(long_context(), AddKeysRequest { keys: add_keys_0 });
     let response_1 = client_1.add_keys(long_context(), AddKeysRequest { keys: add_keys_1 });
+    try_join!(response_0, response_1).unwrap();
+
+    let response_0 = client_0.add_all_flp_proof_shares(
+        long_context(),
+        AddFLPsRequest {
+            flp_proof_shares: flp_proof_shares_0,
+        },
+    );
+    let response_1 = client_1.add_all_flp_proof_shares(
+        long_context(),
+        AddFLPsRequest {
+            flp_proof_shares: flp_proof_shares_1,
+        },
+    );
+    try_join!(response_0, response_1).unwrap();
+
+    Ok(())
+}
+
+async fn run_flp_queries(client_0: &Client, client_1: &Client) -> io::Result<()> {
+    let req = RunFlpQueriesRequest {};
+    let response_0 = client_0.run_flp_queries(long_context(), req.clone());
+    let response_1 = client_1.run_flp_queries(long_context(), req);
+    let (flp_verifier_shares_0, flp_verifier_shares_1) = try_join!(response_0, response_1).unwrap();
+
+    assert_eq!(flp_verifier_shares_0.len(), flp_verifier_shares_1.len());
+
+    let count = Count::new();
+    let keep = flp_verifier_shares_0
+        .par_iter()
+        .zip(flp_verifier_shares_1.par_iter())
+        .map(|(flp_verifier_share_0, flp_verifier_share_1)| {
+            let flp_verifier = flp_verifier_share_0
+                .par_iter()
+                .zip(flp_verifier_share_1.par_iter())
+                .map(|(&v1, &v2)| v1 + v2)
+                .collect::<Vec<_>>();
+
+            count.decide(&flp_verifier).unwrap()
+        })
+        .collect::<Vec<_>>();
+
+    // Tree prune
+    let req = ApplyFLPResultsRequest { keep };
+    let response_0 = client_0.apply_flp_results(long_context(), req.clone());
+    let response_1 = client_1.apply_flp_results(long_context(), req);
     try_join!(response_0, response_1).unwrap();
 
     Ok(())
@@ -128,7 +221,6 @@ async fn run_level(
         assert_eq!(cnt_values_0.len(), cnt_values_1.len());
         keep =
             collect::KeyCollection::<Field64>::keep_values(threshold, &cnt_values_0, &cnt_values_1);
-        println!("mt_root_0.len() {}", mt_root_0.len());
         if mt_root_0.is_empty() {
             break;
         }
@@ -236,7 +328,7 @@ async fn main() -> io::Result<()> {
 
     let start = Instant::now();
     println!("Generating keys...");
-    let (keys_0, keys_1) = generate_keys(&cfg);
+    let ((keys_0, keys_1), (proofs_0, proofs_1)) = generate_keys(&cfg);
     let delta = start.elapsed().as_secs_f64();
     println!(
         "Generated {:?} keys in {:?} seconds ({:?} sec/key)",
@@ -245,7 +337,10 @@ async fn main() -> io::Result<()> {
         delta / (keys_0.len() as f64)
     );
 
-    reset_servers(&client_0, &client_1).await?;
+    let mut verify_key = [0; 16];
+    thread_rng().fill(&mut verify_key);
+
+    reset_servers(&client_0, &client_1, &verify_key).await?;
 
     let mut left_to_go = num_clients;
     let reqs_in_flight = 1000;
@@ -258,7 +353,8 @@ async fn main() -> io::Result<()> {
 
             if this_batch > 0 {
                 responses.push(add_keys(
-                    &cfg, &client_0, &client_1, &keys_0, &keys_1, this_batch, malicious,
+                    &cfg, &client_0, &client_1, &keys_0, &keys_1, &proofs_0, &proofs_1, this_batch,
+                    malicious,
                 ));
             }
         }
@@ -272,12 +368,15 @@ async fn main() -> io::Result<()> {
 
     let start = Instant::now();
     let bit_len = cfg.data_bytes * 8; // bits
-    for _level in 0..bit_len - 1 {
+    for level in 0..bit_len - 1 {
         let start_level = Instant::now();
+        if level == 0 {
+            run_flp_queries(&client_0, &client_1).await?;
+        }
         run_level(&cfg, &client_0, &client_1, num_clients).await?;
         println!(
             "Time for level {}: {:?}",
-            _level,
+            level,
             start_level.elapsed().as_secs_f64()
         );
     }
