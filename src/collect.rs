@@ -43,6 +43,7 @@ pub struct KeyCollection<T> {
     frontier: Vec<TreeNode<T>>,
     prev_frontier: Vec<TreeNode<T>>,
     count: Count<T>,
+    final_proofs: Vec<[u8; 32]>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,6 +79,7 @@ where
             frontier: vec![],
             prev_frontier: vec![],
             count: Count::new(),
+            final_proofs: vec![],
         }
     }
 
@@ -137,7 +139,7 @@ where
         child
     }
 
-    pub fn run_flp_queries(&mut self) -> Vec<Vec<T>> {
+    pub fn run_flp_queries(&mut self, start: usize, end: usize) -> Vec<Vec<T>> {
         let level = self.frontier[0].path.len();
         assert_eq!(level, 0);
 
@@ -156,6 +158,7 @@ where
             .key_values
             .par_iter()
             .enumerate()
+            .filter(|(client_index, _)| *client_index >= start && *client_index < end)
             .map(|(client_index, _)| {
                 let y_p0 = node_left.key_values[client_index];
                 let y_p1 = node_right.key_values[client_index];
@@ -354,7 +357,7 @@ where
         (cnt_values, mtree_roots, mtree_indices)
     }
 
-    pub fn tree_crawl_last(&mut self) -> (Vec<T>, Vec<[u8; 32]>) {
+    pub fn tree_crawl_last(&mut self) -> Vec<T> {
         let next_frontier = self
             .frontier
             .par_iter()
@@ -367,15 +370,9 @@ where
             })
             .collect::<Vec<TreeNode<T>>>();
 
-        // These are summed evaluations y for different prefixes.
-        let cnt_values = next_frontier
-            .par_iter()
-            .map(|node| node.value)
-            .collect::<Vec<T>>();
-
         let num_clients = next_frontier.get(0).map_or(0, |node| node.key_states.len());
-        let mut key_proofs: Vec<_> = vec![[0u8; 32]; num_clients];
-        key_proofs
+        self.final_proofs = vec![[0u8; 32]; num_clients];
+        self.final_proofs
             .par_iter_mut()
             .enumerate()
             .zip_eq(&self.keys)
@@ -390,7 +387,20 @@ where
 
         self.frontier = next_frontier;
 
-        (cnt_values, key_proofs)
+        // These are summed evaluations y for different prefixes.
+        self.frontier
+            .par_iter()
+            .map(|node| node.value)
+            .collect::<Vec<T>>()
+    }
+
+    pub fn get_proofs(&self, start: usize, end: usize) -> Vec<[u8; 32]> {
+        let mut proofs = Vec::new();
+        if end > start && end <= self.final_proofs.len() {
+            proofs.extend_from_slice(&self.final_proofs[start..end]);
+        }
+
+        proofs
     }
 
     pub fn tree_prune(&mut self, alive_vals: &[bool]) {

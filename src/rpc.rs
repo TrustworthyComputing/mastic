@@ -37,7 +37,16 @@ pub struct TreeCrawlRequest {
 pub struct TreeCrawlLastRequest {}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RunFlpQueriesRequest {}
+pub struct GetProofsRequest {
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RunFlpQueriesRequest {
+    pub start: usize,
+    pub end: usize,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TreePruneRequest {
@@ -55,7 +64,8 @@ pub trait Collector {
     async fn run_flp_queries(req: RunFlpQueriesRequest) -> Vec<Vec<Field64>>;
     async fn apply_flp_results(req: ApplyFLPResultsRequest) -> String;
     async fn tree_crawl(req: TreeCrawlRequest) -> (Vec<Field64>, Vec<Vec<u8>>, Vec<usize>);
-    async fn tree_crawl_last(req: TreeCrawlLastRequest) -> (Vec<Field64>, Vec<[u8; 32]>);
+    async fn tree_crawl_last(req: TreeCrawlLastRequest) -> Vec<Field64>;
+    async fn get_proofs(req: GetProofsRequest) -> Vec<[u8; 32]>;
     async fn tree_init(req: TreeInitRequest) -> String;
     async fn tree_prune(req: TreePruneRequest) -> String;
     async fn final_shares(req: FinalSharesRequest) -> Vec<collect::Result<Field64>>;

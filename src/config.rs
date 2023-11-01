@@ -5,7 +5,8 @@ use serde_json::Value;
 
 pub struct Config {
     pub data_bytes: usize,
-    pub addkey_batch_size: usize,
+    pub add_key_batch_size: usize,
+    pub flp_batch_size: usize,
     pub unique_buckets: usize,
     pub threshold: f64,
     pub zipf_exponent: f64,
@@ -22,9 +23,12 @@ pub fn get_config(filename: &str) -> Config {
     let v: Value = serde_json::from_str(json_data).expect("Cannot parse JSON config");
 
     let data_bytes: usize = v["data_bytes"].as_u64().expect("Can't parse data_bytes") as usize;
-    let addkey_batch_size: usize = v["addkey_batch_size"]
+    let add_key_batch_size: usize = v["add_key_batch_size"]
         .as_u64()
-        .expect("Can't parse addkey_batch_size") as usize;
+        .expect("Can't parse add_key_batch_size") as usize;
+    let flp_batch_size: usize = v["flp_batch_size"]
+        .as_u64()
+        .expect("Can't parse flp_batch_size") as usize;
     let unique_buckets: usize = v["unique_buckets"]
         .as_u64()
         .expect("Can't parse unique_buckets") as usize;
@@ -37,7 +41,8 @@ pub fn get_config(filename: &str) -> Config {
 
     Config {
         data_bytes,
-        addkey_batch_size,
+        add_key_batch_size,
+        flp_batch_size,
         unique_buckets,
         threshold,
         zipf_exponent,

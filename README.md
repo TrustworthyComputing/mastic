@@ -60,8 +60,9 @@ system. An example of one such file is in `src/bin/config.json`. The contents of
   "threshold": 0.01,
   "server_0": "0.0.0.0:8000",
   "server_1": "0.0.0.0:8001",
-  "addkey_batch_size": 100,
-  "unique_buckets": 10,
+  "add_key_batch_size": 1000,
+  "flp_batch_size": 100000,
+  "unique_buckets": 1000,
   "zipf_exponent": 1.03
 }
 ```
@@ -72,9 +73,10 @@ The parameters are:
   clients hold.
 * `server0`, `server1`, and `server2`: The `IP:port` of tuple for the two servers. The servers can
   run on different IP addresses, but these IPs must be publicly addressable.
-* `addkey_batch_size`: The number of each type of RPC request to bundle together. The underlying RPC
+* `add_key_batch_size`: The number of each type of RPC request to bundle together. The underlying RPC
   library has an annoying limit on the size of each RPC request, so you cannot set these values too
   large.
+* `flp_batch_size`: Similar to `add_key_batch_size` but with a greater threshold.
 * `unique_buckets` and `zipf_exponent`: Each simulated client samples its private string from a Zipf
   distribution over strings with parameter `zipf_exponent` and support `unique_buckets`.
 

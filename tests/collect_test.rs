@@ -41,8 +41,11 @@ fn collect_test_eval_groups() {
         col_1.tree_prune(&keep);
     }
 
-    let (cnt_values_0, hashes_0) = col_0.tree_crawl_last();
-    let (cnt_values_1, hashes_1) = col_1.tree_crawl_last();
+    let cnt_values_0 = col_0.tree_crawl_last();
+    let cnt_values_1 = col_1.tree_crawl_last();
+
+    let hashes_0 = col_0.get_proofs(0, client_strings.len());
+    let hashes_1 = col_1.get_proofs(0, client_strings.len());
 
     assert_eq!(cnt_values_0.len(), cnt_values_1.len());
     assert_eq!(hashes_0.len(), hashes_1.len());
@@ -131,8 +134,11 @@ fn collect_test_eval_full_groups() {
         col_1.tree_prune(&keep);
     }
 
-    let (cnt_values_0, hashes_0) = col_0.tree_crawl_last();
-    let (cnt_values_1, hashes_1) = col_1.tree_crawl_last();
+    let cnt_values_0 = col_0.tree_crawl_last();
+    let cnt_values_1 = col_1.tree_crawl_last();
+
+    let hashes_0 = col_0.get_proofs(0, client_strings.len());
+    let hashes_1 = col_1.get_proofs(0, client_strings.len());
 
     assert_eq!(cnt_values_0.len(), cnt_values_1.len());
     assert_eq!(hashes_0.len(), hashes_1.len());

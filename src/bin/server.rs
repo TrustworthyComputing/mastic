@@ -9,8 +9,8 @@ use mastic::{
     collect, config, prg,
     rpc::{
         AddFLPsRequest, AddKeysRequest, ApplyFLPResultsRequest, Collector, FinalSharesRequest,
-        ResetRequest, RunFlpQueriesRequest, TreeCrawlLastRequest, TreeCrawlRequest,
-        TreeInitRequest, TreePruneRequest,
+        GetProofsRequest, ResetRequest, RunFlpQueriesRequest, TreeCrawlLastRequest,
+        TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
     },
 };
 use prio::field::Field64;
@@ -79,22 +79,27 @@ impl Collector for CollectorServer {
         _: context::Context,
         req: TreeCrawlRequest,
     ) -> (Vec<Field64>, Vec<Vec<u8>>, Vec<usize>) {
+        let start = Instant::now();
         let split_by = req.split_by;
         let malicious = req.malicious;
         let is_last = req.is_last;
         let mut coll = self.arc.lock().unwrap();
 
-        coll.tree_crawl(split_by, &malicious, is_last)
+        let res = coll.tree_crawl(split_by, &malicious, is_last);
+        println!("Tree crawl: {:?} sec.", start.elapsed().as_secs_f64());
+
+        res
     }
 
     async fn run_flp_queries(
         self,
         _: context::Context,
-        _req: RunFlpQueriesRequest,
+        req: RunFlpQueriesRequest,
     ) -> Vec<Vec<Field64>> {
         let mut coll = self.arc.lock().unwrap();
+        debug_assert!(req.start < req.end);
 
-        coll.run_flp_queries()
+        coll.run_flp_queries(req.start, req.end)
     }
 
     async fn apply_flp_results(self, _: context::Context, req: ApplyFLPResultsRequest) -> String {
@@ -107,12 +112,21 @@ impl Collector for CollectorServer {
         self,
         _: context::Context,
         _req: TreeCrawlLastRequest,
-    ) -> (Vec<Field64>, Vec<[u8; 32]>) {
+    ) -> Vec<Field64> {
         let start = Instant::now();
         let mut coll = self.arc.lock().unwrap();
+
         let res = coll.tree_crawl_last();
-        println!("tree_crawl_last: {:?}", start.elapsed().as_secs_f64());
+        println!("Tree crawl last: {:?} sec.", start.elapsed().as_secs_f64());
+
         res
+    }
+
+    async fn get_proofs(self, _: context::Context, req: GetProofsRequest) -> Vec<[u8; 32]> {
+        let coll = self.arc.lock().unwrap();
+        debug_assert!(req.start < req.end);
+
+        coll.get_proofs(req.start, req.end)
     }
 
     async fn tree_prune(self, _: context::Context, req: TreePruneRequest) -> String {
