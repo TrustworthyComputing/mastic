@@ -1,8 +1,8 @@
 use std::ops::Add;
 
+use blake3::hash;
 use mastic::{dpf::*, *};
 use prio::field::Field64;
-use sha2::{Digest, Sha256};
 
 #[test]
 fn dpf_complete() {
@@ -17,12 +17,8 @@ fn dpf_complete() {
     ];
     let (key_0, key_1) = DPFKey::gen(&alpha, &betas);
 
-    let (mut pi_0, mut pi_1) = {
-        let mut hasher = Sha256::new();
-        hasher.update("0");
-        let tmp = hasher.finalize().to_vec();
-        (tmp.clone(), tmp)
-    };
+    let mut pi_0: [u8; HASH_SIZE] = hash(b"0").as_bytes()[0..HASH_SIZE].try_into().unwrap();
+    let mut pi_1: [u8; HASH_SIZE] = pi_0.clone();
 
     for i in 0..(1 << num_bits) {
         let alpha_eval = u32_to_bits(num_bits, i);

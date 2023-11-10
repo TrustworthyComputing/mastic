@@ -12,6 +12,7 @@ use mastic::{
         GetProofsRequest, ResetRequest, RunFlpQueriesRequest, TreeCrawlLastRequest,
         TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
     },
+    HASH_SIZE,
 };
 use prio::field::Field64;
 use tarpc::{
@@ -122,7 +123,7 @@ impl Collector for CollectorServer {
         res
     }
 
-    async fn get_proofs(self, _: context::Context, req: GetProofsRequest) -> Vec<[u8; 32]> {
+    async fn get_proofs(self, _: context::Context, req: GetProofsRequest) -> Vec<[u8; HASH_SIZE]> {
         let coll = self.arc.lock().unwrap();
         debug_assert!(req.start < req.end);
 

@@ -6,10 +6,11 @@ pub mod rpc;
 
 extern crate lazy_static;
 
-use itertools::Itertools;
 use prio::field::Field64;
 
 pub use crate::rpc::CollectorClient;
+
+pub const HASH_SIZE: usize = 12;
 
 impl crate::prg::FromRng for Field64 {
     fn from_rng(&mut self, rng: &mut impl rand::Rng) {
@@ -77,22 +78,19 @@ pub fn bits_to_bitstring(bits: &[bool]) -> String {
 }
 
 pub fn xor_vec(v1: &[u8], v2: &[u8]) -> Vec<u8> {
-    v1.iter()
-        .zip_eq(v2.iter())
-        .map(|(&x1, &x2)| x1 ^ x2)
-        .collect()
+    v1.iter().zip(v2.iter()).map(|(&x1, &x2)| x1 ^ x2).collect()
 }
 
 pub fn xor_in_place(v1: &mut [u8], v2: &[u8]) {
-    for (x1, &x2) in v1.iter_mut().zip_eq(v2.iter()) {
+    for (x1, &x2) in v1.iter_mut().zip(v2.iter()) {
         *x1 ^= x2;
     }
 }
 
 pub fn xor_three_vecs(v1: &[u8], v2: &[u8], v3: &[u8]) -> Vec<u8> {
     v1.iter()
-        .zip_eq(v2.iter())
-        .zip_eq(v3.iter())
+        .zip(v2.iter())
+        .zip(v3.iter())
         .map(|((&x1, &x2), &x3)| x1 ^ x2 ^ x3)
         .collect()
 }

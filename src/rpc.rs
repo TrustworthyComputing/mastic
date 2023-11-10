@@ -1,7 +1,7 @@
 use prio::field::Field64;
 use serde::{Deserialize, Serialize};
 
-use crate::{collect, dpf};
+use crate::{collect, dpf, HASH_SIZE};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ResetRequest {
@@ -65,7 +65,7 @@ pub trait Collector {
     async fn apply_flp_results(req: ApplyFLPResultsRequest) -> String;
     async fn tree_crawl(req: TreeCrawlRequest) -> (Vec<Field64>, Vec<Vec<u8>>, Vec<usize>);
     async fn tree_crawl_last(req: TreeCrawlLastRequest) -> Vec<Field64>;
-    async fn get_proofs(req: GetProofsRequest) -> Vec<[u8; 32]>;
+    async fn get_proofs(req: GetProofsRequest) -> Vec<[u8; HASH_SIZE]>;
     async fn tree_init(req: TreeInitRequest) -> String;
     async fn tree_prune(req: TreePruneRequest) -> String;
     async fn final_shares(req: FinalSharesRequest) -> Vec<collect::Result<Field64>>;
