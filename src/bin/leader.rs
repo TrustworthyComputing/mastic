@@ -120,6 +120,7 @@ async fn add_keys(
     let mut add_keys_1 = Vec::with_capacity(num_clients);
     let mut flp_proof_shares_0 = Vec::with_capacity(num_clients);
     let mut flp_proof_shares_1 = Vec::with_capacity(num_clients);
+    let mut nonces = Vec::with_capacity(num_clients);
     for r in 0..num_clients {
         let idx_1 = zipf.sample(&mut rng) - 1;
         let mut idx_2 = idx_1;
@@ -139,6 +140,7 @@ async fn add_keys(
 
         flp_proof_shares_0.push(proofs_0[idx_1].clone());
         flp_proof_shares_1.push(proofs_1[idx_3 % cfg.unique_buckets].clone());
+        nonces.push(rand::thread_rng().gen::<u128>().to_le_bytes());
     }
 
     let resp_0 = client_0.add_keys(long_context(), AddKeysRequest { keys: add_keys_0 });
@@ -149,12 +151,14 @@ async fn add_keys(
         long_context(),
         AddFLPsRequest {
             flp_proof_shares: flp_proof_shares_0,
+            nonces: nonces.clone(),
         },
     );
     let resp_1 = client_1.add_all_flp_proof_shares(
         long_context(),
         AddFLPsRequest {
             flp_proof_shares: flp_proof_shares_1,
+            nonces,
         },
     );
     try_join!(resp_0, resp_1).unwrap();

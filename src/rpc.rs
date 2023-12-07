@@ -16,6 +16,7 @@ pub struct AddKeysRequest {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AddFLPsRequest {
     pub flp_proof_shares: Vec<Vec<Field64>>,
+    pub nonces: Vec<[u8; 16]>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

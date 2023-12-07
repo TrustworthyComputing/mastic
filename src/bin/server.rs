@@ -58,8 +58,8 @@ impl Collector for CollectorServer {
 
     async fn add_all_flp_proof_shares(self, _: context::Context, req: AddFLPsRequest) -> String {
         let mut coll = self.arc.lock().unwrap();
-        for flp_proof_share in req.flp_proof_shares {
-            coll.add_flp_proof_share(flp_proof_share);
+        for (flp_proof_share, nonce) in req.flp_proof_shares.into_iter().zip(req.nonces) {
+            coll.add_flp_proof_share(flp_proof_share, nonce);
         }
         if coll.keys.len() % 10000 == 0 {
             println!("Number of keys: {:?}", coll.keys.len());
