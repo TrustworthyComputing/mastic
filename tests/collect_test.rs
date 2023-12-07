@@ -19,7 +19,7 @@ fn collect_test_eval_groups() {
     let mut col_1 = KeyCollection::new(1, &seed, strlen, verify_key);
 
     for cstr in &client_strings {
-        let (keys_0, keys_1) = dpf::DPFKey::<Field64>::gen_from_str(&cstr, Field64::one());
+        let (keys_0, keys_1) = vidpf::VIDPFKey::<Field64>::gen_from_str(&cstr, Field64::one());
         col_0.add_key(keys_0);
         col_1.add_key(keys_1);
     }
@@ -101,7 +101,7 @@ fn collect_test_eval_full_groups() {
     let mut keys = vec![];
     println!("Starting to generate keys");
     for s in &client_strings {
-        keys.push(dpf::DPFKey::<Field64>::gen_from_str(&s, Field64::one()));
+        keys.push(vidpf::VIDPFKey::<Field64>::gen_from_str(&s, Field64::one()));
     }
     println!("Done generating keys");
 

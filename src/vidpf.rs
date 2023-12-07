@@ -11,7 +11,7 @@ struct CorWord<T> {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DPFKey<T> {
+pub struct VIDPFKey<T> {
     pub key_idx: bool,
     root_seed: prg::PrgSeed,
     cor_words: Vec<CorWord<T>>,
@@ -80,7 +80,7 @@ impl<T> TupleExt<T> for (T, T) {
 
 fn gen_cor_word<W>(
     bit: bool,
-    value: W,
+    beta: W,
     bits: &mut (bool, bool),
     seeds: &mut (prg::PrgSeed, prg::PrgSeed),
 ) -> CorWord<W>
@@ -121,7 +121,7 @@ where
     }
 
     let converted = seeds.map(|s| s.convert());
-    cw.word = value;
+    cw.word = beta;
     cw.word.sub_assign(converted.0.word);
     cw.word.add_assign(converted.1.word);
 
@@ -136,13 +136,11 @@ where
 }
 
 /// All-prefix DPF implementation.
-impl<T> DPFKey<T>
+impl<T> VIDPFKey<T>
 where
     T: prg::FromRng + Clone + prio::field::FieldElement + std::fmt::Debug,
 {
-    pub fn gen(alpha_bits: &[bool], values: &[T]) -> (DPFKey<T>, DPFKey<T>) {
-        debug_assert!(alpha_bits.len() == values.len() + 1);
-
+    pub fn gen(alpha_bits: &[bool], beta: T) -> (VIDPFKey<T>, VIDPFKey<T>) {
         let root_seeds = (prg::PrgSeed::random(), prg::PrgSeed::random());
         let root_bits = (false, true);
 
@@ -153,10 +151,9 @@ where
         let mut cor_words: Vec<CorWord<T>> = Vec::new();
         let mut cs: Vec<[u8; HASH_SIZE]> = Vec::new();
         let mut bit_str: String = "".to_string();
-        for i in 0..alpha_bits.len() {
-            let bit = alpha_bits[i];
+        for &bit in alpha_bits {
             bit_str.push_str(if bit { "1" } else { "0" });
-            let cw = gen_cor_word::<T>(bit, values[i], &mut bits, &mut seeds);
+            let cw = gen_cor_word::<T>(bit, beta, &mut bits, &mut seeds);
             cor_words.push(cw);
 
             let pi_0 = {
@@ -179,13 +176,13 @@ where
         }
 
         (
-            DPFKey::<T> {
+            VIDPFKey::<T> {
                 key_idx: false,
                 root_seed: root_seeds.0,
                 cor_words: cor_words.clone(),
                 cs: cs.clone(),
             },
-            DPFKey::<T> {
+            VIDPFKey::<T> {
                 key_idx: true,
                 root_seed: root_seeds.1,
                 cor_words,
@@ -291,9 +288,7 @@ where
 
     pub fn gen_from_str(s: &str, beta: T) -> (Self, Self) {
         let bits = crate::string_to_bits(s);
-        let values = vec![beta; bits.len()];
-
-        DPFKey::gen(&bits, &values)
+        VIDPFKey::gen(&bits, beta)
     }
 
     pub fn domain_size(&self) -> usize {

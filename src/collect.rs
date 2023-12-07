@@ -7,7 +7,7 @@ use rayon::prelude::*;
 use rs_merkle::{Hasher, MerkleTree};
 use serde::{Deserialize, Serialize};
 
-use crate::{dpf, prg, xor_in_place, xor_vec, HASH_SIZE};
+use crate::{prg, vidpf, xor_in_place, xor_vec, HASH_SIZE};
 
 #[derive(Clone)]
 pub struct HashAlg {}
@@ -24,7 +24,7 @@ impl Hasher for HashAlg {
 struct TreeNode<T> {
     path: Vec<bool>,
     value: T,
-    key_states: Vec<dpf::EvalState>,
+    key_states: Vec<vidpf::EvalState>,
     key_values: Vec<T>,
 }
 
@@ -36,7 +36,7 @@ pub struct KeyCollection<T> {
     server_id: i8,
     verify_key: [u8; 16],
     depth: usize,
-    pub keys: Vec<(bool, dpf::DPFKey<T>)>,
+    pub keys: Vec<(bool, vidpf::VIDPFKey<T>)>,
     nonces: Vec<[u8; 16]>,
     all_flp_proof_shares: Vec<Vec<T>>,
     frontier: Vec<TreeNode<T>>,
@@ -83,7 +83,7 @@ where
         }
     }
 
-    pub fn add_key(&mut self, key: dpf::DPFKey<T>) {
+    pub fn add_key(&mut self, key: vidpf::VIDPFKey<T>) {
         self.keys.push((true, key));
     }
 
@@ -113,7 +113,7 @@ where
         let mut bit_str = crate::bits_to_bitstring(parent.path.as_slice());
         bit_str.push(if dir { '1' } else { '0' });
 
-        let (key_states, key_values): (Vec<dpf::EvalState>, Vec<T>) = self
+        let (key_states, key_values): (Vec<vidpf::EvalState>, Vec<T>) = self
             .keys
             .par_iter()
             .enumerate()

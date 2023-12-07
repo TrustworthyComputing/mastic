@@ -5,13 +5,13 @@ use std::{
 
 use futures::try_join;
 use mastic::{
-    collect, config, dpf,
+    collect, config,
     rpc::{
         AddFLPsRequest, AddKeysRequest, ApplyFLPResultsRequest, FinalSharesRequest,
         GetProofsRequest, ResetRequest, RunFlpQueriesRequest, TreeCrawlLastRequest,
         TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
     },
-    CollectorClient,
+    vidpf, CollectorClient,
 };
 use prio::{
     field::{random_vector, Field64},
@@ -21,7 +21,7 @@ use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use rayon::prelude::*;
 use tarpc::{client, context, serde_transport::tcp, tokio_serde::formats::Bincode};
 
-type Key = dpf::DPFKey<Field64>;
+type Key = vidpf::VIDPFKey<Field64>;
 type Client = CollectorClient;
 
 fn long_context() -> context::Context {
@@ -49,7 +49,9 @@ fn generate_keys(
 
     let (keys_0, keys_1): (Vec<Key>, Vec<Key>) = rayon::iter::repeat(0)
         .take(cfg.unique_buckets)
-        .map(|_| dpf::DPFKey::gen_from_str(&sample_string(cfg.data_bytes * 8), Field64::from(beta)))
+        .map(|_| {
+            vidpf::VIDPFKey::gen_from_str(&sample_string(cfg.data_bytes * 8), Field64::from(beta))
+        })
         .unzip();
 
     let (proofs_0, proofs_1): (Vec<Vec<Field64>>, Vec<Vec<Field64>>) = rayon::iter::repeat(0)
@@ -105,8 +107,8 @@ async fn add_keys(
     cfg: &config::Config,
     client_0: &Client,
     client_1: &Client,
-    keys_0: &[dpf::DPFKey<Field64>],
-    keys_1: &[dpf::DPFKey<Field64>],
+    keys_0: &[vidpf::VIDPFKey<Field64>],
+    keys_1: &[vidpf::VIDPFKey<Field64>],
     proofs_0: &[Vec<Field64>],
     proofs_1: &[Vec<Field64>],
     num_clients: usize,

@@ -1,8 +1,8 @@
 pub mod collect;
 pub mod config;
-pub mod dpf;
 pub mod prg;
 pub mod rpc;
+pub mod vidpf;
 
 extern crate lazy_static;
 
