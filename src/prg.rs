@@ -88,10 +88,13 @@ impl PrgSeed {
         self.expand_dir(true, true)
     }
 
-    pub fn convert<T: FromRng + prio::field::FieldElement>(self: &PrgSeed) -> ConvertOutput<T> {
+    pub fn convert<T: FromRng + prio::field::FieldElement>(
+        self: &PrgSeed,
+        input_len: usize,
+    ) -> ConvertOutput<T> {
         let mut out = ConvertOutput {
             seed: PrgSeed::zero(),
-            word: T::zero(),
+            word: vec![T::zero(); input_len + 1],
         };
 
         FIXED_KEY_STREAM.with(|s_in| {
@@ -100,7 +103,9 @@ impl PrgSeed {
             s.fill_bytes(&mut out.seed.key);
             unsafe {
                 let sp = s_in.as_ptr();
-                out.word.from_rng(&mut *sp);
+                for i in 0..input_len {
+                    out.word[i].from_rng(&mut *sp);
+                }
             }
         });
 
@@ -191,7 +196,7 @@ pub struct PrgOutput {
 
 pub struct ConvertOutput<T: FromRng> {
     pub seed: PrgSeed,
-    pub word: T,
+    pub word: Vec<T>,
 }
 
 impl FixedKeyPrgStream {

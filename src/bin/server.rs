@@ -12,9 +12,9 @@ use mastic::{
         GetProofsRequest, ResetRequest, RunFlpQueriesRequest, TreeCrawlLastRequest,
         TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
     },
-    HASH_SIZE,
+    BetaType, HASH_SIZE,
 };
-use prio::field::Field64;
+use prio::{field::Field64, flp::types::Sum};
 use tarpc::{
     context,
     serde_transport::tcp,
@@ -29,7 +29,7 @@ struct CollectorServer {
     server_id: i8,
     seed: prg::PrgSeed,
     data_bytes: usize,
-    arc: Arc<Mutex<collect::KeyCollection<Field64>>>,
+    arc: Arc<Mutex<collect::KeyCollection>>,
 }
 
 #[tarpc::server]
@@ -37,6 +37,7 @@ impl Collector for CollectorServer {
     async fn reset(self, _: context::Context, req: ResetRequest) -> String {
         let mut coll = self.arc.lock().unwrap();
         *coll = collect::KeyCollection::new(
+            Sum::<Field64>::new(2).unwrap(),
             self.server_id,
             &self.seed,
             self.data_bytes,
@@ -58,8 +59,13 @@ impl Collector for CollectorServer {
 
     async fn add_all_flp_proof_shares(self, _: context::Context, req: AddFLPsRequest) -> String {
         let mut coll = self.arc.lock().unwrap();
-        for (flp_proof_share, nonce) in req.flp_proof_shares.into_iter().zip(req.nonces) {
-            coll.add_flp_proof_share(flp_proof_share, nonce);
+        for ((flp_proof_share, nonce), jr_parts) in req
+            .flp_proof_shares
+            .into_iter()
+            .zip(req.nonces)
+            .zip(req.jr_parts)
+        {
+            coll.add_flp_proof_share(flp_proof_share, nonce, jr_parts);
         }
         if coll.keys.len() % 10000 == 0 {
             println!("Number of keys: {:?}", coll.keys.len());
@@ -79,7 +85,7 @@ impl Collector for CollectorServer {
         self,
         _: context::Context,
         req: TreeCrawlRequest,
-    ) -> (Vec<Field64>, Vec<Vec<u8>>, Vec<usize>) {
+    ) -> (Vec<BetaType>, Vec<Vec<u8>>, Vec<usize>) {
         let start = Instant::now();
         let split_by = req.split_by;
         let malicious = req.malicious;
@@ -113,7 +119,7 @@ impl Collector for CollectorServer {
         self,
         _: context::Context,
         _req: TreeCrawlLastRequest,
-    ) -> Vec<Field64> {
+    ) -> Vec<BetaType> {
         let start = Instant::now();
         let mut coll = self.arc.lock().unwrap();
 
@@ -140,7 +146,7 @@ impl Collector for CollectorServer {
         self,
         _: context::Context,
         _req: FinalSharesRequest,
-    ) -> Vec<collect::Result<Field64>> {
+    ) -> Vec<collect::Result> {
         let coll = self.arc.lock().unwrap();
         coll.final_shares()
     }
@@ -156,8 +162,10 @@ async fn main() -> io::Result<()> {
     };
 
     let seed = prg::PrgSeed { key: [1u8; 16] };
+    let typ = Sum::<Field64>::new(cfg.range_bits).unwrap();
 
-    let coll = collect::KeyCollection::new(server_id, &seed, cfg.data_bytes * 8, [0u8; 16]);
+    let coll =
+        collect::KeyCollection::new(typ.clone(), server_id, &seed, cfg.data_bytes * 8, [0u8; 16]);
     let arc = Arc::new(Mutex::new(coll));
 
     println!("Server {} running at {:?}", server_id, server_addr);

@@ -1,20 +1,21 @@
 use blake3::Hasher;
+use prio::field::Field64;
 use serde::{Deserialize, Serialize};
 
-use crate::{prg, xor_three_vecs, xor_vec, HASH_SIZE};
+use crate::{prg, vec_add, vec_neg, vec_sub, xor_three_vecs, xor_vec, BetaType, HASH_SIZE};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct CorWord<T> {
+struct CorWord {
     seed: prg::PrgSeed,
     bits: (bool, bool),
-    word: T,
+    word: BetaType,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct VIDPFKey<T> {
+pub struct VIDPFKey {
     pub key_idx: bool,
     root_seed: prg::PrgSeed,
-    cor_words: Vec<CorWord<T>>,
+    cor_words: Vec<CorWord>,
     pub cs: Vec<[u8; HASH_SIZE]>,
 }
 
@@ -78,15 +79,12 @@ impl<T> TupleExt<T> for (T, T) {
     }
 }
 
-fn gen_cor_word<W>(
+fn gen_cor_word(
     bit: bool,
-    beta: W,
+    beta: &BetaType,
     bits: &mut (bool, bool),
     seeds: &mut (prg::PrgSeed, prg::PrgSeed),
-) -> CorWord<W>
-where
-    W: prg::FromRng + Clone + prio::field::FieldElement + std::fmt::Debug,
-{
+) -> CorWord {
     let data = seeds.map(|s| s.expand());
 
     // If alpha[i] = 0:
@@ -102,7 +100,7 @@ where
             data.0.bits.0 ^ data.1.bits.0 ^ bit ^ true,
             data.0.bits.1 ^ data.1.bits.1 ^ bit,
         ),
-        word: W::zero(),
+        word: beta.clone(),
     };
 
     for (b, seed) in seeds.iter_mut() {
@@ -120,15 +118,16 @@ where
         *bits.get_mut(b) = newbit;
     }
 
-    let converted = seeds.map(|s| s.convert());
-    cw.word = beta;
-    cw.word.sub_assign(converted.0.word);
-    cw.word.add_assign(converted.1.word);
+    let input_len = beta.len();
+    let converted = seeds.map(|s| s.convert(input_len));
 
+    // Counter is last
+    cw.word.push(Field64::from(1));
+    vec_sub(&mut cw.word, &converted.0.word);
+    vec_add(&mut cw.word, &converted.1.word);
     if bits.1 {
-        cw.word = cw.word.neg();
+        vec_neg(&mut cw.word);
     }
-
     seeds.0 = converted.0.seed;
     seeds.1 = converted.1.seed;
 
@@ -136,11 +135,12 @@ where
 }
 
 /// All-prefix DPF implementation.
-impl<T> VIDPFKey<T>
-where
-    T: prg::FromRng + Clone + prio::field::FieldElement + std::fmt::Debug,
-{
-    pub fn gen(alpha_bits: &[bool], beta: T) -> (VIDPFKey<T>, VIDPFKey<T>) {
+impl VIDPFKey {
+    pub fn get_root_seed(&self) -> prg::PrgSeed {
+        self.root_seed.clone()
+    }
+
+    pub fn gen(alpha_bits: &[bool], beta: &BetaType) -> (VIDPFKey, VIDPFKey) {
         let root_seeds = (prg::PrgSeed::random(), prg::PrgSeed::random());
         let root_bits = (false, true);
 
@@ -148,12 +148,12 @@ where
         let mut bits = root_bits;
 
         let mut hasher = Hasher::new();
-        let mut cor_words: Vec<CorWord<T>> = Vec::new();
+        let mut cor_words: Vec<CorWord> = Vec::new();
         let mut cs: Vec<[u8; HASH_SIZE]> = Vec::new();
         let mut bit_str: String = "".to_string();
         for &bit in alpha_bits {
             bit_str.push_str(if bit { "1" } else { "0" });
-            let cw = gen_cor_word::<T>(bit, beta, &mut bits, &mut seeds);
+            let cw = gen_cor_word(bit, beta, &mut bits, &mut seeds);
             cor_words.push(cw);
 
             let pi_0 = {
@@ -176,13 +176,13 @@ where
         }
 
         (
-            VIDPFKey::<T> {
+            VIDPFKey {
                 key_idx: false,
                 root_seed: root_seeds.0,
                 cor_words: cor_words.clone(),
                 cs: cs.clone(),
             },
-            VIDPFKey::<T> {
+            VIDPFKey {
                 key_idx: true,
                 root_seed: root_seeds.1,
                 cor_words,
@@ -191,7 +191,13 @@ where
         )
     }
 
-    pub fn eval_bit(&self, state: &EvalState, dir: bool, bit_str: &String) -> (EvalState, T) {
+    pub fn eval_bit(
+        &self,
+        state: &EvalState,
+        dir: bool,
+        bit_str: &String,
+        input_len: usize,
+    ) -> (EvalState, Vec<Field64>) {
         let tau = state.seed.expand_dir(!dir, dir);
         let mut seed = tau.seeds.get(dir).clone();
         let mut new_bit = *tau.bits.get(dir);
@@ -201,16 +207,16 @@ where
             new_bit ^= self.cor_words[state.level].bits.get(dir);
         }
 
-        let converted = seed.convert::<T>();
+        let converted = seed.convert(input_len);
         let new_seed = converted.seed;
 
         let mut word = converted.word;
         if new_bit {
-            word.add_assign(self.cor_words[state.level].word);
+            vec_add(&mut word, &self.cor_words[state.level].word);
         }
 
         if self.key_idx {
-            word = word.neg();
+            vec_neg(&mut word);
         }
 
         // Compute proofs
@@ -263,7 +269,12 @@ where
         }
     }
 
-    pub fn eval(&self, idx: &[bool], pi: &mut [u8; HASH_SIZE]) -> (Vec<T>, T) {
+    pub fn eval(
+        &self,
+        idx: &[bool],
+        pi: &mut [u8; HASH_SIZE],
+        input_len: usize,
+    ) -> (Vec<Vec<Field64>>, Vec<Field64>) {
         debug_assert!(idx.len() <= self.domain_size());
         debug_assert!(!idx.is_empty());
         let mut out = vec![];
@@ -275,18 +286,18 @@ where
         for &bit in idx.iter().take(idx.len() - 1) {
             bit_str.push(if bit { '1' } else { '0' });
 
-            let (state_new, word) = self.eval_bit(&state, bit, &bit_str);
+            let (state_new, word) = self.eval_bit(&state, bit, &bit_str, input_len);
             out.push(word);
             state = state_new;
         }
 
-        let (_, last) = self.eval_bit(&state, *idx.last().unwrap(), &bit_str);
+        let (_, last) = self.eval_bit(&state, *idx.last().unwrap(), &bit_str, input_len);
         *pi = state.proof;
 
         (out, last)
     }
 
-    pub fn gen_from_str(s: &str, beta: T) -> (Self, Self) {
+    pub fn gen_from_str(s: &str, beta: &BetaType) -> (Self, Self) {
         let bits = crate::string_to_bits(s);
         VIDPFKey::gen(&bits, beta)
     }

@@ -7,6 +7,7 @@ use prio::{
     vdaf::xof::{IntoFieldVec, Xof, XofShake128},
 };
 use rand::{thread_rng, Rng};
+use rand_core::RngCore;
 use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 #[test]
@@ -44,12 +45,12 @@ fn flp_random_beta_in_range() {
     assert!(run_flp_with_input(&verify_key, &sum, 100).is_err());
 }
 
-fn run_flp_with_input<T>(verify_key: &[u8; 16], sum: &T, input: u64) -> Result<bool, FlpError>
+fn run_flp_with_input<T>(verify_key: &[u8; 16], typ: &T, input: u64) -> Result<bool, FlpError>
 where
     T: prio::flp::Type<Field = Field64, Measurement = u64>,
 {
     // 1. The Prover chooses a measurement and secret shares the input.
-    let input: Vec<Field64> = sum.encode_measurement(&input)?;
+    let input: Vec<Field64> = typ.encode_measurement(&input)?;
     let input_0 = input
         .iter()
         .map(|_| Field64::from(rand::thread_rng().gen::<u64>()))
@@ -65,26 +66,38 @@ where
 
     // 2. The Prover generates prove_rand and query_rand (should be unique per proof). The Prover
     //    uses prover_rand to generate the proof. Finally, the Prover secret shares the proof.
-    let prove_rand = random_vector(sum.prove_rand_len()).unwrap();
+    let prove_rand = random_vector(typ.prove_rand_len()).unwrap();
     let query_rand_xof = XofShake128::init(&verify_key, &nonce);
     let query_rand: Vec<Field64> = query_rand_xof
         .clone()
         .into_seed_stream()
-        .into_field_vec(sum.query_rand_len());
-    let joint_rand: Vec<Field64> = {
-        // Assume that we have the two VIDPF seeds.
-        let mut vidpf_seeds = ([0u8; 16], [0u8; 16]);
-        thread_rng().fill(&mut vidpf_seeds.0);
-        thread_rng().fill(&mut vidpf_seeds.1);
-        let mut joint_rand_xof = XofShake128::init(&vidpf_seeds.0, &vidpf_seeds.1);
-        joint_rand_xof.update(&nonce);
-        joint_rand_xof
-            .clone()
-            .into_seed_stream()
-            .into_field_vec(sum.joint_rand_len())
-    };
+        .into_field_vec(typ.query_rand_len());
+    let mut vidpf_seeds = ([0u8; 16], [0u8; 16]);
+    thread_rng().fill(&mut vidpf_seeds.0);
+    thread_rng().fill(&mut vidpf_seeds.1);
 
-    let proof = sum.prove(&input, &prove_rand, &joint_rand).unwrap();
+    let mut jr_parts = [[0u8; 16]; 2];
+    // Assume that we have the two VIDPF seeds.
+    let mut jr_part_0_xof = XofShake128::init(&vidpf_seeds.0, &[0u8; 16]);
+    jr_part_0_xof.update(&[0]); // Aggregator ID
+    jr_part_0_xof.update(&nonce);
+    jr_part_0_xof
+        .into_seed_stream()
+        .fill_bytes(&mut jr_parts[0]);
+
+    let mut jr_part_1_xof = XofShake128::init(&vidpf_seeds.1, &[0u8; 16]);
+    jr_part_1_xof.update(&[1]); // Aggregator ID
+    jr_part_1_xof.update(&nonce);
+    jr_part_1_xof
+        .into_seed_stream()
+        .fill_bytes(&mut jr_parts[1]);
+
+    let joint_rand_xof = XofShake128::init(&jr_parts[0], &jr_parts[1]);
+    let joint_rand: Vec<Field64> = joint_rand_xof
+        .into_seed_stream()
+        .into_field_vec(typ.joint_rand_len());
+
+    let proof = typ.prove(&input, &prove_rand, &joint_rand).unwrap();
     let proof_0 = proof
         .iter()
         .map(|_| Field64::from(rand::thread_rng().gen::<u64>()))
@@ -98,10 +111,10 @@ where
     // 3. The Verifiers are provided with the nonce for each Client and can generate the query_rand
     //    (should be the same between the Verifiers). Each Verifier queries the input and proof
     //    shares and receives a verifier_share.
-    let verifier_0 = sum
+    let verifier_0 = typ
         .query(&input_0, &proof_0, &query_rand, &joint_rand, 2)
         .unwrap();
-    let verifier_1 = sum
+    let verifier_1 = typ
         .query(&input_1, &proof_1, &query_rand, &joint_rand, 2)
         .unwrap();
 
@@ -112,5 +125,5 @@ where
         .map(|(v1, v2)| v1 + v2)
         .collect::<Vec<_>>();
 
-    sum.decide(&verifier)
+    typ.decide(&verifier)
 }

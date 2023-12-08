@@ -10,7 +10,9 @@ use prio::field::Field64;
 
 pub use crate::rpc::CollectorClient;
 
-pub const HASH_SIZE: usize = 12;
+pub type BetaType = Vec<Field64>;
+
+pub const HASH_SIZE: usize = 16;
 
 impl crate::prg::FromRng for Field64 {
     fn from_rng(&mut self, rng: &mut impl rand::Rng) {
@@ -79,6 +81,31 @@ pub fn bits_to_bitstring(bits: &[bool]) -> String {
 
 pub fn xor_vec(v1: &[u8], v2: &[u8]) -> Vec<u8> {
     v1.iter().zip(v2.iter()).map(|(&x1, &x2)| x1 ^ x2).collect()
+}
+
+pub fn vec_add<T>(v1: &mut [T], v2: &[T])
+where
+    T: prg::FromRng + Clone + prio::field::FieldElement + std::fmt::Debug,
+{
+    v1.iter_mut()
+        .zip(v2.iter())
+        .for_each(|(x1, &x2)| x1.add_assign(x2));
+}
+
+pub fn vec_sub<T>(v1: &mut [T], v2: &[T])
+where
+    T: prg::FromRng + Clone + prio::field::FieldElement + std::fmt::Debug,
+{
+    v1.iter_mut()
+        .zip(v2.iter())
+        .for_each(|(x1, &x2)| x1.sub_assign(x2));
+}
+
+pub fn vec_neg<T>(v1: &mut [T])
+where
+    T: prg::FromRng + Clone + prio::field::FieldElement + std::fmt::Debug,
+{
+    v1.iter_mut().for_each(|x| *x = x.neg());
 }
 
 pub fn xor_in_place(v1: &mut [u8], v2: &[u8]) {

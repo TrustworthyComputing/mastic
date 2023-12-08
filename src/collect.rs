@@ -1,13 +1,16 @@
 use blake3::hash;
 use prio::{
-    flp::{types::Count, Type},
+    codec::Encode,
+    field::Field64,
+    flp::{types::Sum, Type},
     vdaf::xof::{IntoFieldVec, Xof, XofShake128},
 };
+use rand_core::RngCore;
 use rayon::prelude::*;
 use rs_merkle::{Hasher, MerkleTree};
 use serde::{Deserialize, Serialize};
 
-use crate::{prg, vidpf, xor_in_place, xor_vec, HASH_SIZE};
+use crate::{prg, vec_add, vec_sub, vidpf, xor_in_place, xor_vec, BetaType, HASH_SIZE};
 
 #[derive(Clone)]
 pub struct HashAlg {}
@@ -21,113 +24,114 @@ impl Hasher for HashAlg {
 }
 
 #[derive(Clone)]
-struct TreeNode<T> {
+struct TreeNode<Field64> {
     path: Vec<bool>,
-    value: T,
+    value: Vec<Field64>,
     key_states: Vec<vidpf::EvalState>,
-    key_values: Vec<T>,
+    key_values: Vec<Vec<Field64>>,
 }
 
-unsafe impl<T> Send for TreeNode<T> {}
-unsafe impl<T> Sync for TreeNode<T> {}
+unsafe impl<Field64> Send for TreeNode<Field64> {}
+unsafe impl<Field64> Sync for TreeNode<Field64> {}
 
 #[derive(Clone)]
-pub struct KeyCollection<T> {
+pub struct KeyCollection {
+    typ: Sum<Field64>,
     server_id: i8,
     verify_key: [u8; 16],
     depth: usize,
-    pub keys: Vec<(bool, vidpf::VIDPFKey<T>)>,
+    pub keys: Vec<(bool, vidpf::VIDPFKey)>,
     nonces: Vec<[u8; 16]>,
-    all_flp_proof_shares: Vec<Vec<T>>,
-    frontier: Vec<TreeNode<T>>,
-    prev_frontier: Vec<TreeNode<T>>,
-    count: Count<T>,
+    jr_parts: Vec<[[u8; 16]; 2]>,
+    all_flp_proof_shares: Vec<Vec<Field64>>,
+    frontier: Vec<TreeNode<Field64>>,
+    prev_frontier: Vec<TreeNode<Field64>>,
     final_proofs: Vec<[u8; HASH_SIZE]>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Result<T> {
+pub struct Result {
     pub path: Vec<bool>,
-    pub value: T,
+    pub value: BetaType,
 }
 
-impl<T> KeyCollection<T>
-where
-    T: prio::field::FieldElement
-        + prio::field::FftFriendlyFieldElement
-        + std::fmt::Debug
-        + std::cmp::PartialOrd
-        + Send
-        + Sync
-        + prg::FromRng
-        + 'static,
-    u64: From<T>,
-{
+impl KeyCollection {
     pub fn new(
+        typ: Sum<Field64>,
         server_id: i8,
         _seed: &prg::PrgSeed,
         depth: usize,
         verify_key: [u8; 16],
-    ) -> KeyCollection<T> {
-        KeyCollection::<T> {
+    ) -> KeyCollection {
+        KeyCollection {
+            typ,
             server_id,
             verify_key,
             depth,
             keys: vec![],
             nonces: vec![],
+            jr_parts: vec![],
             all_flp_proof_shares: vec![],
             frontier: vec![],
             prev_frontier: vec![],
-            count: Count::new(),
             final_proofs: vec![],
         }
     }
 
-    pub fn add_key(&mut self, key: vidpf::VIDPFKey<T>) {
+    pub fn add_key(&mut self, key: vidpf::VIDPFKey) {
         self.keys.push((true, key));
     }
 
-    pub fn add_flp_proof_share(&mut self, flp_proof_share: Vec<T>, nonce: [u8; 16]) {
+    pub fn add_flp_proof_share(
+        &mut self,
+        flp_proof_share: Vec<Field64>,
+        nonce: [u8; 16],
+        jr_parts: [[u8; 16]; 2],
+    ) {
         self.all_flp_proof_shares.push(flp_proof_share);
         self.nonces.push(nonce);
+        self.jr_parts.push(jr_parts);
     }
 
     pub fn tree_init(&mut self) {
-        let mut root = TreeNode::<T> {
+        let mut root = TreeNode::<Field64> {
             path: vec![],
-            value: T::zero(),
+            value: vec![Field64::from(0)],
             key_states: vec![],
             key_values: vec![],
         };
 
         for k in &self.keys {
             root.key_states.push(k.1.eval_init());
-            root.key_values.push(T::zero());
+            root.key_values.push(vec![Field64::from(0)]);
         }
 
         self.frontier.clear();
         self.frontier.push(root);
     }
 
-    fn make_tree_node(&self, parent: &TreeNode<T>, dir: bool) -> TreeNode<T> {
+    fn make_tree_node(&self, parent: &TreeNode<Field64>, dir: bool) -> TreeNode<Field64> {
         let mut bit_str = crate::bits_to_bitstring(parent.path.as_slice());
         bit_str.push(if dir { '1' } else { '0' });
 
-        let (key_states, key_values): (Vec<vidpf::EvalState>, Vec<T>) = self
+        let (key_states, key_values): (Vec<vidpf::EvalState>, Vec<Vec<Field64>>) = self
             .keys
             .par_iter()
             .enumerate()
-            .map(|(i, key)| key.1.eval_bit(&parent.key_states[i], dir, &bit_str))
+            .map(|(i, key)| {
+                key.1
+                    .eval_bit(&parent.key_states[i], dir, &bit_str, self.typ.input_len())
+            })
             .unzip();
 
-        let mut child_val = T::zero();
+        let mut child_val = vec![Field64::from(0); &self.typ.input_len() + 1];
         key_values
             .iter()
             .zip(&self.keys)
             .filter(|&(_, key)| key.0)
-            .for_each(|(&v, _)| child_val.add_assign(v));
+            .for_each(|(v, _)| vec_add(&mut child_val, v));
 
-        let mut child = TreeNode::<T> {
+        let mut child = TreeNode::<Field64> {
             path: parent.path.clone(),
             value: child_val,
             key_states,
@@ -139,7 +143,7 @@ where
         child
     }
 
-    pub fn run_flp_queries(&mut self, start: usize, end: usize) -> Vec<Vec<T>> {
+    pub fn run_flp_queries(&mut self, start: usize, end: usize) -> Vec<Vec<Field64>> {
         let level = self.frontier[0].path.len();
         assert_eq!(level, 0);
 
@@ -160,25 +164,49 @@ where
             .enumerate()
             .filter(|(client_index, _)| *client_index >= start && *client_index < end)
             .map(|(client_index, _)| {
-                let y_p0 = node_left.key_values[client_index];
-                let y_p1 = node_right.key_values[client_index];
+                let y_p0 = &node_left.key_values[client_index];
+                let y_p1 = &node_right.key_values[client_index];
 
-                let mut beta_share = T::zero();
-                beta_share.add_assign(y_p0);
-                beta_share.add_assign(y_p1);
+                let mut beta_share = vec![Field64::from(0); self.typ.input_len()];
+                vec_add(&mut beta_share, y_p0);
+                vec_add(&mut beta_share, y_p1);
 
                 let flp_proof_share = &self.all_flp_proof_shares[client_index];
 
                 let query_rand_xof =
                     XofShake128::init(&self.verify_key, &self.nonces[client_index]);
-                let query_rand: Vec<T> = query_rand_xof
+                let query_rand: Vec<Field64> = query_rand_xof
                     .clone()
                     .into_seed_stream()
-                    .into_field_vec(self.count.query_rand_len());
+                    .into_field_vec(self.typ.query_rand_len());
+
+                let mut jr_parts = self.jr_parts[client_index];
+                if self.server_id == 0 {
+                    let mut jr_part_xof = XofShake128::init(
+                        &self.keys[client_index].1.get_root_seed().key,
+                        &[0u8; 16],
+                    );
+                    jr_part_xof.update(&[0]); // Aggregator ID
+                    jr_part_xof.update(&self.nonces[client_index]);
+                    jr_part_xof.into_seed_stream().fill_bytes(&mut jr_parts[0]);
+                } else {
+                    let mut jr_part_xof = XofShake128::init(
+                        &self.keys[client_index].1.get_root_seed().key,
+                        &[0u8; 16],
+                    );
+                    jr_part_xof.update(&[1]); // Aggregator ID
+                    jr_part_xof.update(&self.nonces[client_index]);
+                    jr_part_xof.into_seed_stream().fill_bytes(&mut jr_parts[1]);
+                }
+
+                let joint_rand_xof = XofShake128::init(&jr_parts[0], &jr_parts[1]);
+                let joint_rand: Vec<Field64> = joint_rand_xof
+                    .into_seed_stream()
+                    .into_field_vec(self.typ.joint_rand_len());
 
                 // Compute the flp_verifier_share.
-                self.count
-                    .query(&[beta_share], flp_proof_share, &query_rand, &[], 2)
+                self.typ
+                    .query(&beta_share, flp_proof_share, &query_rand, &joint_rand, 2)
                     .unwrap()
             })
             .collect::<Vec<_>>()
@@ -189,7 +217,7 @@ where
         mut split_by: usize,
         malicious: &Vec<usize>,
         is_last: bool,
-    ) -> (Vec<T>, Vec<Vec<u8>>, Vec<usize>) {
+    ) -> (Vec<Vec<Field64>>, Vec<Vec<u8>>, Vec<usize>) {
         if !malicious.is_empty() {
             println!("Malicious is not empty!!");
 
@@ -215,13 +243,13 @@ where
 
                 vec![child_0, child_1]
             })
-            .collect::<Vec<TreeNode<T>>>();
+            .collect::<Vec<TreeNode<Field64>>>();
 
         // These are summed evaluations y for different prefixes.
         let cnt_values = next_frontier
             .par_iter()
-            .map(|node| node.value)
-            .collect::<Vec<T>>();
+            .map(|node| node.value.clone())
+            .collect::<Vec<Vec<Field64>>>();
 
         // For all prefixes, compute the checks for each client.
         let all_y_checks = self
@@ -239,31 +267,34 @@ where
                 node.key_values
                     .par_iter()
                     .enumerate()
-                    .map(|(client_index, &y_p)| {
-                        let y_p0 = node_left.key_values[client_index];
-                        let y_p1 = node_right.key_values[client_index];
+                    .map(|(client_index, y_p)| {
+                        let y_p0 = &node_left.key_values[client_index];
+                        let y_p1 = &node_right.key_values[client_index];
 
-                        let mut value_check = T::zero();
+                        let mut value_check = vec![Field64::from(0); &self.typ.input_len() + 1];
                         if level == 0 {
                             // (1 - server_id) + (-1)^server_id * (- y^{p||0} - y^{p||1})
                             if self.server_id == 0 {
-                                value_check.add_assign(T::one());
-                                value_check.sub_assign(y_p0);
-                                value_check.sub_assign(y_p1);
+                                vec_add(
+                                    &mut value_check,
+                                    &vec![Field64::from(1); &self.typ.input_len() + 1],
+                                );
+                                vec_sub(&mut value_check, y_p0);
+                                vec_sub(&mut value_check, y_p1);
                             } else {
-                                value_check.add_assign(y_p0);
-                                value_check.add_assign(y_p1);
+                                vec_add(&mut value_check, y_p0);
+                                vec_add(&mut value_check, y_p1);
                             }
                         } else {
                             // (-1)^server_id * (y^{p} - y^{p||0} - y^{p||1})
                             if self.server_id == 0 {
-                                value_check.add_assign(y_p);
-                                value_check.sub_assign(y_p0);
-                                value_check.sub_assign(y_p1);
+                                vec_add(&mut value_check, y_p);
+                                vec_sub(&mut value_check, y_p0);
+                                vec_sub(&mut value_check, y_p1);
                             } else {
-                                value_check.add_assign(y_p0);
-                                value_check.add_assign(y_p1);
-                                value_check.sub_assign(y_p);
+                                vec_add(&mut value_check, y_p0);
+                                vec_add(&mut value_check, y_p1);
+                                vec_sub(&mut value_check, y_p);
                             }
                         }
 
@@ -290,7 +321,19 @@ where
                 // for each client.
                 let mut check = [0u8; 8];
                 all_y_checks.iter().for_each(|checks_for_prefix| {
-                    xor_in_place(&mut check, &checks_for_prefix[client_index].get_encoded());
+                    if level == 0 {
+                        xor_in_place(
+                            &mut check,
+                            &checks_for_prefix[client_index][self.typ.input_len()].get_encoded(),
+                        );
+                    } else {
+                        for i in 0..self.typ.input_len() {
+                            xor_in_place(
+                                &mut check,
+                                &checks_for_prefix[client_index][i].get_encoded(),
+                            );
+                        }
+                    }
                 });
 
                 xor_vec(
@@ -346,7 +389,7 @@ where
         (cnt_values, mtree_roots, mtree_indices)
     }
 
-    pub fn tree_crawl_last(&mut self) -> Vec<T> {
+    pub fn tree_crawl_last(&mut self) -> Vec<Vec<Field64>> {
         let next_frontier = self
             .frontier
             .par_iter()
@@ -357,7 +400,7 @@ where
 
                 vec![child_0, child_1]
             })
-            .collect::<Vec<TreeNode<T>>>();
+            .collect::<Vec<TreeNode<Field64>>>();
 
         self.final_proofs = self
             .keys
@@ -378,8 +421,8 @@ where
         // These are summed evaluations y for different prefixes.
         self.frontier
             .par_iter()
-            .map(|node| node.value)
-            .collect::<Vec<T>>()
+            .map(|node| node.value.clone())
+            .collect::<Vec<Vec<Field64>>>()
     }
 
     pub fn get_proofs(&self, start: usize, end: usize) -> Vec<[u8; HASH_SIZE]> {
@@ -414,46 +457,41 @@ where
         }
     }
 
-    pub fn keep_values(threshold: u64, cnt_values_0: &[T], cnt_values_1: &[T]) -> Vec<bool> {
+    pub fn keep_values(
+        input_len: usize,
+        threshold: u64,
+        cnt_values_0: &[Vec<Field64>],
+        cnt_values_1: &[Vec<Field64>],
+    ) -> Vec<bool> {
         cnt_values_0
             .par_iter()
             .zip(cnt_values_1.par_iter())
-            .map(|(&value_0, &value_1)| {
-                let v = value_0 + value_1;
+            .map(|(value_0, value_1)| {
+                // Note, this assumes that the pruning happens based on the last element (i.e.,
+                // the counter).
+                let v = value_0[input_len] + value_1[input_len];
 
                 u64::from(v) >= threshold
             })
             .collect::<Vec<_>>()
     }
 
-    pub fn final_shares(&self) -> Vec<Result<T>> {
+    pub fn final_shares(&self) -> Vec<Result> {
         self.frontier
             .par_iter()
-            .map(|n| Result::<T> {
+            .map(|n| Result {
                 path: n.path.clone(),
-                value: n.value,
+                value: n.value.clone(),
             })
             .collect::<Vec<_>>()
     }
 
     // Reconstruct counters based on shares
-    pub fn reconstruct_shares(results_0: &[T], results_1: &[T]) -> Vec<T> {
-        assert_eq!(results_0.len(), results_1.len());
-
-        results_0
-            .par_iter()
-            .zip_eq(results_1)
-            .map(|(&v1, &v2)| {
-                let mut v = T::zero();
-                v.add_assign(v1);
-                v.add_assign(v2);
-                v
-            })
-            .collect()
-    }
-
-    // Reconstruct counters based on shares
-    pub fn final_values(results_0: &[Result<T>], results_1: &[Result<T>]) -> Vec<Result<T>> {
+    pub fn final_values(
+        input_len: usize,
+        results_0: &[Result],
+        results_1: &[Result],
+    ) -> Vec<Result> {
         assert_eq!(results_0.len(), results_1.len());
 
         results_0
@@ -462,16 +500,16 @@ where
             .map(|(r0, r1)| {
                 assert_eq!(r0.path, r1.path);
 
-                let mut v = T::zero();
-                v.add_assign(r0.value);
-                v.add_assign(r1.value);
+                let mut v = vec![Field64::from(0); input_len + 1];
+                vec_add(&mut v, &r0.value);
+                vec_add(&mut v, &r1.value);
 
                 Result {
                     path: r0.path.clone(),
                     value: v,
                 }
             })
-            .filter(|result| result.value > T::zero())
+            .filter(|result| result.value[input_len] > Field64::from(0))
             .collect::<Vec<_>>()
     }
 }

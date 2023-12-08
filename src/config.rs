@@ -5,6 +5,7 @@ use serde_json::Value;
 
 pub struct Config {
     pub data_bytes: usize,
+    pub range_bits: usize,
     pub add_key_batch_size: usize,
     pub flp_batch_size: usize,
     pub unique_buckets: usize,
@@ -22,6 +23,7 @@ pub fn get_config(filename: &str) -> Config {
     let json_data = &fs::read_to_string(filename).expect("Cannot open JSON file");
     let v: Value = serde_json::from_str(json_data).expect("Cannot parse JSON config");
 
+    let range_bits: usize = v["range_bits"].as_u64().expect("Can't parse range_bits") as usize;
     let data_bytes: usize = v["data_bytes"].as_u64().expect("Can't parse data_bytes") as usize;
     let add_key_batch_size: usize = v["add_key_batch_size"]
         .as_u64()
@@ -41,6 +43,7 @@ pub fn get_config(filename: &str) -> Config {
 
     Config {
         data_bytes,
+        range_bits,
         add_key_batch_size,
         flp_batch_size,
         unique_buckets,
@@ -57,18 +60,15 @@ pub fn get_args(
     get_n_reqs: bool,
     get_malicious: bool,
 ) -> (Config, i8, usize, f32) {
-    let mut flags = App::new(name)
-        .version("0.1")
-        .about("Privacy-preserving heavy-hitters for location data.")
-        .arg(
-            Arg::with_name("config")
-                .short("c")
-                .long("config")
-                .value_name("FILENAME")
-                .help("Location of JSON config file")
-                .required(true)
-                .takes_value(true),
-        );
+    let mut flags = App::new(name).version("0.1").about("Mastic.").arg(
+        Arg::with_name("config")
+            .short("c")
+            .long("config")
+            .value_name("FILENAME")
+            .help("Location of JSON config file")
+            .required(true)
+            .takes_value(true),
+    );
     if get_server_id {
         flags = flags.arg(
             Arg::with_name("server_id")
@@ -82,9 +82,9 @@ pub fn get_args(
     }
     if get_n_reqs {
         flags = flags.arg(
-            Arg::with_name("num_requests")
+            Arg::with_name("num_clients")
                 .short("n")
-                .long("num_requests")
+                .long("num_clients")
                 .value_name("NUMBER")
                 .help("Number of client requests to generate")
                 .required(true)
@@ -112,7 +112,7 @@ pub fn get_args(
 
     let mut n_reqs = 0;
     if get_n_reqs {
-        n_reqs = flags.value_of("num_requests").unwrap().parse().unwrap();
+        n_reqs = flags.value_of("num_clients").unwrap().parse().unwrap();
     }
 
     let mut malicious = 0.0;
