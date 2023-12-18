@@ -12,7 +12,7 @@ use mastic::{
         GetProofsRequest, ResetRequest, RunFlpQueriesRequest, TreeCrawlLastRequest,
         TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
     },
-    BetaType, HASH_SIZE,
+    HASH_SIZE,
 };
 use prio::{field::Field64, flp::types::Sum};
 use tarpc::{
@@ -85,7 +85,7 @@ impl Collector for CollectorServer {
         self,
         _: context::Context,
         req: TreeCrawlRequest,
-    ) -> (Vec<BetaType>, Vec<Vec<u8>>, Vec<usize>) {
+    ) -> (Vec<Vec<Field64>>, Vec<Vec<u8>>, Vec<usize>) {
         let start = Instant::now();
         let split_by = req.split_by;
         let malicious = req.malicious;
@@ -119,7 +119,7 @@ impl Collector for CollectorServer {
         self,
         _: context::Context,
         _req: TreeCrawlLastRequest,
-    ) -> Vec<BetaType> {
+    ) -> Vec<Vec<Field64>> {
         let start = Instant::now();
         let mut coll = self.arc.lock().unwrap();
 

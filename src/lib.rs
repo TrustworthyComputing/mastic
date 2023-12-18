@@ -10,8 +10,6 @@ use prio::field::Field64;
 
 pub use crate::rpc::CollectorClient;
 
-pub type BetaType = Vec<Field64>;
-
 pub const HASH_SIZE: usize = 16;
 
 impl crate::prg::FromRng for Field64 {

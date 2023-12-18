@@ -11,7 +11,8 @@ use mastic::{
         GetProofsRequest, ResetRequest, RunFlpQueriesRequest, TreeCrawlLastRequest,
         TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
     },
-    vidpf, BetaType, CollectorClient,
+    vidpf::{self, VidpfKey},
+    CollectorClient,
 };
 use prio::{
     field::{random_vector, Field64},
@@ -22,9 +23,6 @@ use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use rand_core::RngCore;
 use rayon::prelude::*;
 use tarpc::{client, context, serde_transport::tcp, tokio_serde::formats::Bincode};
-
-type Key = vidpf::VIDPFKey;
-type Client = CollectorClient;
 
 fn long_context() -> context::Context {
     let mut ctx = context::current();
@@ -45,28 +43,31 @@ fn sample_string(len: usize) -> String {
 fn generate_keys(
     cfg: &config::Config,
     typ: &Sum<Field64>,
-) -> ((Vec<Key>, Vec<Key>), Vec<Vec<Field64>>) {
-    let (keys, values): ((Vec<Key>, Vec<Key>), Vec<Vec<Field64>>) = rayon::iter::repeat(0)
-        .take(cfg.unique_buckets)
-        .map(|_| {
-            // Generate a random number in the specified range
-            let beta = rand::thread_rng().gen_range(1..(1 << cfg.range_bits));
-            let input_beta: BetaType = typ.encode_measurement(&beta).unwrap();
+) -> ((Vec<VidpfKey>, Vec<VidpfKey>), Vec<Vec<Field64>>) {
+    let (keys, values): ((Vec<VidpfKey>, Vec<VidpfKey>), Vec<Vec<Field64>>) =
+        rayon::iter::repeat(0)
+            .take(cfg.unique_buckets)
+            .map(|_| {
+                // Generate a random number in the specified range
+                let beta = rand::thread_rng().gen_range(1..(1 << cfg.range_bits));
+                let input_beta: Vec<Field64> = typ.encode_measurement(&beta).unwrap();
 
-            (
-                Key::gen_from_str(&sample_string(cfg.data_bytes * 8), &input_beta),
-                input_beta,
-            )
-        })
-        .unzip();
+                (
+                    VidpfKey::gen_from_str(&sample_string(cfg.data_bytes * 8), &input_beta),
+                    input_beta,
+                )
+            })
+            .unzip();
 
     let encoded: Vec<u8> = bincode::serialize(&keys.0[0]).unwrap();
-    println!("Key size: {:?} bytes", encoded.len());
+    println!("VIDPFKey size: {:?} bytes", encoded.len());
 
     (keys, values)
 }
 
-fn generate_randomness(keys: (&Vec<Key>, &Vec<Key>)) -> (Vec<[u8; 16]>, Vec<[[u8; 16]; 2]>) {
+fn generate_randomness(
+    keys: (&Vec<VidpfKey>, &Vec<VidpfKey>),
+) -> (Vec<[u8; 16]>, Vec<[[u8; 16]; 2]>) {
     keys.0
         .par_iter()
         .zip(keys.1.par_iter())
@@ -127,8 +128,8 @@ fn generate_proofs(
 }
 
 async fn reset_servers(
-    client_0: &Client,
-    client_1: &Client,
+    client_0: &CollectorClient,
+    client_1: &CollectorClient,
     verify_key: &[u8; 16],
 ) -> io::Result<()> {
     let req = ResetRequest {
@@ -141,7 +142,7 @@ async fn reset_servers(
     Ok(())
 }
 
-async fn tree_init(client_0: &Client, client_1: &Client) -> io::Result<()> {
+async fn tree_init(client_0: &CollectorClient, client_1: &CollectorClient) -> io::Result<()> {
     let req = TreeInitRequest {};
     let resp_0 = client_0.tree_init(long_context(), req.clone());
     let resp_1 = client_1.tree_init(long_context(), req);
@@ -152,9 +153,9 @@ async fn tree_init(client_0: &Client, client_1: &Client) -> io::Result<()> {
 
 async fn add_keys(
     cfg: &config::Config,
-    clients: (&Client, &Client),
-    keys: (&[vidpf::VIDPFKey], &[vidpf::VIDPFKey]),
-    proofs: (&[Vec<Field64>], &[Vec<Field64>]),
+    clients: (&CollectorClient, &CollectorClient),
+    all_keys: (&[vidpf::VidpfKey], &[vidpf::VidpfKey]),
+    all_proofs: (&[Vec<Field64>], &[Vec<Field64>]),
     all_nonces: &[[u8; 16]],
     all_jr_parts: &[[[u8; 16]; 2]],
     num_clients: usize,
@@ -184,11 +185,11 @@ async fn add_keys(
             }
             println!("Malicious {}", r);
         }
-        add_keys_0.push(keys.0[idx_1].clone());
-        add_keys_1.push(keys.1[idx_2 % cfg.unique_buckets].clone());
+        add_keys_0.push(all_keys.0[idx_1].clone());
+        add_keys_1.push(all_keys.1[idx_2 % cfg.unique_buckets].clone());
 
-        flp_proof_shares_0.push(proofs.0[idx_1].clone());
-        flp_proof_shares_1.push(proofs.1[idx_3 % cfg.unique_buckets].clone());
+        flp_proof_shares_0.push(all_proofs.0[idx_1].clone());
+        flp_proof_shares_1.push(all_proofs.1[idx_3 % cfg.unique_buckets].clone());
 
         nonces.push(all_nonces[idx_1]);
         jr_parts.push(all_jr_parts[idx_1]);
@@ -226,8 +227,8 @@ async fn add_keys(
 async fn run_flp_queries(
     cfg: &config::Config,
     typ: &Sum<Field64>,
-    client_0: &Client,
-    client_1: &Client,
+    client_0: &CollectorClient,
+    client_1: &CollectorClient,
     num_clients: usize,
 ) -> io::Result<()> {
     // Receive FLP query responses in chunks of cfg.flp_batch_size to avoid having huge RPC messages.
@@ -273,8 +274,8 @@ async fn run_flp_queries(
 async fn run_level(
     cfg: &config::Config,
     typ: &Sum<Field64>,
-    client_0: &Client,
-    client_1: &Client,
+    client_0: &CollectorClient,
+    client_1: &CollectorClient,
     num_clients: usize,
 ) -> io::Result<()> {
     let threshold = core::cmp::max(1, (cfg.threshold * (num_clients as f64)) as u64);
@@ -345,8 +346,8 @@ async fn run_level(
 async fn run_level_last(
     cfg: &config::Config,
     typ: &Sum<Field64>,
-    client_0: &Client,
-    client_1: &Client,
+    client_0: &CollectorClient,
+    client_1: &CollectorClient,
     num_clients: usize,
 ) -> io::Result<()> {
     let threshold = core::cmp::max(1, (cfg.threshold * (num_clients as f64)) as u64);
@@ -409,12 +410,12 @@ async fn main() -> io::Result<()> {
     let (cfg, _, num_clients, malicious) = config::get_args("Driver", false, true, true);
     assert!((0.0..0.8).contains(&malicious));
     println!("Running with {}% malicious clients", malicious * 100.0);
-    let client_0 = Client::new(
+    let client_0 = CollectorClient::new(
         client::Config::default(),
         tcp::connect(cfg.server_0, Bincode::default).await?,
     )
     .spawn();
-    let client_1 = Client::new(
+    let client_1 = CollectorClient::new(
         client::Config::default(),
         tcp::connect(cfg.server_1, Bincode::default).await?,
     )

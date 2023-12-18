@@ -9,7 +9,7 @@ fn dpf_complete() {
     let num_bits = 5;
     let alpha = u32_to_bits(num_bits, 21);
     let beta = vec![Field64::from(7u64)];
-    let (key_0, key_1) = VIDPFKey::gen(&alpha, &beta);
+    let (key_0, key_1) = VidpfKey::gen(&alpha, &beta);
 
     let mut pi_0: [u8; HASH_SIZE] = hash(b"0").as_bytes()[0..HASH_SIZE].try_into().unwrap();
     let mut pi_1: [u8; HASH_SIZE] = pi_0.clone();

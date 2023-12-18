@@ -1,7 +1,7 @@
 use prio::field::Field64;
 use serde::{Deserialize, Serialize};
 
-use crate::{collect, vidpf, BetaType, HASH_SIZE};
+use crate::{collect, vidpf, HASH_SIZE};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ResetRequest {
@@ -10,7 +10,7 @@ pub struct ResetRequest {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AddKeysRequest {
-    pub keys: Vec<vidpf::VIDPFKey>,
+    pub keys: Vec<vidpf::VidpfKey>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -65,8 +65,8 @@ pub trait Collector {
     async fn add_all_flp_proof_shares(req: AddFLPsRequest) -> String;
     async fn run_flp_queries(req: RunFlpQueriesRequest) -> Vec<Vec<Field64>>;
     async fn apply_flp_results(req: ApplyFLPResultsRequest) -> String;
-    async fn tree_crawl(req: TreeCrawlRequest) -> (Vec<BetaType>, Vec<Vec<u8>>, Vec<usize>);
-    async fn tree_crawl_last(req: TreeCrawlLastRequest) -> Vec<BetaType>;
+    async fn tree_crawl(req: TreeCrawlRequest) -> (Vec<Vec<Field64>>, Vec<Vec<u8>>, Vec<usize>);
+    async fn tree_crawl_last(req: TreeCrawlLastRequest) -> Vec<Vec<Field64>>;
     async fn get_proofs(req: GetProofsRequest) -> Vec<[u8; HASH_SIZE]>;
     async fn tree_init(req: TreeInitRequest) -> String;
     async fn tree_prune(req: TreePruneRequest) -> String;

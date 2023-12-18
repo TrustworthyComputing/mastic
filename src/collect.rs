@@ -10,7 +10,7 @@ use rayon::prelude::*;
 use rs_merkle::{Hasher, MerkleTree};
 use serde::{Deserialize, Serialize};
 
-use crate::{prg, vec_add, vec_sub, vidpf, xor_in_place, xor_vec, BetaType, HASH_SIZE};
+use crate::{prg, vec_add, vec_sub, vidpf, xor_in_place, xor_vec, HASH_SIZE};
 
 #[derive(Clone)]
 pub struct HashAlg {}
@@ -40,7 +40,7 @@ pub struct KeyCollection {
     server_id: i8,
     verify_key: [u8; 16],
     depth: usize,
-    pub keys: Vec<(bool, vidpf::VIDPFKey)>,
+    pub keys: Vec<(bool, vidpf::VidpfKey)>,
     nonces: Vec<[u8; 16]>,
     jr_parts: Vec<[[u8; 16]; 2]>,
     all_flp_proof_shares: Vec<Vec<Field64>>,
@@ -52,7 +52,7 @@ pub struct KeyCollection {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Result {
     pub path: Vec<bool>,
-    pub value: BetaType,
+    pub value: Vec<Field64>,
 }
 
 impl KeyCollection {
@@ -78,7 +78,7 @@ impl KeyCollection {
         }
     }
 
-    pub fn add_key(&mut self, key: vidpf::VIDPFKey) {
+    pub fn add_key(&mut self, key: vidpf::VidpfKey) {
         self.keys.push((true, key));
     }
 

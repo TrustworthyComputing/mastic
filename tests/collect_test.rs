@@ -24,7 +24,7 @@ fn collect_test_eval_groups() {
 
     for cstr in &client_strings {
         let input_beta = typ.encode_measurement(&3u64).unwrap();
-        let (keys_0, keys_1) = vidpf::VIDPFKey::gen_from_str(&cstr, &input_beta);
+        let (keys_0, keys_1) = vidpf::VidpfKey::gen_from_str(&cstr, &input_beta);
         col_0.add_key(keys_0);
         col_1.add_key(keys_1);
     }
@@ -109,7 +109,7 @@ fn collect_test_eval_full_groups() {
     println!("Starting to generate keys");
     for s in &client_strings {
         let input_beta = typ.encode_measurement(&1u64).unwrap();
-        keys.push(vidpf::VIDPFKey::gen_from_str(&s, &input_beta));
+        keys.push(vidpf::VidpfKey::gen_from_str(&s, &input_beta));
     }
     println!("Done generating keys");
 
@@ -119,7 +119,7 @@ fn collect_test_eval_full_groups() {
         col_0.add_key(copy_0);
         col_1.add_key(copy_1);
         if i % 50 == 0 {
-            println!("  Key {:?}", i);
+            println!("  VIDPFKey {:?}", i);
         }
     }
 
