@@ -406,7 +406,7 @@ async fn run_level_last(
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    let (cfg, _, num_clients, malicious) = config::get_args("Leader", false, true, true);
+    let (cfg, _, num_clients, malicious) = config::get_args("Driver", false, true, true);
     assert!((0.0..0.8).contains(&malicious));
     println!("Running with {}% malicious clients", malicious * 100.0);
     let client_0 = Client::new(

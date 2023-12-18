@@ -39,5 +39,5 @@ name = "server"
 path = "src/bin/server.rs"
 
 [[bin]]
-name = "leader"
-path = "src/bin/leader.rs"
+name = "driver"
+path = "src/bin/driver.rs"

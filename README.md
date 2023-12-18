@@ -10,6 +10,8 @@ Page](https://datatracker.ietf.org/doc/draft-mouris-cfrg-mastic/).
 
 
 ## Building
+
+Please note that this repository relies on `x86_64` specific instructions in [prg.rs](src/prg.rs).
 First, make sure that you have a working Rust installation:
 ```bash
 ❯❯ rustc --version
@@ -39,14 +41,14 @@ Now, the servers should be ready to process client requests.
 #### Clients:
 In another shell, run the following command to send 100 client requests to the servers.
 ```bash
-cargo run --release --bin leader -- --config src/bin/config.json -n 100
+cargo run --release --bin driver -- --config src/bin/config.json -n 100
 ```
 
 To run with the presence of malicious clients include the `--malicious` flag followed by the
 percentage of malicious clients to generate ([0.0, 0.9]). For instance, to run with 5% malicious
 clients use:
 ```bash
-cargo run --release --bin leader -- --config src/bin/config.json -n 100 --malicious 0.05
+cargo run --release --bin driver -- --config src/bin/config.json -n 100 --malicious 0.05
 ```
 
 

@@ -60,15 +60,18 @@ pub fn get_args(
     get_n_reqs: bool,
     get_malicious: bool,
 ) -> (Config, i8, usize, f32) {
-    let mut flags = App::new(name).version("0.1").about("Mastic.").arg(
-        Arg::with_name("config")
-            .short("c")
-            .long("config")
-            .value_name("FILENAME")
-            .help("Location of JSON config file")
-            .required(true)
-            .takes_value(true),
-    );
+    let mut flags = App::new(name)
+        .version("0.1")
+        .about("Mastic: Private Aggregated Statistics through Fully Linear Proofs")
+        .arg(
+            Arg::with_name("config")
+                .short("c")
+                .long("config")
+                .value_name("FILENAME")
+                .help("Location of JSON config file")
+                .required(true)
+                .takes_value(true),
+        );
     if get_server_id {
         flags = flags.arg(
             Arg::with_name("server_id")
