@@ -1,8 +1,9 @@
 use std::{fs, net::SocketAddr};
 
 use clap::{App, Arg};
-use serde_json::Value;
+use serde::Deserialize;
 
+#[derive(Deserialize)]
 pub struct Config {
     pub data_bytes: usize,
     pub range_bits: usize,
@@ -15,43 +16,9 @@ pub struct Config {
     pub server_1: SocketAddr,
 }
 
-fn parse_ip(v: &Value, error_msg: &str) -> SocketAddr {
-    v.as_str().expect(error_msg).parse().expect(error_msg)
-}
-
 pub fn get_config(filename: &str) -> Config {
     let json_data = &fs::read_to_string(filename).expect("Cannot open JSON file");
-    let v: Value = serde_json::from_str(json_data).expect("Cannot parse JSON config");
-
-    let range_bits: usize = v["range_bits"].as_u64().expect("Can't parse range_bits") as usize;
-    let data_bytes: usize = v["data_bytes"].as_u64().expect("Can't parse data_bytes") as usize;
-    let add_key_batch_size: usize = v["add_key_batch_size"]
-        .as_u64()
-        .expect("Can't parse add_key_batch_size") as usize;
-    let flp_batch_size: usize = v["flp_batch_size"]
-        .as_u64()
-        .expect("Can't parse flp_batch_size") as usize;
-    let unique_buckets: usize = v["unique_buckets"]
-        .as_u64()
-        .expect("Can't parse unique_buckets") as usize;
-    let threshold = v["threshold"].as_f64().expect("Can't parse threshold");
-    let zipf_exponent = v["zipf_exponent"]
-        .as_f64()
-        .expect("Can't parse zipf_exponent");
-    let server_0 = parse_ip(&v["server_0"], "Can't parse server0 addr");
-    let server_1 = parse_ip(&v["server_1"], "Can't parse server 1 addr");
-
-    Config {
-        data_bytes,
-        range_bits,
-        add_key_batch_size,
-        flp_batch_size,
-        unique_buckets,
-        threshold,
-        zipf_exponent,
-        server_0,
-        server_1,
-    }
+    serde_json::from_str(json_data).expect("Cannot parse JSON config")
 }
 
 pub fn get_args(
