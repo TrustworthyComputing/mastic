@@ -13,17 +13,31 @@ struct CorWord {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct VidpfKey {
+    /// Server ID used for conditional negations.
     pub key_idx: bool,
+
+    /// The initial seeds.
     root_seed: prg::PrgSeed,
+
+    /// List of correction words.
     cor_words: Vec<CorWord>,
+
+    /// List of correction seeds (hashes).
     pub cs: Vec<[u8; HASH_SIZE]>,
 }
 
 #[derive(Clone, Debug)]
 pub struct EvalState {
+    /// Current level of the evaluation.
     level: usize,
+
+    /// Current seed of VIDPF.
     pub seed: prg::PrgSeed,
+
+    /// The last bit from the seed used for conditional decisions.
     pub bit: bool,
+
+    /// The VIDPF proof.
     pub proof: [u8; HASH_SIZE],
 }
 

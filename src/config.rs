@@ -5,14 +5,35 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct Config {
+    /// Number of bytes of each string (x8 for bits).
     pub data_bytes: usize,
+
+    /// Number of bits for the FLP range check (e.g., for `range_bits = 3` the FLP checks that
+    /// 0 <= β < 2^3).
     pub range_bits: usize,
+
+    /// The servers will output the collection of strings that more than a `threshold` of clients
+    /// hold.
     pub add_key_batch_size: usize,
+
+    /// Similar to `add_key_batch_size` but with a greater threshold.
     pub flp_batch_size: usize,
+
+    /// Number of distinct strings.
     pub unique_buckets: usize,
+
+    /// The servers will output the collection of strings that more than a `threshold` of clients
+    /// hold.
     pub threshold: f64,
+
+    /// Each simulated client samples its private string from a Zipf distribution over strings with
+    /// parameter `zipf_exponent`
     pub zipf_exponent: f64,
+
+    /// The `IP:port` tuple for server 0.
     pub server_0: SocketAddr,
+
+    /// The `IP:port` tuple for server 1.
     pub server_1: SocketAddr,
 }
 

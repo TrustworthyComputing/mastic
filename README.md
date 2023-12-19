@@ -76,8 +76,8 @@ The parameters are:
   that $0 \leq β < 2^3$).
 * `threshold`: The servers will output the collection of strings that more than a `threshold` of
   clients hold.
-* `server0`, `server1`, and `server2`: The `IP:port` of tuple for the two servers. The servers can
-  run on different IP addresses, but these IPs must be publicly addressable.
+* `server0` and  `server1`: The `IP:port` of tuple for the two servers. The servers can run on
+  different IP addresses, but these IPs must be publicly addressable.
 * `add_key_batch_size`: The number of each type of RPC request to bundle together. The underlying RPC
   library has an annoying limit on the size of each RPC request, so you cannot set these values too
   large.

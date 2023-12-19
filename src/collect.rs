@@ -25,9 +25,16 @@ impl Hasher for HashAlg {
 
 #[derive(Clone)]
 struct TreeNode<Field64> {
+    /// The binary path for this node of the tree.
     path: Vec<bool>,
+
+    /// The value of the node.
     value: Vec<Field64>,
+
+    /// The state of each client.
     key_states: Vec<vidpf::EvalState>,
+
+    /// The value of each client.
     key_values: Vec<Vec<Field64>>,
 }
 
@@ -36,22 +43,48 @@ unsafe impl<Field64> Sync for TreeNode<Field64> {}
 
 #[derive(Clone)]
 pub struct KeyCollection {
+    /// The type of the FLP. This sum type. Each measurement is a integer in [0, 2^bits) and the
+    /// aggregate is the sum of the measurements.
     typ: Sum<Field64>,
+
+    /// The ID of the server (0 or 1).
     server_id: i8,
+
+    ///
     verify_key: [u8; 16],
+
+    /// The depth of the tree.
     depth: usize,
+
+    /// The keys of the clients. The first element of the tuple is whether the client is honest or
+    /// not.
     pub keys: Vec<(bool, vidpf::VidpfKey)>,
+
+    /// The nonces of the clients.
     nonces: Vec<[u8; 16]>,
+
+    /// The joint randomness parts of the clients.
     jr_parts: Vec<[[u8; 16]; 2]>,
+
+    // The FLP proof shares of the clients.
     all_flp_proof_shares: Vec<Vec<Field64>>,
+
+    /// The current evaluations of the tree.
     frontier: Vec<TreeNode<Field64>>,
+
+    /// The previous evaluations of the tree. This is used when we detect malicious activity.
     prev_frontier: Vec<TreeNode<Field64>>,
+
+    /// The final VIDPF proofs of the clients.
     final_proofs: Vec<[u8; HASH_SIZE]>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Result {
+    /// The heavy-hitter path.
     pub path: Vec<bool>,
+
+    /// The heavy-hitter value.
     pub value: Vec<Field64>,
 }
 
@@ -445,6 +478,8 @@ impl KeyCollection {
         }
     }
 
+    /// Remove the malicious clients (i.e., the clients whose the FLP was not successful) from the
+    /// key collection.
     pub fn apply_flp_results(&mut self, keep: &[bool]) {
         assert_eq!(keep.len(), self.keys.len());
 
@@ -457,6 +492,8 @@ impl KeyCollection {
         }
     }
 
+    /// Keep only heavy-hitter values. Note that we perform the pruning based on the last element
+    /// (i.e., the counter) as the previous elements are parts of \beta.
     pub fn keep_values(
         input_len: usize,
         threshold: u64,
@@ -467,8 +504,6 @@ impl KeyCollection {
             .par_iter()
             .zip(cnt_values_1.par_iter())
             .map(|(value_0, value_1)| {
-                // Note, this assumes that the pruning happens based on the last element (i.e.,
-                // the counter).
                 let v = value_0[input_len] + value_1[input_len];
 
                 u64::from(v) >= threshold
