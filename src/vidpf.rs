@@ -1,5 +1,5 @@
 use blake3::Hasher;
-use prio::field::Field64;
+use prio::field::Field128;
 use serde::{Deserialize, Serialize};
 
 use crate::{prg, vec_add, vec_neg, vec_sub, xor_three_vecs, xor_vec, HASH_SIZE};
@@ -8,7 +8,7 @@ use crate::{prg, vec_add, vec_neg, vec_sub, xor_three_vecs, xor_vec, HASH_SIZE};
 struct CorWord {
     seed: prg::PrgSeed,
     bits: (bool, bool),
-    word: Vec<Field64>,
+    word: Vec<Field128>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -95,7 +95,7 @@ impl<T> TupleExt<T> for (T, T) {
 
 fn gen_cor_word(
     bit: bool,
-    beta: &Vec<Field64>,
+    beta: &Vec<Field128>,
     bits: &mut (bool, bool),
     seeds: &mut (prg::PrgSeed, prg::PrgSeed),
 ) -> CorWord {
@@ -136,7 +136,7 @@ fn gen_cor_word(
     let converted = seeds.map(|s| s.convert(input_len));
 
     // Counter is last
-    cw.word.push(Field64::from(1));
+    cw.word.push(Field128::from(1));
     vec_sub(&mut cw.word, &converted.0.word);
     vec_add(&mut cw.word, &converted.1.word);
     if bits.1 {
@@ -154,7 +154,7 @@ impl VidpfKey {
         self.root_seed.clone()
     }
 
-    pub fn gen(alpha_bits: &[bool], beta: &Vec<Field64>) -> (VidpfKey, VidpfKey) {
+    pub fn gen(alpha_bits: &[bool], beta: &Vec<Field128>) -> (VidpfKey, VidpfKey) {
         let root_seeds = (prg::PrgSeed::random(), prg::PrgSeed::random());
         let root_bits = (false, true);
 
@@ -211,7 +211,7 @@ impl VidpfKey {
         dir: bool,
         bit_str: &String,
         input_len: usize,
-    ) -> (EvalState, Vec<Field64>) {
+    ) -> (EvalState, Vec<Field128>) {
         let tau = state.seed.expand_dir(!dir, dir);
         let mut seed = tau.seeds.get(dir).clone();
         let mut new_bit = *tau.bits.get(dir);
@@ -288,7 +288,7 @@ impl VidpfKey {
         idx: &[bool],
         pi: &mut [u8; HASH_SIZE],
         input_len: usize,
-    ) -> (Vec<Vec<Field64>>, Vec<Field64>) {
+    ) -> (Vec<Vec<Field128>>, Vec<Field128>) {
         debug_assert!(idx.len() <= self.domain_size());
         debug_assert!(!idx.is_empty());
         let mut out = vec![];
@@ -311,7 +311,7 @@ impl VidpfKey {
         (out, last)
     }
 
-    pub fn gen_from_str(s: &str, beta: &Vec<Field64>) -> (Self, Self) {
+    pub fn gen_from_str(s: &str, beta: &Vec<Field128>) -> (Self, Self) {
         let bits = crate::string_to_bits(s);
         VidpfKey::gen(&bits, beta)
     }

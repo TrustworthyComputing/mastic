@@ -14,7 +14,7 @@ use mastic::{
     },
     HASH_SIZE,
 };
-use prio::{field::Field64, flp::types::Sum};
+use prio::{field::Field128, flp::types::Sum};
 use tarpc::{
     context,
     serde_transport::tcp,
@@ -37,7 +37,7 @@ impl Collector for CollectorServer {
     async fn reset(self, _: context::Context, req: ResetRequest) -> String {
         let mut coll = self.arc.lock().unwrap();
         *coll = collect::KeyCollection::new(
-            Sum::<Field64>::new(2).unwrap(),
+            Sum::<Field128>::new(2).unwrap(),
             self.server_id,
             &self.seed,
             self.data_bytes,
@@ -85,7 +85,7 @@ impl Collector for CollectorServer {
         self,
         _: context::Context,
         req: TreeCrawlRequest,
-    ) -> (Vec<Vec<Field64>>, Vec<Vec<u8>>, Vec<usize>) {
+    ) -> (Vec<Vec<Field128>>, Vec<Vec<u8>>, Vec<usize>) {
         let start = Instant::now();
         let split_by = req.split_by;
         let malicious = req.malicious;
@@ -102,7 +102,7 @@ impl Collector for CollectorServer {
         self,
         _: context::Context,
         req: RunFlpQueriesRequest,
-    ) -> Vec<Vec<Field64>> {
+    ) -> Vec<Vec<Field128>> {
         let mut coll = self.arc.lock().unwrap();
         debug_assert!(req.start < req.end);
 
@@ -119,7 +119,7 @@ impl Collector for CollectorServer {
         self,
         _: context::Context,
         _req: TreeCrawlLastRequest,
-    ) -> Vec<Vec<Field64>> {
+    ) -> Vec<Vec<Field128>> {
         let start = Instant::now();
         let mut coll = self.arc.lock().unwrap();
 
@@ -162,7 +162,7 @@ async fn main() -> io::Result<()> {
     };
 
     let seed = prg::PrgSeed { key: [1u8; 16] };
-    let typ = Sum::<Field64>::new(cfg.range_bits).unwrap();
+    let typ = Sum::<Field128>::new(cfg.range_bits).unwrap();
 
     let coll =
         collect::KeyCollection::new(typ.clone(), server_id, &seed, cfg.data_bytes * 8, [0u8; 16]);

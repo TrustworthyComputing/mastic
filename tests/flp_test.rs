@@ -1,9 +1,6 @@
 use prio::{
-    field::{random_vector, Field64},
-    flp::{
-        types::{Count, Sum},
-        FlpError,
-    },
+    field::{random_vector, Field128},
+    flp::{types::Sum, FlpError},
     vdaf::xof::{IntoFieldVec, Xof, XofShake128},
 };
 use rand::{thread_rng, Rng};
@@ -16,44 +13,44 @@ fn flp_bool_beta() {
     let mut verify_key = [0; 16];
     thread_rng().fill(&mut verify_key);
 
-    let count = Count::new();
+    let typ = Sum::<Field128>::new(1).unwrap();
 
-    assert!(run_flp_with_input(&verify_key, &count, 0).unwrap());
-    assert!(run_flp_with_input(&verify_key, &count, 1).unwrap());
+    assert!(run_flp_with_input(&verify_key, &typ, 0).unwrap());
+    assert!(run_flp_with_input(&verify_key, &typ, 1).unwrap());
 
     // The following two should panic with an FLP error as the input is not in range.
-    assert!(run_flp_with_input(&verify_key, &count, 2).is_err());
-    assert!(run_flp_with_input(&verify_key, &count, 100).is_err());
+    assert!(run_flp_with_input(&verify_key, &typ, 2).is_err());
+    assert!(run_flp_with_input(&verify_key, &typ, 100).is_err());
 }
 
 #[test]
 fn flp_random_beta_in_range() {
     let bits = 2; // [0, 2^2)
-    let sum = Sum::<Field64>::new(bits).unwrap();
+    let typ = Sum::<Field128>::new(bits).unwrap();
 
     // The same verify_key for the Aggregators. Needs to be random for different sessions.
     let mut verify_key = [0; 16];
     thread_rng().fill(&mut verify_key);
 
-    assert!(run_flp_with_input(&verify_key, &sum, 0).unwrap());
-    assert!(run_flp_with_input(&verify_key, &sum, 1).unwrap());
-    assert!(run_flp_with_input(&verify_key, &sum, 2).unwrap());
-    assert!(run_flp_with_input(&verify_key, &sum, 3).unwrap());
+    assert!(run_flp_with_input(&verify_key, &typ, 0).unwrap());
+    assert!(run_flp_with_input(&verify_key, &typ, 1).unwrap());
+    assert!(run_flp_with_input(&verify_key, &typ, 2).unwrap());
+    assert!(run_flp_with_input(&verify_key, &typ, 3).unwrap());
 
     // The following two should panic with an FLP error as the input is not in range.
-    assert!(run_flp_with_input(&verify_key, &sum, 4).is_err());
-    assert!(run_flp_with_input(&verify_key, &sum, 100).is_err());
+    assert!(run_flp_with_input(&verify_key, &typ, 4).is_err());
+    assert!(run_flp_with_input(&verify_key, &typ, 100).is_err());
 }
 
-fn run_flp_with_input<T>(verify_key: &[u8; 16], typ: &T, input: u64) -> Result<bool, FlpError>
+fn run_flp_with_input<T>(verify_key: &[u8; 16], typ: &T, input: u128) -> Result<bool, FlpError>
 where
-    T: prio::flp::Type<Field = Field64, Measurement = u64>,
+    T: prio::flp::Type<Field = Field128, Measurement = u128>,
 {
     // 1. The Prover chooses a measurement and secret shares the input.
-    let input: Vec<Field64> = typ.encode_measurement(&input)?;
+    let input: Vec<Field128> = typ.encode_measurement(&input)?;
     let input_0 = input
         .iter()
-        .map(|_| Field64::from(rand::thread_rng().gen::<u64>()))
+        .map(|_| Field128::from(rand::thread_rng().gen::<u128>()))
         .collect::<Vec<_>>();
     let input_1 = input
         .par_iter()
@@ -68,7 +65,7 @@ where
     //    uses prover_rand to generate the proof. Finally, the Prover secret shares the proof.
     let prove_rand = random_vector(typ.prove_rand_len()).unwrap();
     let query_rand_xof = XofShake128::init(&verify_key, &nonce);
-    let query_rand: Vec<Field64> = query_rand_xof
+    let query_rand: Vec<Field128> = query_rand_xof
         .clone()
         .into_seed_stream()
         .into_field_vec(typ.query_rand_len());
@@ -93,14 +90,14 @@ where
         .fill_bytes(&mut jr_parts[1]);
 
     let joint_rand_xof = XofShake128::init(&jr_parts[0], &jr_parts[1]);
-    let joint_rand: Vec<Field64> = joint_rand_xof
+    let joint_rand: Vec<Field128> = joint_rand_xof
         .into_seed_stream()
         .into_field_vec(typ.joint_rand_len());
 
     let proof = typ.prove(&input, &prove_rand, &joint_rand).unwrap();
     let proof_0 = proof
         .iter()
-        .map(|_| Field64::from(rand::thread_rng().gen::<u64>()))
+        .map(|_| Field128::from(rand::thread_rng().gen::<u128>()))
         .collect::<Vec<_>>();
     let proof_1 = proof
         .par_iter()

@@ -15,7 +15,7 @@ use mastic::{
     CollectorClient,
 };
 use prio::{
-    field::{random_vector, Field64},
+    field::{random_vector, Field128},
     flp::{types::Sum, Type},
     vdaf::xof::{IntoFieldVec, Xof, XofShake128},
 };
@@ -42,15 +42,15 @@ fn sample_string(len: usize) -> String {
 
 fn generate_keys(
     cfg: &config::Config,
-    typ: &Sum<Field64>,
-) -> ((Vec<VidpfKey>, Vec<VidpfKey>), Vec<Vec<Field64>>) {
-    let (keys, values): ((Vec<VidpfKey>, Vec<VidpfKey>), Vec<Vec<Field64>>) =
+    typ: &Sum<Field128>,
+) -> ((Vec<VidpfKey>, Vec<VidpfKey>), Vec<Vec<Field128>>) {
+    let (keys, values): ((Vec<VidpfKey>, Vec<VidpfKey>), Vec<Vec<Field128>>) =
         rayon::iter::repeat(0)
             .take(cfg.unique_buckets)
             .map(|_| {
                 // Generate a random number in the specified range
                 let beta = rand::thread_rng().gen_range(1..(1 << cfg.range_bits));
-                let input_beta: Vec<Field64> = typ.encode_measurement(&beta).unwrap();
+                let input_beta: Vec<Field128> = typ.encode_measurement(&beta).unwrap();
 
                 (
                     VidpfKey::gen_from_str(&sample_string(cfg.data_bytes * 8), &input_beta),
@@ -96,16 +96,16 @@ fn generate_randomness(
 }
 
 fn generate_proofs(
-    typ: &Sum<Field64>,
-    beta_values: &Vec<Vec<Field64>>,
+    typ: &Sum<Field128>,
+    beta_values: &Vec<Vec<Field128>>,
     all_jr_parts: &Vec<[[u8; 16]; 2]>,
-) -> (Vec<Vec<Field64>>, Vec<Vec<Field64>>) {
+) -> (Vec<Vec<Field128>>, Vec<Vec<Field128>>) {
     all_jr_parts
         .par_iter()
         .zip_eq(beta_values.par_iter())
         .map(|(jr_parts, input_beta)| {
             let joint_rand_xof = XofShake128::init(&jr_parts[0], &jr_parts[1]);
-            let joint_rand: Vec<Field64> = joint_rand_xof
+            let joint_rand: Vec<Field128> = joint_rand_xof
                 .into_seed_stream()
                 .into_field_vec(typ.joint_rand_len());
 
@@ -114,7 +114,7 @@ fn generate_proofs(
 
             let proof_0 = proof
                 .iter()
-                .map(|_| Field64::from(rand::thread_rng().gen::<u64>()))
+                .map(|_| Field128::from(rand::thread_rng().gen::<u128>()))
                 .collect::<Vec<_>>();
             let proof_1 = proof
                 .par_iter()
@@ -155,7 +155,7 @@ async fn add_keys(
     cfg: &config::Config,
     clients: (&CollectorClient, &CollectorClient),
     all_keys: (&[vidpf::VidpfKey], &[vidpf::VidpfKey]),
-    all_proofs: (&[Vec<Field64>], &[Vec<Field64>]),
+    all_proofs: (&[Vec<Field128>], &[Vec<Field128>]),
     all_nonces: &[[u8; 16]],
     all_jr_parts: &[[[u8; 16]; 2]],
     num_clients: usize,
@@ -226,7 +226,7 @@ async fn add_keys(
 
 async fn run_flp_queries(
     cfg: &config::Config,
-    typ: &Sum<Field64>,
+    typ: &Sum<Field128>,
     client_0: &CollectorClient,
     client_1: &CollectorClient,
     num_clients: usize,
@@ -273,7 +273,7 @@ async fn run_flp_queries(
 
 async fn run_level(
     cfg: &config::Config,
-    typ: &Sum<Field64>,
+    typ: &Sum<Field128>,
     client_0: &CollectorClient,
     client_1: &CollectorClient,
     num_clients: usize,
@@ -345,7 +345,7 @@ async fn run_level(
 
 async fn run_level_last(
     cfg: &config::Config,
-    typ: &Sum<Field64>,
+    typ: &Sum<Field128>,
     client_0: &CollectorClient,
     client_1: &CollectorClient,
     num_clients: usize,
@@ -397,7 +397,7 @@ async fn run_level_last(
     let (shares_0, shares_1) = try_join!(resp_0, resp_1).unwrap();
     for res in &collect::KeyCollection::final_values(typ.input_len(), &shares_0, &shares_1) {
         let bits = mastic::bits_to_bitstring(&res.path);
-        if res.value[typ.input_len() - 1] > Field64::from(0) {
+        if res.value[typ.input_len() - 1] > Field128::from(0) {
             println!("Value ({}) \t Count: {:?}", bits, res.value);
         }
     }
@@ -421,7 +421,7 @@ async fn main() -> io::Result<()> {
     )
     .spawn();
 
-    let typ = Sum::<Field64>::new(cfg.range_bits).unwrap();
+    let typ = Sum::<Field128>::new(cfg.range_bits).unwrap();
 
     let start = Instant::now();
     println!("Generating keys...");

@@ -2,13 +2,13 @@ use std::ops::Add;
 
 use blake3::hash;
 use mastic::{vidpf::*, *};
-use prio::field::Field64;
+use prio::field::Field128;
 
 #[test]
 fn dpf_complete() {
     let num_bits = 5;
     let alpha = u32_to_bits(num_bits, 21);
-    let beta = vec![Field64::from(7u64)];
+    let beta = vec![Field128::from(7u128)];
     let (key_0, key_1) = VidpfKey::gen(&alpha, &beta);
 
     let mut pi_0: [u8; HASH_SIZE] = hash(b"0").as_bytes()[0..HASH_SIZE].try_into().unwrap();
@@ -31,7 +31,7 @@ fn dpf_complete() {
                     j, alpha_eval
                 );
             } else {
-                assert_eq!(Field64::from(0), tmp);
+                assert_eq!(Field128::from(0), tmp);
             }
         }
 

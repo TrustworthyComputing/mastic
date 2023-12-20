@@ -6,15 +6,17 @@ pub mod vidpf;
 
 extern crate lazy_static;
 
-use prio::field::Field64;
+use prio::field::Field128;
 
 pub use crate::rpc::CollectorClient;
 
 pub const HASH_SIZE: usize = 16;
 
-impl crate::prg::FromRng for Field64 {
+impl crate::prg::FromRng for Field128 {
     fn from_rng(&mut self, rng: &mut impl rand::Rng) {
-        *self = Field64::from(rng.next_u64());
+        let low_bits = rng.next_u64();
+        let high_bits = rng.next_u64();
+        *self = Field128::from(((high_bits as u128) << 64) | low_bits as u128);
     }
 }
 
