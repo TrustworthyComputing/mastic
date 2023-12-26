@@ -1,6 +1,7 @@
+use mastic::{Mastic, MasticHistogram};
 use prio::{
     field::{random_vector, Field128},
-    flp::{gadgets::ParallelSum, types::Histogram, FlpError},
+    flp::FlpError,
     vdaf::xof::{IntoFieldVec, Xof, XofShake128},
 };
 use rand::{thread_rng, Rng};
@@ -11,25 +12,27 @@ use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelI
 fn histograms() {
     let buckets = 10;
     let chunk_length = 2;
-    let typ = Histogram::<Field128, ParallelSum<_, _>>::new(buckets, chunk_length).unwrap();
 
     // The same verify_key for the Aggregators. Needs to be random for different sessions.
     let mut verify_key = [0; 16];
     thread_rng().fill(&mut verify_key);
 
-    assert!(run_flp_with_input(&verify_key, &typ, 0).unwrap());
-    assert!(run_flp_with_input(&verify_key, &typ, 1).unwrap());
-    assert!(run_flp_with_input(&verify_key, &typ, 2).unwrap());
-    assert!(run_flp_with_input(&verify_key, &typ, 3).unwrap());
-    assert!(run_flp_with_input(&verify_key, &typ, 4).unwrap());
+    let mastic = Mastic::new_histogram(buckets, chunk_length).unwrap();
+
+    assert!(run_flp_with_input(&verify_key, &mastic, 0).unwrap());
+    assert!(run_flp_with_input(&verify_key, &mastic, 1).unwrap());
+    assert!(run_flp_with_input(&verify_key, &mastic, 2).unwrap());
+    assert!(run_flp_with_input(&verify_key, &mastic, 3).unwrap());
+    assert!(run_flp_with_input(&verify_key, &mastic, 4).unwrap());
 }
 
-fn run_flp_with_input<T>(verify_key: &[u8; 16], typ: &T, input: usize) -> Result<bool, FlpError>
-where
-    T: prio::flp::Type<Field = Field128, Measurement = usize>,
-{
+fn run_flp_with_input(
+    verify_key: &[u8; 16],
+    mastic: &MasticHistogram,
+    input: usize,
+) -> Result<bool, FlpError> {
     // 1. The Prover chooses a measurement and secret shares the input.
-    let input: Vec<Field128> = typ.encode_measurement(&input)?;
+    let input = mastic.encode_measurement(&input).unwrap();
     let input_0 = input
         .iter()
         .map(|_| Field128::from(rand::thread_rng().gen::<u128>()))
@@ -45,12 +48,12 @@ where
 
     // 2. The Prover generates prove_rand and query_rand (should be unique per proof). The Prover
     //    uses prover_rand to generate the proof. Finally, the Prover secret shares the proof.
-    let prove_rand = random_vector(typ.prove_rand_len()).unwrap();
+    let prove_rand = random_vector(mastic.prove_rand_len()).unwrap();
     let query_rand_xof = XofShake128::init(&verify_key, &nonce);
     let query_rand: Vec<Field128> = query_rand_xof
         .clone()
         .into_seed_stream()
-        .into_field_vec(typ.query_rand_len());
+        .into_field_vec(mastic.query_rand_len());
     let mut vidpf_seeds = ([0u8; 16], [0u8; 16]);
     thread_rng().fill(&mut vidpf_seeds.0);
     thread_rng().fill(&mut vidpf_seeds.1);
@@ -74,9 +77,9 @@ where
     let joint_rand_xof = XofShake128::init(&jr_parts[0], &jr_parts[1]);
     let joint_rand: Vec<Field128> = joint_rand_xof
         .into_seed_stream()
-        .into_field_vec(typ.joint_rand_len());
+        .into_field_vec(mastic.joint_rand_len());
 
-    let proof = typ.prove(&input, &prove_rand, &joint_rand).unwrap();
+    let proof = mastic.prove(&input, &prove_rand, &joint_rand).unwrap();
     let proof_0 = proof
         .iter()
         .map(|_| Field128::from(rand::thread_rng().gen::<u128>()))
@@ -90,10 +93,10 @@ where
     // 3. The Verifiers are provided with the nonce for each Client and can generate the query_rand
     //    (should be the same between the Verifiers). Each Verifier queries the input and proof
     //    shares and receives a verifier_share.
-    let verifier_0 = typ
+    let verifier_0 = mastic
         .query(&input_0, &proof_0, &query_rand, &joint_rand, 2)
         .unwrap();
-    let verifier_1 = typ
+    let verifier_1 = mastic
         .query(&input_1, &proof_1, &query_rand, &joint_rand, 2)
         .unwrap();
 
@@ -104,5 +107,5 @@ where
         .map(|(v1, v2)| v1 + v2)
         .collect::<Vec<_>>();
 
-    typ.decide(&verifier)
+    mastic.decide(&verifier)
 }

@@ -1,6 +1,6 @@
 {
     "data_bytes": 1,
-    "range_bits": 2,
+    "hist_buckets": 4,
     "threshold": 0.01,
     "server_0": "0.0.0.0:8000",
     "server_1": "0.0.0.0:8001",

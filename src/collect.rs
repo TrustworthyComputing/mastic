@@ -2,11 +2,6 @@ use blake3::hash;
 use prio::{
     codec::Encode,
     field::Field128,
-    flp::{
-        gadgets::{Mul, ParallelSum},
-        types::Histogram,
-        Type,
-    },
     vdaf::xof::{IntoFieldVec, Xof, XofShake128},
 };
 use rand_core::RngCore;
@@ -14,7 +9,7 @@ use rayon::prelude::*;
 use rs_merkle::{Hasher, MerkleTree};
 use serde::{Deserialize, Serialize};
 
-use crate::{prg, vec_add, vec_sub, vidpf, xor_in_place, xor_vec, HASH_SIZE};
+use crate::{prg, vec_add, vec_sub, vidpf, xor_in_place, xor_vec, MasticHistogram, HASH_SIZE};
 
 #[derive(Clone)]
 pub struct HashAlg {}
@@ -47,9 +42,8 @@ unsafe impl<Field128> Sync for TreeNode<Field128> {}
 
 #[derive(Clone)]
 pub struct KeyCollection {
-    /// The type of the FLP. This sum type. Each measurement is a integer in [0, 2^bits) and the
-    /// aggregate is the sum of the measurements.
-    typ: Histogram<Field128, ParallelSum<Field128, Mul<Field128>>>,
+    /// The type of the FLP.
+    mastic: MasticHistogram,
 
     /// The ID of the server (0 or 1).
     server_id: i8,
@@ -94,14 +88,14 @@ pub struct Result {
 
 impl KeyCollection {
     pub fn new(
-        typ: Histogram<Field128, ParallelSum<Field128, Mul<Field128>>>,
+        mastic: MasticHistogram,
         server_id: i8,
         _seed: &prg::PrgSeed,
         depth: usize,
         verify_key: [u8; 16],
     ) -> KeyCollection {
         KeyCollection {
-            typ,
+            mastic,
             server_id,
             verify_key,
             depth,
@@ -156,12 +150,16 @@ impl KeyCollection {
             .par_iter()
             .enumerate()
             .map(|(i, key)| {
-                key.1
-                    .eval_bit(&parent.key_states[i], dir, &bit_str, self.typ.input_len())
+                key.1.eval_bit(
+                    &parent.key_states[i],
+                    dir,
+                    &bit_str,
+                    self.mastic.input_len(),
+                )
             })
             .unzip();
 
-        let mut child_val = vec![Field128::from(0); &self.typ.input_len() + 1];
+        let mut child_val = vec![Field128::from(0); &self.mastic.input_len() + 1];
         key_values
             .iter()
             .zip(&self.keys)
@@ -204,7 +202,7 @@ impl KeyCollection {
                 let y_p0 = &node_left.key_values[client_index];
                 let y_p1 = &node_right.key_values[client_index];
 
-                let mut beta_share = vec![Field128::from(0); self.typ.input_len()];
+                let mut beta_share = vec![Field128::from(0); self.mastic.input_len()];
                 vec_add(&mut beta_share, y_p0);
                 vec_add(&mut beta_share, y_p1);
 
@@ -215,7 +213,7 @@ impl KeyCollection {
                 let query_rand: Vec<Field128> = query_rand_xof
                     .clone()
                     .into_seed_stream()
-                    .into_field_vec(self.typ.query_rand_len());
+                    .into_field_vec(self.mastic.query_rand_len());
 
                 let mut jr_parts = self.jr_parts[client_index];
                 if self.server_id == 0 {
@@ -239,10 +237,10 @@ impl KeyCollection {
                 let joint_rand_xof = XofShake128::init(&jr_parts[0], &jr_parts[1]);
                 let joint_rand: Vec<Field128> = joint_rand_xof
                     .into_seed_stream()
-                    .into_field_vec(self.typ.joint_rand_len());
+                    .into_field_vec(self.mastic.joint_rand_len());
 
                 // Compute the flp_verifier_share.
-                self.typ
+                self.mastic
                     .query(&beta_share, flp_proof_share, &query_rand, &joint_rand, 2)
                     .unwrap()
             })
@@ -308,13 +306,13 @@ impl KeyCollection {
                         let y_p0 = &node_left.key_values[client_index];
                         let y_p1 = &node_right.key_values[client_index];
 
-                        let mut value_check = vec![Field128::from(0); &self.typ.input_len() + 1];
+                        let mut value_check = vec![Field128::from(0); &self.mastic.input_len() + 1];
                         if level == 0 {
                             // (1 - server_id) + (-1)^server_id * (- y^{p||0} - y^{p||1})
                             if self.server_id == 0 {
                                 vec_add(
                                     &mut value_check,
-                                    &vec![Field128::from(1); &self.typ.input_len() + 1],
+                                    &vec![Field128::from(1); &self.mastic.input_len() + 1],
                                 );
                                 vec_sub(&mut value_check, y_p0);
                                 vec_sub(&mut value_check, y_p1);
@@ -361,10 +359,10 @@ impl KeyCollection {
                     if level == 0 {
                         xor_in_place(
                             &mut check,
-                            &checks_for_prefix[client_index][self.typ.input_len()].get_encoded(),
+                            &checks_for_prefix[client_index][self.mastic.input_len()].get_encoded(),
                         );
                     } else {
-                        for i in 0..self.typ.input_len() {
+                        for i in 0..self.mastic.input_len() {
                             xor_in_place(
                                 &mut check,
                                 &checks_for_prefix[client_index][i].get_encoded(),

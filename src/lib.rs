@@ -6,11 +6,110 @@ pub mod vidpf;
 
 extern crate lazy_static;
 
-use prio::field::Field128;
+use prio::{
+    field::Field128,
+    flp::{
+        gadgets::{Mul, ParallelSum},
+        types::{Histogram, Sum},
+        FlpError,
+    },
+    vdaf::VdafError,
+};
 
 pub use crate::rpc::CollectorClient;
 
 pub const HASH_SIZE: usize = 16;
+
+#[derive(Clone, Debug)]
+pub struct Mastic<T>
+where
+    T: prio::flp::Type,
+{
+    typ: T,
+}
+
+impl<T> Mastic<T>
+where
+    T: prio::flp::Type,
+{
+    /// Construct an instance of this MasticFlp VDAF with the given number of aggregators, number of
+    /// proofs to generate and verify, the algorithm ID, and the underlying type.
+    pub fn new(typ: T) -> Result<Self, VdafError> {
+        Ok(Self { typ })
+    }
+
+    pub fn encode_measurement(
+        &self,
+        measurement: &T::Measurement,
+    ) -> Result<Vec<T::Field>, VdafError> {
+        Ok(self.typ.encode_measurement(measurement)?)
+    }
+
+    pub fn input_len(&self) -> usize {
+        self.typ.input_len()
+    }
+
+    pub fn joint_rand_len(&self) -> usize {
+        self.typ.joint_rand_len()
+    }
+
+    pub fn query_rand_len(&self) -> usize {
+        self.typ.query_rand_len()
+    }
+
+    pub fn prove_rand_len(&self) -> usize {
+        self.typ.prove_rand_len()
+    }
+
+    pub fn prove(
+        &self,
+        input: &[T::Field],
+        prove_rand: &[T::Field],
+        joint_rand: &[T::Field],
+    ) -> Result<Vec<T::Field>, FlpError> {
+        self.typ.prove(input, prove_rand, joint_rand)
+    }
+
+    pub fn query(
+        &self,
+        input: &[T::Field],
+        proof: &[T::Field],
+        query_rand: &[T::Field],
+        joint_rand: &[T::Field],
+        num_shares: usize,
+    ) -> Result<Vec<T::Field>, FlpError> {
+        self.typ
+            .query(input, proof, query_rand, joint_rand, num_shares)
+    }
+
+    pub fn decide(&self, verifier: &[T::Field]) -> Result<bool, FlpError> {
+        self.typ.decide(verifier)
+    }
+}
+
+/// The histogram type. Each measurement is an integer in `[0, length)` and the result is a
+/// histogram counting the number of occurrences of each measurement.
+pub type MasticSum = Mastic<Sum<Field128>>;
+
+impl MasticSum {
+    /// Constructs an instance of MasticHistogram with the given number of aggregators,
+    /// number of buckets, and parallel sum gadget chunk length.
+    pub fn new_sum(bits: usize) -> Result<Self, VdafError> {
+        Mastic::new(Sum::new(bits)?)
+    }
+}
+
+/// The histogram type. Each measurement is an integer in `[0, length)` and the result is a
+/// histogram counting the number of occurrences of each measurement.
+pub type MasticHistogram = Mastic<Histogram<Field128, ParallelSum<Field128, Mul<Field128>>>>;
+
+impl MasticHistogram {
+    /// Constructs an instance of MasticHistogram with the given number of aggregators,
+    /// number of buckets, and parallel sum gadget chunk length.
+    pub fn new_histogram(length: usize, chunk_length: usize) -> Result<Self, VdafError> {
+        Mastic::new(Histogram::new(length, chunk_length)?)
+    }
+}
 
 impl crate::prg::FromRng for Field128 {
     fn from_rng(&mut self, rng: &mut impl rand::Rng) {

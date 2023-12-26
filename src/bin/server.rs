@@ -12,12 +12,9 @@ use mastic::{
         GetProofsRequest, ResetRequest, RunFlpQueriesRequest, TreeCrawlLastRequest,
         TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
     },
-    HASH_SIZE,
+    Mastic, HASH_SIZE,
 };
-use prio::{
-    field::Field128,
-    flp::{gadgets::ParallelSum, types::Histogram},
-};
+use prio::field::Field128;
 use tarpc::{
     context,
     serde_transport::tcp,
@@ -40,7 +37,7 @@ impl Collector for CollectorServer {
     async fn reset(self, _: context::Context, req: ResetRequest) -> String {
         let mut coll = self.arc.lock().unwrap();
         *coll = collect::KeyCollection::new(
-            Histogram::<Field128, ParallelSum<_, _>>::new(req.hist_buckets, 2).unwrap(),
+            Mastic::new_histogram(req.hist_buckets, 2).unwrap(),
             self.server_id,
             &self.seed,
             self.data_bytes,
@@ -165,10 +162,15 @@ async fn main() -> io::Result<()> {
     };
 
     let seed = prg::PrgSeed { key: [1u8; 16] };
-    let typ = Histogram::<Field128, ParallelSum<_, _>>::new(cfg.hist_buckets, 2).unwrap();
+    let mastic = Mastic::new_histogram(cfg.hist_buckets, 2).unwrap();
 
-    let coll =
-        collect::KeyCollection::new(typ.clone(), server_id, &seed, cfg.data_bytes * 8, [0u8; 16]);
+    let coll = collect::KeyCollection::new(
+        mastic.clone(),
+        server_id,
+        &seed,
+        cfg.data_bytes * 8,
+        [0u8; 16],
+    );
     let arc = Arc::new(Mutex::new(coll));
 
     println!("Server {} running at {:?}", server_id, server_addr);

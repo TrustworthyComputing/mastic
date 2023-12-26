@@ -12,15 +12,10 @@ use mastic::{
         TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
     },
     vidpf::{self, VidpfKey},
-    CollectorClient,
+    CollectorClient, Mastic, MasticHistogram,
 };
 use prio::{
     field::{random_vector, Field128},
-    flp::{
-        gadgets::{Mul, ParallelSum},
-        types::Histogram,
-        Type,
-    },
     vdaf::xof::{IntoFieldVec, Xof, XofShake128},
 };
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
@@ -46,15 +41,15 @@ fn sample_string(len: usize) -> String {
 
 fn generate_keys(
     cfg: &config::Config,
-    typ: &Histogram<Field128, ParallelSum<Field128, Mul<Field128>>>,
+    mastic: &MasticHistogram,
 ) -> ((Vec<VidpfKey>, Vec<VidpfKey>), Vec<Vec<Field128>>) {
     let (keys, values): ((Vec<VidpfKey>, Vec<VidpfKey>), Vec<Vec<Field128>>) =
         rayon::iter::repeat(0)
             .take(cfg.unique_buckets)
             .map(|_| {
                 // Generate a random number in the specified range
-                let beta = rand::thread_rng().gen_range(1..cfg.hist_buckets);
-                let input_beta: Vec<Field128> = typ.encode_measurement(&beta).unwrap();
+                let beta = rand::thread_rng().gen_range(0..cfg.hist_buckets);
+                let input_beta = mastic.encode_measurement(&beta).unwrap();
 
                 (
                     VidpfKey::gen_from_str(&sample_string(cfg.data_bytes * 8), &input_beta),
@@ -100,7 +95,7 @@ fn generate_randomness(
 }
 
 fn generate_proofs(
-    typ: &Histogram<Field128, ParallelSum<Field128, Mul<Field128>>>,
+    mastic: &MasticHistogram,
     beta_values: &Vec<Vec<Field128>>,
     all_jr_parts: &Vec<[[u8; 16]; 2]>,
 ) -> (Vec<Vec<Field128>>, Vec<Vec<Field128>>) {
@@ -111,10 +106,10 @@ fn generate_proofs(
             let joint_rand_xof = XofShake128::init(&jr_parts[0], &jr_parts[1]);
             let joint_rand: Vec<Field128> = joint_rand_xof
                 .into_seed_stream()
-                .into_field_vec(typ.joint_rand_len());
+                .into_field_vec(mastic.joint_rand_len());
 
-            let prove_rand = random_vector(typ.prove_rand_len()).unwrap();
-            let proof = typ.prove(input_beta, &prove_rand, &joint_rand).unwrap();
+            let prove_rand = random_vector(mastic.prove_rand_len()).unwrap();
+            let proof = mastic.prove(input_beta, &prove_rand, &joint_rand).unwrap();
 
             let proof_0 = proof
                 .iter()
@@ -232,7 +227,7 @@ async fn add_keys(
 
 async fn run_flp_queries(
     cfg: &config::Config,
-    typ: &Histogram<Field128, ParallelSum<Field128, Mul<Field128>>>,
+    mastic: &MasticHistogram,
     client_0: &CollectorClient,
     client_1: &CollectorClient,
     num_clients: usize,
@@ -260,7 +255,7 @@ async fn run_flp_queries(
                         .map(|(&v1, &v2)| v1 + v2)
                         .collect::<Vec<_>>();
 
-                    typ.decide(&flp_verifier).unwrap()
+                    mastic.decide(&flp_verifier).unwrap()
                 })
                 .collect::<Vec<_>>(),
         );
@@ -279,7 +274,7 @@ async fn run_flp_queries(
 
 async fn run_level(
     cfg: &config::Config,
-    typ: &Histogram<Field128, ParallelSum<Field128, Mul<Field128>>>,
+    mastic: &MasticHistogram,
     client_0: &CollectorClient,
     client_1: &CollectorClient,
     num_clients: usize,
@@ -304,7 +299,7 @@ async fn run_level(
 
         assert_eq!(cnt_values_0.len(), cnt_values_1.len());
         keep = collect::KeyCollection::keep_values(
-            typ.input_len(),
+            mastic.input_len(),
             threshold,
             &cnt_values_0,
             &cnt_values_1,
@@ -351,7 +346,7 @@ async fn run_level(
 
 async fn run_level_last(
     cfg: &config::Config,
-    typ: &Histogram<Field128, ParallelSum<Field128, Mul<Field128>>>,
+    mastic: &MasticHistogram,
     client_0: &CollectorClient,
     client_1: &CollectorClient,
     num_clients: usize,
@@ -364,7 +359,7 @@ async fn run_level_last(
     let (cnt_values_0, cnt_values_1) = try_join!(resp_0, resp_1).unwrap();
     assert_eq!(cnt_values_0.len(), cnt_values_1.len());
     let keep = collect::KeyCollection::keep_values(
-        typ.input_len(),
+        mastic.input_len(),
         threshold,
         &cnt_values_0,
         &cnt_values_1,
@@ -401,9 +396,9 @@ async fn run_level_last(
     let resp_0 = client_0.final_shares(long_context(), req.clone());
     let resp_1 = client_1.final_shares(long_context(), req);
     let (shares_0, shares_1) = try_join!(resp_0, resp_1).unwrap();
-    for res in &collect::KeyCollection::final_values(typ.input_len(), &shares_0, &shares_1) {
+    for res in &collect::KeyCollection::final_values(mastic.input_len(), &shares_0, &shares_1) {
         let bits = mastic::bits_to_bitstring(&res.path);
-        if res.value[typ.input_len() - 1] > Field128::from(0) {
+        if res.value[mastic.input_len() - 1] > Field128::from(0) {
             println!("Value ({}) \t Count: {:?}", bits, res.value);
         }
     }
@@ -427,14 +422,14 @@ async fn main() -> io::Result<()> {
     )
     .spawn();
 
-    let typ = Histogram::<Field128, ParallelSum<_, _>>::new(cfg.hist_buckets, 2).unwrap();
+    let mastic = Mastic::new_histogram(cfg.hist_buckets, 2).unwrap();
 
     let start = Instant::now();
     println!("Generating keys...");
-    let ((keys_0, keys_1), beta_values) = generate_keys(&cfg, &typ);
+    let ((keys_0, keys_1), beta_values) = generate_keys(&cfg, &mastic);
     let delta = start.elapsed().as_secs_f64();
     let (nonces, jr_parts) = generate_randomness((&keys_0, &keys_1));
-    let (proofs_0, proofs_1) = generate_proofs(&typ, &beta_values, &jr_parts);
+    let (proofs_0, proofs_1) = generate_proofs(&mastic, &beta_values, &jr_parts);
     println!(
         "Generated {:?} keys in {:?} seconds ({:?} sec/key)",
         keys_0.len(),
@@ -482,9 +477,9 @@ async fn main() -> io::Result<()> {
     for level in 0..bit_len - 1 {
         let start_level = Instant::now();
         if level == 0 {
-            run_flp_queries(&cfg, &typ, &client_0, &client_1, num_clients).await?;
+            run_flp_queries(&cfg, &mastic, &client_0, &client_1, num_clients).await?;
         }
-        run_level(&cfg, &typ, &client_0, &client_1, num_clients).await?;
+        run_level(&cfg, &mastic, &client_0, &client_1, num_clients).await?;
         println!(
             "Time for level {}: {:?}",
             level,
@@ -498,7 +493,7 @@ async fn main() -> io::Result<()> {
     );
 
     let start_last = Instant::now();
-    run_level_last(&cfg, &typ, &client_0, &client_1, num_clients).await?;
+    run_level_last(&cfg, &mastic, &client_0, &client_1, num_clients).await?;
     println!(
         "Time for last level: {:?}",
         start_last.elapsed().as_secs_f64()

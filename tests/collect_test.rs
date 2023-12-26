@@ -1,12 +1,4 @@
 use mastic::{collect::*, prg, *};
-use prio::{
-    field::Field128,
-    flp::{
-        gadgets::{Mul, ParallelSum},
-        types::Histogram,
-        Type,
-    },
-};
 use rand::{thread_rng, Rng};
 use rayon::prelude::*;
 
@@ -22,12 +14,12 @@ fn collect_test_eval_groups() {
     let mut verify_key = [0; 16];
     thread_rng().fill(&mut verify_key);
 
-    let typ = Histogram::<Field128, ParallelSum<Field128, Mul<Field128>>>::new(4, 2).unwrap();
-    let mut col_0 = KeyCollection::new(typ.clone(), 0, &seed, strlen, verify_key);
-    let mut col_1 = KeyCollection::new(typ.clone(), 1, &seed, strlen, verify_key);
+    let mastic = Mastic::new_histogram(4, 2).unwrap();
+    let mut col_0 = KeyCollection::new(mastic.clone(), 0, &seed, strlen, verify_key);
+    let mut col_1 = KeyCollection::new(mastic.clone(), 1, &seed, strlen, verify_key);
 
     for cstr in &client_strings {
-        let input_beta = typ.encode_measurement(&2).unwrap();
+        let input_beta = mastic.encode_measurement(&2).unwrap();
         let (keys_0, keys_1) = vidpf::VidpfKey::gen_from_str(&cstr, &input_beta);
         col_0.add_key(keys_0);
         col_1.add_key(keys_1);
@@ -45,7 +37,7 @@ fn collect_test_eval_groups() {
 
         assert_eq!(cnt_values_0.len(), cnt_values_1.len());
         let keep =
-            KeyCollection::keep_values(typ.input_len(), threshold, &cnt_values_0, &cnt_values_1);
+            KeyCollection::keep_values(mastic.input_len(), threshold, &cnt_values_0, &cnt_values_1);
 
         col_0.tree_prune(&keep);
         col_1.tree_prune(&keep);
@@ -66,7 +58,8 @@ fn collect_test_eval_groups() {
         .all(|(&h0, &h1)| h0 == h1);
     assert!(verified);
 
-    let keep = KeyCollection::keep_values(typ.input_len(), threshold, &cnt_values_0, &cnt_values_1);
+    let keep =
+        KeyCollection::keep_values(mastic.input_len(), threshold, &cnt_values_0, &cnt_values_1);
 
     col_0.tree_prune(&keep);
     col_1.tree_prune(&keep);
@@ -74,7 +67,7 @@ fn collect_test_eval_groups() {
     let shares_0 = col_0.final_shares();
     let shares_1 = col_1.final_shares();
 
-    for res in &KeyCollection::final_values(typ.input_len(), &shares_0, &shares_1) {
+    for res in &KeyCollection::final_values(mastic.input_len(), &shares_0, &shares_1) {
         println!("Path = {:?}", res.path);
         let s = crate::bits_to_string(&res.path);
         println!("fast: {:?} = {:?}", s, res.value);
@@ -105,14 +98,14 @@ fn collect_test_eval_full_groups() {
     let seed = prg::PrgSeed::random();
     let mut verify_key = [0; 16];
     thread_rng().fill(&mut verify_key);
-    let typ = Histogram::<Field128, ParallelSum<Field128, Mul<Field128>>>::new(10, 2).unwrap();
-    let mut col_0 = KeyCollection::new(typ.clone(), 0, &seed, strlen, verify_key);
-    let mut col_1 = KeyCollection::new(typ.clone(), 1, &seed, strlen, verify_key);
+    let mastic = Mastic::new_histogram(4, 2).unwrap();
+    let mut col_0 = KeyCollection::new(mastic.clone(), 0, &seed, strlen, verify_key);
+    let mut col_1 = KeyCollection::new(mastic.clone(), 1, &seed, strlen, verify_key);
 
     let mut keys = vec![];
     println!("Starting to generate keys");
     for s in &client_strings {
-        let input_beta = typ.encode_measurement(&1).unwrap();
+        let input_beta = mastic.encode_measurement(&1).unwrap();
         keys.push(vidpf::VidpfKey::gen_from_str(&s, &input_beta));
     }
     println!("Done generating keys");
@@ -141,7 +134,7 @@ fn collect_test_eval_full_groups() {
 
         assert_eq!(cnt_values_0.len(), cnt_values_1.len());
         let keep =
-            KeyCollection::keep_values(typ.input_len(), threshold, &cnt_values_0, &cnt_values_1);
+            KeyCollection::keep_values(mastic.input_len(), threshold, &cnt_values_0, &cnt_values_1);
 
         col_0.tree_prune(&keep);
         col_1.tree_prune(&keep);
@@ -162,7 +155,8 @@ fn collect_test_eval_full_groups() {
         .all(|(&h0, &h1)| h0 == h1);
     assert!(verified);
 
-    let keep = KeyCollection::keep_values(typ.input_len(), threshold, &cnt_values_0, &cnt_values_1);
+    let keep =
+        KeyCollection::keep_values(mastic.input_len(), threshold, &cnt_values_0, &cnt_values_1);
 
     col_0.tree_prune(&keep);
     col_1.tree_prune(&keep);
@@ -170,7 +164,7 @@ fn collect_test_eval_full_groups() {
     let s0 = col_0.final_shares();
     let s1 = col_1.final_shares();
 
-    for res in &KeyCollection::final_values(typ.input_len(), &s0, &s1) {
+    for res in &KeyCollection::final_values(mastic.input_len(), &s0, &s1) {
         println!("Path = {:?}", res.path);
         let s = crate::bits_to_string(&res.path);
         println!("Value: {:?} = {:?}", s, res.value);
