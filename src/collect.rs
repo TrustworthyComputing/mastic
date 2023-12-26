@@ -2,7 +2,11 @@ use blake3::hash;
 use prio::{
     codec::Encode,
     field::Field128,
-    flp::{types::Sum, Type},
+    flp::{
+        gadgets::{Mul, ParallelSum},
+        types::Histogram,
+        Type,
+    },
     vdaf::xof::{IntoFieldVec, Xof, XofShake128},
 };
 use rand_core::RngCore;
@@ -45,7 +49,7 @@ unsafe impl<Field128> Sync for TreeNode<Field128> {}
 pub struct KeyCollection {
     /// The type of the FLP. This sum type. Each measurement is a integer in [0, 2^bits) and the
     /// aggregate is the sum of the measurements.
-    typ: Sum<Field128>,
+    typ: Histogram<Field128, ParallelSum<Field128, Mul<Field128>>>,
 
     /// The ID of the server (0 or 1).
     server_id: i8,
@@ -90,7 +94,7 @@ pub struct Result {
 
 impl KeyCollection {
     pub fn new(
-        typ: Sum<Field128>,
+        typ: Histogram<Field128, ParallelSum<Field128, Mul<Field128>>>,
         server_id: i8,
         _seed: &prg::PrgSeed,
         depth: usize,

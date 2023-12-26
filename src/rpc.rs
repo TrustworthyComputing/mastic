@@ -6,6 +6,7 @@ use crate::{collect, vidpf, HASH_SIZE};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ResetRequest {
     pub verify_key: [u8; 16],
+    pub hist_buckets: usize,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

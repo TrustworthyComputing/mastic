@@ -59,7 +59,7 @@ system. An example of one such file is in `src/bin/config.json`. The contents of
 ```bash
 {
   "data_bytes": 4,
-  "range_bits": 2,
+  "hist_buckets": 2,
   "threshold": 0.01,
   "server_0": "0.0.0.0:8000",
   "server_1": "0.0.0.0:8001",
@@ -72,8 +72,7 @@ system. An example of one such file is in `src/bin/config.json`. The contents of
 
 The parameters are:
 * `data_bytes`: Number of bytes of each string (x8 for bits).
-* `range_bits`: Number of bits for the FLP range check (e.g., for `range_bits = 3` the FLP checks
-  that $0 \leq β < 2^3$).
+* `hist_buckets`: Number of histogram buckets for the FLP range check.
 * `threshold`: The servers will output the collection of strings that more than a `threshold` of
   clients hold.
 * `server0` and  `server1`: The `IP:port` of tuple for the two servers. The servers can run on

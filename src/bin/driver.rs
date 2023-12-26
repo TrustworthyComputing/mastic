@@ -16,7 +16,11 @@ use mastic::{
 };
 use prio::{
     field::{random_vector, Field128},
-    flp::{types::Sum, Type},
+    flp::{
+        gadgets::{Mul, ParallelSum},
+        types::Histogram,
+        Type,
+    },
     vdaf::xof::{IntoFieldVec, Xof, XofShake128},
 };
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
@@ -42,14 +46,14 @@ fn sample_string(len: usize) -> String {
 
 fn generate_keys(
     cfg: &config::Config,
-    typ: &Sum<Field128>,
+    typ: &Histogram<Field128, ParallelSum<Field128, Mul<Field128>>>,
 ) -> ((Vec<VidpfKey>, Vec<VidpfKey>), Vec<Vec<Field128>>) {
     let (keys, values): ((Vec<VidpfKey>, Vec<VidpfKey>), Vec<Vec<Field128>>) =
         rayon::iter::repeat(0)
             .take(cfg.unique_buckets)
             .map(|_| {
                 // Generate a random number in the specified range
-                let beta = rand::thread_rng().gen_range(1..(1 << cfg.range_bits));
+                let beta = rand::thread_rng().gen_range(1..cfg.hist_buckets);
                 let input_beta: Vec<Field128> = typ.encode_measurement(&beta).unwrap();
 
                 (
@@ -96,7 +100,7 @@ fn generate_randomness(
 }
 
 fn generate_proofs(
-    typ: &Sum<Field128>,
+    typ: &Histogram<Field128, ParallelSum<Field128, Mul<Field128>>>,
     beta_values: &Vec<Vec<Field128>>,
     all_jr_parts: &Vec<[[u8; 16]; 2]>,
 ) -> (Vec<Vec<Field128>>, Vec<Vec<Field128>>) {
@@ -128,12 +132,14 @@ fn generate_proofs(
 }
 
 async fn reset_servers(
+    cfg: &config::Config,
     client_0: &CollectorClient,
     client_1: &CollectorClient,
     verify_key: &[u8; 16],
 ) -> io::Result<()> {
     let req = ResetRequest {
         verify_key: *verify_key,
+        hist_buckets: cfg.hist_buckets,
     };
     let resp_0 = client_0.reset(long_context(), req.clone());
     let resp_1 = client_1.reset(long_context(), req);
@@ -226,7 +232,7 @@ async fn add_keys(
 
 async fn run_flp_queries(
     cfg: &config::Config,
-    typ: &Sum<Field128>,
+    typ: &Histogram<Field128, ParallelSum<Field128, Mul<Field128>>>,
     client_0: &CollectorClient,
     client_1: &CollectorClient,
     num_clients: usize,
@@ -273,7 +279,7 @@ async fn run_flp_queries(
 
 async fn run_level(
     cfg: &config::Config,
-    typ: &Sum<Field128>,
+    typ: &Histogram<Field128, ParallelSum<Field128, Mul<Field128>>>,
     client_0: &CollectorClient,
     client_1: &CollectorClient,
     num_clients: usize,
@@ -345,7 +351,7 @@ async fn run_level(
 
 async fn run_level_last(
     cfg: &config::Config,
-    typ: &Sum<Field128>,
+    typ: &Histogram<Field128, ParallelSum<Field128, Mul<Field128>>>,
     client_0: &CollectorClient,
     client_1: &CollectorClient,
     num_clients: usize,
@@ -421,7 +427,7 @@ async fn main() -> io::Result<()> {
     )
     .spawn();
 
-    let typ = Sum::<Field128>::new(cfg.range_bits).unwrap();
+    let typ = Histogram::<Field128, ParallelSum<_, _>>::new(cfg.hist_buckets, 2).unwrap();
 
     let start = Instant::now();
     println!("Generating keys...");
@@ -439,7 +445,7 @@ async fn main() -> io::Result<()> {
     let mut verify_key = [0; 16];
     thread_rng().fill(&mut verify_key);
 
-    reset_servers(&client_0, &client_1, &verify_key).await?;
+    reset_servers(&cfg, &client_0, &client_1, &verify_key).await?;
 
     let mut left_to_go = num_clients;
     let reqs_in_flight = 1000;

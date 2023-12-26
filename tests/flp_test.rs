@@ -1,6 +1,6 @@
 use prio::{
     field::{random_vector, Field128},
-    flp::{types::Sum, FlpError},
+    flp::{gadgets::ParallelSum, types::Histogram, FlpError},
     vdaf::xof::{IntoFieldVec, Xof, XofShake128},
 };
 use rand::{thread_rng, Rng};
@@ -8,25 +8,10 @@ use rand_core::RngCore;
 use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 #[test]
-fn flp_bool_beta() {
-    // The same verify_key for the Aggregators. Needs to be random for different sessions.
-    let mut verify_key = [0; 16];
-    thread_rng().fill(&mut verify_key);
-
-    let typ = Sum::<Field128>::new(1).unwrap();
-
-    assert!(run_flp_with_input(&verify_key, &typ, 0).unwrap());
-    assert!(run_flp_with_input(&verify_key, &typ, 1).unwrap());
-
-    // The following two should panic with an FLP error as the input is not in range.
-    assert!(run_flp_with_input(&verify_key, &typ, 2).is_err());
-    assert!(run_flp_with_input(&verify_key, &typ, 100).is_err());
-}
-
-#[test]
-fn flp_random_beta_in_range() {
-    let bits = 2; // [0, 2^2)
-    let typ = Sum::<Field128>::new(bits).unwrap();
+fn histograms() {
+    let buckets = 10;
+    let chunk_length = 2;
+    let typ = Histogram::<Field128, ParallelSum<_, _>>::new(buckets, chunk_length).unwrap();
 
     // The same verify_key for the Aggregators. Needs to be random for different sessions.
     let mut verify_key = [0; 16];
@@ -36,15 +21,12 @@ fn flp_random_beta_in_range() {
     assert!(run_flp_with_input(&verify_key, &typ, 1).unwrap());
     assert!(run_flp_with_input(&verify_key, &typ, 2).unwrap());
     assert!(run_flp_with_input(&verify_key, &typ, 3).unwrap());
-
-    // The following two should panic with an FLP error as the input is not in range.
-    assert!(run_flp_with_input(&verify_key, &typ, 4).is_err());
-    assert!(run_flp_with_input(&verify_key, &typ, 100).is_err());
+    assert!(run_flp_with_input(&verify_key, &typ, 4).unwrap());
 }
 
-fn run_flp_with_input<T>(verify_key: &[u8; 16], typ: &T, input: u128) -> Result<bool, FlpError>
+fn run_flp_with_input<T>(verify_key: &[u8; 16], typ: &T, input: usize) -> Result<bool, FlpError>
 where
-    T: prio::flp::Type<Field = Field128, Measurement = u128>,
+    T: prio::flp::Type<Field = Field128, Measurement = usize>,
 {
     // 1. The Prover chooses a measurement and secret shares the input.
     let input: Vec<Field128> = typ.encode_measurement(&input)?;
