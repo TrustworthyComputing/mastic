@@ -1,7 +1,7 @@
 use mastic::{collect::*, prg, *};
 use prio::{
-    field::Field128,
-    flp::{types::Sum, Type},
+    field::Field64,
+    flp::{types::Count, Type},
 };
 use rand::{thread_rng, Rng};
 use rayon::prelude::*;
@@ -18,12 +18,12 @@ fn collect_test_eval_groups() {
     let mut verify_key = [0; 16];
     thread_rng().fill(&mut verify_key);
 
-    let typ = Sum::<Field128>::new(2).unwrap();
+    let typ = Count::<Field64>::new();
     let mut col_0 = KeyCollection::new(typ.clone(), 0, &seed, strlen, verify_key);
     let mut col_1 = KeyCollection::new(typ.clone(), 1, &seed, strlen, verify_key);
 
     for cstr in &client_strings {
-        let input_beta = typ.encode_measurement(&3u128).unwrap();
+        let input_beta = typ.encode_measurement(&1).unwrap();
         let (keys_0, keys_1) = vidpf::VidpfKey::gen_from_str(&cstr, &input_beta);
         col_0.add_key(keys_0);
         col_1.add_key(keys_1);
@@ -76,8 +76,8 @@ fn collect_test_eval_groups() {
         println!("fast: {:?} = {:?}", s, res.value);
 
         match &s[..] {
-            "abdef" => assert_eq!(res.value, vec![4u128, 4u128, 4u128]),
-            "gZ???" => assert_eq!(res.value, vec![3u128, 3u128, 3u128]),
+            "abdef" => assert_eq!(res.value, vec![4, 4]),
+            "gZ???" => assert_eq!(res.value, vec![3, 3]),
             _ => {
                 println!("Unexpected string: '{:?}' = {:?}", s, res.value);
                 assert!(false);
@@ -101,14 +101,14 @@ fn collect_test_eval_full_groups() {
     let seed = prg::PrgSeed::random();
     let mut verify_key = [0; 16];
     thread_rng().fill(&mut verify_key);
-    let typ = Sum::<Field128>::new(2).unwrap();
+    let typ = Count::<Field64>::new();
     let mut col_0 = KeyCollection::new(typ.clone(), 0, &seed, strlen, verify_key);
     let mut col_1 = KeyCollection::new(typ.clone(), 1, &seed, strlen, verify_key);
 
     let mut keys = vec![];
     println!("Starting to generate keys");
     for s in &client_strings {
-        let input_beta = typ.encode_measurement(&1u128).unwrap();
+        let input_beta = typ.encode_measurement(&1u64).unwrap();
         keys.push(vidpf::VidpfKey::gen_from_str(&s, &input_beta));
     }
     println!("Done generating keys");

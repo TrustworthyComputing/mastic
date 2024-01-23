@@ -1,8 +1,8 @@
 use blake3::hash;
 use prio::{
     codec::Encode,
-    field::Field128,
-    flp::{types::Sum, Type},
+    field::Field64,
+    flp::{types::Count, Type},
     vdaf::xof::{IntoFieldVec, Xof, XofShake128},
 };
 use rand_core::RngCore;
@@ -24,28 +24,28 @@ impl Hasher for HashAlg {
 }
 
 #[derive(Clone)]
-struct TreeNode<Field128> {
+struct TreeNode<Field64> {
     /// The binary path for this node of the tree.
     path: Vec<bool>,
 
     /// The value of the node.
-    value: Vec<Field128>,
+    value: Vec<Field64>,
 
     /// The state of each client.
     key_states: Vec<vidpf::EvalState>,
 
     /// The value of each client.
-    key_values: Vec<Vec<Field128>>,
+    key_values: Vec<Vec<Field64>>,
 }
 
-unsafe impl<Field128> Send for TreeNode<Field128> {}
-unsafe impl<Field128> Sync for TreeNode<Field128> {}
+unsafe impl<Field64> Send for TreeNode<Field64> {}
+unsafe impl<Field64> Sync for TreeNode<Field64> {}
 
 #[derive(Clone)]
 pub struct KeyCollection {
     /// The type of the FLP. This sum type. Each measurement is a integer in [0, 2^bits) and the
     /// aggregate is the sum of the measurements.
-    typ: Sum<Field128>,
+    typ: Count<Field64>,
 
     /// The ID of the server (0 or 1).
     server_id: i8,
@@ -67,13 +67,13 @@ pub struct KeyCollection {
     jr_parts: Vec<[[u8; 16]; 2]>,
 
     // The FLP proof shares of the clients.
-    all_flp_proof_shares: Vec<Vec<Field128>>,
+    all_flp_proof_shares: Vec<Vec<Field64>>,
 
     /// The current evaluations of the tree.
-    frontier: Vec<TreeNode<Field128>>,
+    frontier: Vec<TreeNode<Field64>>,
 
     /// The previous evaluations of the tree. This is used when we detect malicious activity.
-    prev_frontier: Vec<TreeNode<Field128>>,
+    prev_frontier: Vec<TreeNode<Field64>>,
 
     /// The final VIDPF proofs of the clients.
     final_proofs: Vec<[u8; HASH_SIZE]>,
@@ -85,12 +85,12 @@ pub struct Result {
     pub path: Vec<bool>,
 
     /// The heavy-hitter value.
-    pub value: Vec<Field128>,
+    pub value: Vec<Field64>,
 }
 
 impl KeyCollection {
     pub fn new(
-        typ: Sum<Field128>,
+        typ: Count<Field64>,
         server_id: i8,
         _seed: &prg::PrgSeed,
         depth: usize,
@@ -117,7 +117,7 @@ impl KeyCollection {
 
     pub fn add_flp_proof_share(
         &mut self,
-        flp_proof_share: Vec<Field128>,
+        flp_proof_share: Vec<Field64>,
         nonce: [u8; 16],
         jr_parts: [[u8; 16]; 2],
     ) {
@@ -127,27 +127,27 @@ impl KeyCollection {
     }
 
     pub fn tree_init(&mut self) {
-        let mut root = TreeNode::<Field128> {
+        let mut root = TreeNode::<Field64> {
             path: vec![],
-            value: vec![Field128::from(0)],
+            value: vec![Field64::from(0)],
             key_states: vec![],
             key_values: vec![],
         };
 
         for k in &self.keys {
             root.key_states.push(k.1.eval_init());
-            root.key_values.push(vec![Field128::from(0)]);
+            root.key_values.push(vec![Field64::from(0)]);
         }
 
         self.frontier.clear();
         self.frontier.push(root);
     }
 
-    fn make_tree_node(&self, parent: &TreeNode<Field128>, dir: bool) -> TreeNode<Field128> {
+    fn make_tree_node(&self, parent: &TreeNode<Field64>, dir: bool) -> TreeNode<Field64> {
         let mut bit_str = crate::bits_to_bitstring(parent.path.as_slice());
         bit_str.push(if dir { '1' } else { '0' });
 
-        let (key_states, key_values): (Vec<vidpf::EvalState>, Vec<Vec<Field128>>) = self
+        let (key_states, key_values): (Vec<vidpf::EvalState>, Vec<Vec<Field64>>) = self
             .keys
             .par_iter()
             .enumerate()
@@ -157,14 +157,14 @@ impl KeyCollection {
             })
             .unzip();
 
-        let mut child_val = vec![Field128::from(0); &self.typ.input_len() + 1];
+        let mut child_val = vec![Field64::from(0); &self.typ.input_len() + 1];
         key_values
             .iter()
             .zip(&self.keys)
             .filter(|&(_, key)| key.0)
             .for_each(|(v, _)| vec_add(&mut child_val, v));
 
-        let mut child = TreeNode::<Field128> {
+        let mut child = TreeNode::<Field64> {
             path: parent.path.clone(),
             value: child_val,
             key_states,
@@ -176,7 +176,7 @@ impl KeyCollection {
         child
     }
 
-    pub fn run_flp_queries(&mut self, start: usize, end: usize) -> Vec<Vec<Field128>> {
+    pub fn run_flp_queries(&mut self, start: usize, end: usize) -> Vec<Vec<Field64>> {
         let level = self.frontier[0].path.len();
         assert_eq!(level, 0);
 
@@ -200,7 +200,7 @@ impl KeyCollection {
                 let y_p0 = &node_left.key_values[client_index];
                 let y_p1 = &node_right.key_values[client_index];
 
-                let mut beta_share = vec![Field128::from(0); self.typ.input_len()];
+                let mut beta_share = vec![Field64::from(0); self.typ.input_len()];
                 vec_add(&mut beta_share, y_p0);
                 vec_add(&mut beta_share, y_p1);
 
@@ -208,7 +208,7 @@ impl KeyCollection {
 
                 let query_rand_xof =
                     XofShake128::init(&self.verify_key, &self.nonces[client_index]);
-                let query_rand: Vec<Field128> = query_rand_xof
+                let query_rand: Vec<Field64> = query_rand_xof
                     .clone()
                     .into_seed_stream()
                     .into_field_vec(self.typ.query_rand_len());
@@ -233,7 +233,7 @@ impl KeyCollection {
                 }
 
                 let joint_rand_xof = XofShake128::init(&jr_parts[0], &jr_parts[1]);
-                let joint_rand: Vec<Field128> = joint_rand_xof
+                let joint_rand: Vec<Field64> = joint_rand_xof
                     .into_seed_stream()
                     .into_field_vec(self.typ.joint_rand_len());
 
@@ -250,7 +250,7 @@ impl KeyCollection {
         mut split_by: usize,
         malicious: &Vec<usize>,
         is_last: bool,
-    ) -> (Vec<Vec<Field128>>, Vec<Vec<u8>>, Vec<usize>) {
+    ) -> (Vec<Vec<Field64>>, Vec<Vec<u8>>, Vec<usize>) {
         if !malicious.is_empty() {
             println!("Malicious is not empty!!");
 
@@ -276,13 +276,13 @@ impl KeyCollection {
 
                 vec![child_0, child_1]
             })
-            .collect::<Vec<TreeNode<Field128>>>();
+            .collect::<Vec<TreeNode<Field64>>>();
 
         // These are summed evaluations y for different prefixes.
         let cnt_values = next_frontier
             .par_iter()
             .map(|node| node.value.clone())
-            .collect::<Vec<Vec<Field128>>>();
+            .collect::<Vec<Vec<Field64>>>();
 
         // For all prefixes, compute the checks for each client.
         let all_y_checks = self
@@ -304,13 +304,13 @@ impl KeyCollection {
                         let y_p0 = &node_left.key_values[client_index];
                         let y_p1 = &node_right.key_values[client_index];
 
-                        let mut value_check = vec![Field128::from(0); &self.typ.input_len() + 1];
+                        let mut value_check = vec![Field64::from(0); &self.typ.input_len() + 1];
                         if level == 0 {
                             // (1 - server_id) + (-1)^server_id * (- y^{p||0} - y^{p||1})
                             if self.server_id == 0 {
                                 vec_add(
                                     &mut value_check,
-                                    &vec![Field128::from(1); &self.typ.input_len() + 1],
+                                    &vec![Field64::from(1); &self.typ.input_len() + 1],
                                 );
                                 vec_sub(&mut value_check, y_p0);
                                 vec_sub(&mut value_check, y_p1);
@@ -422,7 +422,7 @@ impl KeyCollection {
         (cnt_values, mtree_roots, mtree_indices)
     }
 
-    pub fn tree_crawl_last(&mut self) -> Vec<Vec<Field128>> {
+    pub fn tree_crawl_last(&mut self) -> Vec<Vec<Field64>> {
         let next_frontier = self
             .frontier
             .par_iter()
@@ -433,7 +433,7 @@ impl KeyCollection {
 
                 vec![child_0, child_1]
             })
-            .collect::<Vec<TreeNode<Field128>>>();
+            .collect::<Vec<TreeNode<Field64>>>();
 
         self.final_proofs = self
             .keys
@@ -455,7 +455,7 @@ impl KeyCollection {
         self.frontier
             .par_iter()
             .map(|node| node.value.clone())
-            .collect::<Vec<Vec<Field128>>>()
+            .collect::<Vec<Vec<Field64>>>()
     }
 
     pub fn get_proofs(&self, start: usize, end: usize) -> Vec<[u8; HASH_SIZE]> {
@@ -497,8 +497,8 @@ impl KeyCollection {
     pub fn keep_values(
         input_len: usize,
         threshold: u64,
-        cnt_values_0: &[Vec<Field128>],
-        cnt_values_1: &[Vec<Field128>],
+        cnt_values_0: &[Vec<Field64>],
+        cnt_values_1: &[Vec<Field64>],
     ) -> Vec<bool> {
         cnt_values_0
             .par_iter()
@@ -506,7 +506,7 @@ impl KeyCollection {
             .map(|(value_0, value_1)| {
                 let v = value_0[input_len] + value_1[input_len];
 
-                u128::from(v) as u64 >= threshold
+                u64::from(v) >= threshold
             })
             .collect::<Vec<_>>()
     }
@@ -535,7 +535,7 @@ impl KeyCollection {
             .map(|(r0, r1)| {
                 assert_eq!(r0.path, r1.path);
 
-                let mut v = vec![Field128::from(0); input_len + 1];
+                let mut v = vec![Field64::from(0); input_len + 1];
                 vec_add(&mut v, &r0.value);
                 vec_add(&mut v, &r1.value);
 
@@ -544,7 +544,7 @@ impl KeyCollection {
                     value: v,
                 }
             })
-            .filter(|result| result.value[input_len] > Field128::from(0))
+            .filter(|result| result.value[input_len] > Field64::from(0))
             .collect::<Vec<_>>()
     }
 }
