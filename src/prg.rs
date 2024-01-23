@@ -1,3 +1,4 @@
+#[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::{
     __m128i, _mm_add_epi64, _mm_loadu_si128, _mm_set_epi64x, _mm_storeu_si128,
 };
@@ -5,10 +6,11 @@ use core::arch::x86_64::{
 use aes::{
     cipher::{
         generic_array::{typenum::U8, GenericArray},
-        BlockEncrypt, KeyInit, KeyIvInit, StreamCipher,
+        Block, BlockEncrypt, KeyInit, KeyIvInit, StreamCipher,
     },
-    Aes128, Block,
+    Aes128,
 };
+use cfg_if::cfg_if;
 use rand::Rng;
 
 type Aes128Ctr128LE = ctr::Ctr128LE<aes::Aes128>;
@@ -17,6 +19,14 @@ use std::{cell::RefCell, ops};
 
 use rand_core::RngCore;
 use serde::{Deserialize, Serialize};
+
+#[cfg(target_arch = "x86_64")]
+#[derive(Copy, Clone)]
+struct Counter(__m128i);
+
+#[cfg(not(target_arch = "x86_64"))]
+#[derive(Copy, Clone)]
+struct Counter(Block<Aes128>);
 
 // AES key size in bytes. We always use AES-128,
 // which has 16-byte keys.
@@ -27,7 +37,7 @@ pub const AES_BLOCK_SIZE: usize = 16;
 
 pub struct FixedKeyPrgStream {
     aes: Aes128,
-    ctr: __m128i,
+    ctr: Counter,
     buf: [u8; AES_BLOCK_SIZE * 8],
     have: usize,
     buf_ptr: usize,
@@ -289,29 +299,51 @@ impl FixedKeyPrgStream {
 
     // From RustCrypto aesni crate
     #[inline(always)]
-    fn inc_be(v: __m128i) -> __m128i {
-        unsafe { _mm_add_epi64(v, _mm_set_epi64x(1, 0)) }
+    fn inc_be(v: Counter) -> Counter {
+        cfg_if! {
+            if #[cfg(target_arch = "x86_64")] {
+                #[allow(clippy::cast_ptr_alignment)]
+                unsafe { Counter(_mm_add_epi64(v.0, _mm_set_epi64x(1, 0))) }
+            } else {
+                let Counter(mut block) = v;
+
+                // NOTE(cjpatton) This might produce a different counter than for x86_64. It
+                // depends on the endianness of _mm_set_epi64x, which I haven't checked.
+                let mut carry = true;
+                for byte in block.as_mut_slice().iter_mut().take(8) {
+                    (*byte, carry) = (*byte).overflowing_add(u8::from(carry));
+                }
+                Counter(block)
+            }
+        }
     }
 
     #[inline(always)]
-    fn store(val: __m128i, at: &mut [u8]) {
+    fn store(val: Counter, at: &mut [u8]) {
         debug_assert_eq!(at.len(), AES_BLOCK_SIZE);
 
-        #[allow(clippy::cast_ptr_alignment)]
-        unsafe {
-            _mm_storeu_si128(at.as_mut_ptr() as *mut __m128i, val)
+        cfg_if! {
+            if #[cfg(target_arch = "x86_64")] {
+                #[allow(clippy::cast_ptr_alignment)]
+                unsafe { _mm_storeu_si128(at.as_mut_ptr() as *mut __m128i, val.0); }
+            } else {
+                at.copy_from_slice(&val.0)
+            }
         }
     }
 
     // Modified from RustCrypto aesni crate
     #[inline(always)]
-    fn load(key: &[u8; 16]) -> __m128i {
-        let val = Block::from_slice(key);
-
-        // Safety: `loadu` supports unaligned loads
-        #[allow(clippy::cast_ptr_alignment)]
-        unsafe {
-            _mm_loadu_si128(val.as_ptr() as *const __m128i)
+    fn load(key: &[u8; 16]) -> Counter {
+        let val = Block::<Aes128>::from_slice(key);
+        cfg_if! {
+            if #[cfg(target_arch = "x86_64")] {
+                // Safety: `loadu` supports unaligned loads
+                #[allow(clippy::cast_ptr_alignment)]
+                unsafe { Counter(_mm_loadu_si128(val.as_ptr() as *const __m128i)) }
+            } else {
+                Counter(val.to_owned())
+            }
         }
     }
 }
