@@ -1,4 +1,4 @@
-use prio::field::Field128;
+use prio::field::Field64;
 use serde::{Deserialize, Serialize};
 
 use crate::{collect, vidpf, HASH_SIZE};
@@ -15,7 +15,7 @@ pub struct AddKeysRequest {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AddFLPsRequest {
-    pub flp_proof_shares: Vec<Vec<Field128>>,
+    pub flp_proof_shares: Vec<Vec<Field64>>,
     pub nonces: Vec<[u8; 16]>,
     pub jr_parts: Vec<[[u8; 16]; 2]>,
 }
@@ -73,7 +73,7 @@ pub trait Collector {
     async fn add_all_flp_proof_shares(req: AddFLPsRequest) -> String;
 
     /// Run FLP proof queries.
-    async fn run_flp_queries(req: RunFlpQueriesRequest) -> Vec<Vec<Field128>>;
+    async fn run_flp_queries(req: RunFlpQueriesRequest) -> Vec<Vec<Field64>>;
 
     /// Apply FLP proof results and remove the malicious clients (i.e., the clients whose the FLP
     /// was not successful) from the key collection.
@@ -81,10 +81,10 @@ pub trait Collector {
 
     /// Crawl the tree and return the evaluations, the Merkle tree root, and the indices of the
     /// Merkle tree.
-    async fn tree_crawl(req: TreeCrawlRequest) -> (Vec<Vec<Field128>>, Vec<Vec<u8>>, Vec<usize>);
+    async fn tree_crawl(req: TreeCrawlRequest) -> (Vec<Vec<Field64>>, Vec<Vec<u8>>, Vec<usize>);
 
     /// Crawl the last level of the tree and return the evaluations for different prefixes.
-    async fn tree_crawl_last(req: TreeCrawlLastRequest) -> Vec<Vec<Field128>>;
+    async fn tree_crawl_last(req: TreeCrawlLastRequest) -> Vec<Vec<Field64>>;
 
     /// Return the final VIDPF proofs.
     async fn get_proofs(req: GetProofsRequest) -> Vec<[u8; HASH_SIZE]>;

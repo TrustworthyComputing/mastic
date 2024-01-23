@@ -8,10 +8,6 @@ pub struct Config {
     /// Number of bytes of each string (x8 for bits).
     pub data_bytes: usize,
 
-    /// Number of bits for the FLP range check (e.g., for `range_bits = 3` the FLP checks that
-    /// 0 <= β < 2^3).
-    pub range_bits: usize,
-
     /// The servers will output the collection of strings that more than a `threshold` of clients
     /// hold.
     pub add_key_batch_size: usize,
