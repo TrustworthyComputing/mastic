@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     io::{self, Error},
     time::{Duration, Instant, SystemTime},
 };
@@ -8,18 +9,23 @@ use mastic::{
     collect,
     config::{self, Mode},
     rpc::{
-        AddFLPsRequest, AddKeysRequest, ApplyFLPResultsRequest, FinalSharesRequest,
+        AddFLPsRequest, AddKeysRequest, AggregateByAttributesResultRequest,
+        AggregateByAttributesValidateRequest, ApplyFLPResultsRequest, FinalSharesRequest,
         GetProofsRequest, ResetRequest, RunFlpQueriesRequest, TreeCrawlLastRequest,
         TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
     },
-    vidpf::{self, VidpfKey},
+    vec_add,
+    vidpf::VidpfKey,
     CollectorClient, Mastic, MasticHistogram,
 };
 use prio::{
     field::{random_vector, Field128},
     vdaf::xof::{IntoFieldVec, Xof, XofShake128},
 };
-use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use rand::{
+    distributions::{Alphanumeric, Distribution},
+    thread_rng, Rng,
+};
 use rand_core::RngCore;
 use rayon::prelude::*;
 use tarpc::{client, context, serde_transport::tcp, tokio_serde::formats::Bincode};
@@ -43,36 +49,31 @@ fn sample_string(len: usize) -> String {
 fn generate_keys(
     cfg: &config::Config,
     mastic: &MasticHistogram,
-) -> ((Vec<VidpfKey>, Vec<VidpfKey>), Vec<Vec<Field128>>) {
-    let (keys, values): ((Vec<VidpfKey>, Vec<VidpfKey>), Vec<Vec<Field128>>) =
-        rayon::iter::repeat(0)
-            .take(cfg.unique_buckets)
-            .map(|_| {
-                // Generate a random number in the specified range
-                let beta = rand::thread_rng().gen_range(0..cfg.hist_buckets);
-                let input_beta = mastic.encode_measurement(&beta).unwrap();
+) -> Vec<(VidpfKey, VidpfKey, String, Vec<Field128>)> {
+    let keys = rayon::iter::repeat(0)
+        .take(cfg.unique_buckets)
+        .map(|_| {
+            // Generate a random number in the specified range
+            let alpha = sample_string(cfg.data_bytes * 8);
+            let beta = rand::thread_rng().gen_range(0..cfg.hist_buckets);
+            let input_beta = mastic.encode_measurement(&beta).unwrap();
+            let (key_0, key_1) = VidpfKey::gen_from_str(&alpha, &input_beta);
+            (key_0, key_1, alpha, input_beta)
+        })
+        .collect::<Vec<_>>();
 
-                (
-                    VidpfKey::gen_from_str(&sample_string(cfg.data_bytes * 8), &input_beta),
-                    input_beta,
-                )
-            })
-            .unzip();
-
-    let encoded: Vec<u8> = bincode::serialize(&keys.0[0]).unwrap();
+    let encoded: Vec<u8> = bincode::serialize(&keys[0].0).unwrap();
     println!("VIDPFKey size: {:?} bytes", encoded.len());
 
-    (keys, values)
+    keys
 }
 
 fn generate_randomness(
-    keys: (&Vec<VidpfKey>, &Vec<VidpfKey>),
+    keys: &[(VidpfKey, VidpfKey, String, Vec<Field128>)],
 ) -> (Vec<[u8; 16]>, Vec<[[u8; 16]; 2]>) {
     let (nonces, jr_parts): (Vec<[u8; 16]>, Vec<[[u8; 16]; 2]>) = keys
-        .0
         .par_iter()
-        .zip(keys.1.par_iter())
-        .map(|(key_0, key_1)| {
+        .map(|(key_0, key_1, _, _)| {
             let nonce = rand::thread_rng().gen::<u128>().to_le_bytes();
             let vidpf_seeds = (key_0.get_root_seed().key, key_1.get_root_seed().key);
 
@@ -105,12 +106,15 @@ fn generate_randomness(
 
 fn generate_proofs(
     mastic: &MasticHistogram,
-    beta_values: &Vec<Vec<Field128>>,
+    keys: &[(VidpfKey, VidpfKey, String, Vec<Field128>)],
     all_jr_parts: &Vec<[[u8; 16]; 2]>,
 ) -> (Vec<Vec<Field128>>, Vec<Vec<Field128>>) {
     let (proofs_0, proofs_1): (Vec<Vec<Field128>>, Vec<Vec<Field128>>) = all_jr_parts
         .par_iter()
-        .zip_eq(beta_values.par_iter())
+        .zip_eq(
+            keys.par_iter()
+                .map(|(_key_0, _key_1, _alpha, input_beta)| input_beta),
+        )
         .map(|(jr_parts, input_beta)| {
             let joint_rand_xof = XofShake128::init(&jr_parts[0], &jr_parts[1]);
             let joint_rand: Vec<Field128> = joint_rand_xof
@@ -169,14 +173,13 @@ async fn tree_init(client_0: &CollectorClient, client_1: &CollectorClient) -> io
 async fn add_keys(
     cfg: &config::Config,
     clients: (&CollectorClient, &CollectorClient),
-    all_keys: (&[vidpf::VidpfKey], &[vidpf::VidpfKey]),
+    all_keys: &[(VidpfKey, VidpfKey, String, Vec<Field128>)],
     all_proofs: (&[Vec<Field128>], &[Vec<Field128>]),
     all_nonces: &[[u8; 16]],
     all_jr_parts: &[[[u8; 16]; 2]],
     num_clients: usize,
     malicious_percentage: f32,
 ) -> io::Result<()> {
-    use rand::distributions::Distribution;
     let mut rng = rand::thread_rng();
     let zipf = zipf::ZipfDistribution::new(cfg.unique_buckets, cfg.zipf_exponent).unwrap();
 
@@ -200,8 +203,8 @@ async fn add_keys(
             }
             println!("Malicious {}", r);
         }
-        add_keys_0.push(all_keys.0[idx_1].clone());
-        add_keys_1.push(all_keys.1[idx_2 % cfg.unique_buckets].clone());
+        add_keys_0.push(all_keys[idx_1].0.clone());
+        add_keys_1.push(all_keys[idx_2 % cfg.unique_buckets].1.clone());
 
         flp_proof_shares_0.push(all_proofs.0[idx_1].clone());
         flp_proof_shares_1.push(all_proofs.1[idx_3 % cfg.unique_buckets].clone());
@@ -432,6 +435,81 @@ async fn run_level_last(
     Ok(())
 }
 
+async fn run_aggregate_by_attributes(
+    cfg: &config::Config,
+    mastic: &MasticHistogram,
+    client_0: &CollectorClient,
+    client_1: &CollectorClient,
+    attributes: &[String],
+    num_clients: usize,
+) -> io::Result<()> {
+    for start in (0..num_clients).step_by(cfg.flp_batch_size) {
+        let end = std::cmp::min(num_clients, start + cfg.flp_batch_size);
+        let req = AggregateByAttributesValidateRequest {
+            attributes: attributes.to_vec(),
+            start,
+            end,
+        };
+
+        // For each report, each aggregator evaluates the VIDPF on each of the attributes and returns
+        // the VIDPF proof and its FLP verifier share.
+        let t = Instant::now();
+        let resp_0 = client_0.aggregate_by_attributes_start(long_context(), req.clone());
+        let resp_1 = client_1.aggregate_by_attributes_start(long_context(), req.clone());
+        let (results_0, results_1) = try_join!(resp_0, resp_1).unwrap();
+        assert_eq!(results_0.len(), req.end - req.start);
+        assert_eq!(results_1.len(), req.end - req.start);
+
+        let mut rejected = Vec::with_capacity(req.end - req.start);
+        for (client_index, ((mut verifier, eval_proof_0), (verifier_share_1, eval_proof_1))) in
+            (req.start..req.end).zip(results_0.into_iter().zip(results_1.into_iter()))
+        {
+            vec_add(&mut verifier, &verifier_share_1);
+            if !mastic.decide(&verifier).unwrap() {
+                println!("Report {client_index} rejected (weight check failed)");
+                rejected.push(client_index);
+            }
+
+            if eval_proof_0 != eval_proof_1 {
+                println!("Report {client_index} rejected (onehot or path check failed)");
+                rejected.push(client_index);
+            }
+        }
+
+        println!(
+            "{start}..{end}: report validation completed in {:?}: rejected {} reports",
+            t.elapsed(),
+            rejected.len()
+        );
+
+        let t = Instant::now();
+        let req = AggregateByAttributesResultRequest {
+            rejected,
+            num_attributes: attributes.len(),
+            start,
+            end,
+        };
+
+        let resp_0 = client_0.aggregate_by_attributes_finish(long_context(), req.clone());
+        let resp_1 = client_1.aggregate_by_attributes_finish(long_context(), req.clone());
+        let (mut results, results_share_1) = try_join!(resp_0, resp_1).unwrap();
+        for (r, s1) in results.iter_mut().zip(results_share_1.iter()) {
+            vec_add(r, s1);
+        }
+
+        println!(
+            "{start}..{end}: report aggregation completed in {:?}",
+            t.elapsed(),
+        );
+
+        for (attribute, result) in attributes.iter().zip(results.iter()) {
+            println!("{attribute}: {result:?}");
+        }
+    }
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let (cfg, _, num_clients, malicious) = config::get_args("Driver", false, true, true);
@@ -452,15 +530,15 @@ async fn main() -> io::Result<()> {
 
     let start = Instant::now();
     println!("Generating keys...");
-    let ((keys_0, keys_1), beta_values) = generate_keys(&cfg, &mastic);
+    let keys = generate_keys(&cfg, &mastic);
     let delta = start.elapsed().as_secs_f64();
-    let (nonces, jr_parts) = generate_randomness((&keys_0, &keys_1));
-    let (proofs_0, proofs_1) = generate_proofs(&mastic, &beta_values, &jr_parts);
+    let (nonces, jr_parts) = generate_randomness(&keys);
+    let (proofs_0, proofs_1) = generate_proofs(&mastic, &keys, &jr_parts);
     println!(
         "Generated {:?} keys in {:?} seconds ({:?} sec/key)",
-        keys_0.len(),
+        keys.len(),
         delta,
-        delta / (keys_0.len() as f64)
+        delta / (keys.len() as f64)
     );
 
     let mut verify_key = [0; 16];
@@ -481,7 +559,7 @@ async fn main() -> io::Result<()> {
                 responses.push(add_keys(
                     &cfg,
                     (&client_0, &client_1),
-                    (&keys_0, &keys_1),
+                    &keys,
                     (&proofs_0, &proofs_1),
                     &nonces,
                     &jr_parts,
@@ -496,34 +574,64 @@ async fn main() -> io::Result<()> {
         }
     }
 
-    tree_init(&client_0, &client_1).await?;
-
     let start = Instant::now();
-    let bit_len = cfg.data_bytes * 8; // bits
-    for level in 0..bit_len - 1 {
-        let start_level = Instant::now();
-        if level == 0 {
-            run_flp_queries(&cfg, &mastic, &client_0, &client_1, num_clients).await?;
-        }
-        run_level(&cfg, &mastic, &client_0, &client_1, num_clients).await?;
-        println!(
-            "Time for level {}: {:?}",
-            level,
-            start_level.elapsed().as_secs_f64()
-        );
-    }
-    println!(
-        "\nTime for {} levels: {:?}",
-        bit_len,
-        start.elapsed().as_secs_f64()
-    );
+    match cfg.mode {
+        Mode::WeightedHeavyHitters { .. } => {
+            tree_init(&client_0, &client_1).await?;
 
-    let start_last = Instant::now();
-    run_level_last(&cfg, &mastic, &client_0, &client_1, num_clients).await?;
-    println!(
-        "Time for last level: {:?}",
-        start_last.elapsed().as_secs_f64()
-    );
+            let bit_len = cfg.data_bytes * 8; // bits
+            for level in 0..bit_len - 1 {
+                let start_level = Instant::now();
+                if level == 0 {
+                    run_flp_queries(&cfg, &mastic, &client_0, &client_1, num_clients).await?;
+                }
+                run_level(&cfg, &mastic, &client_0, &client_1, num_clients).await?;
+                println!(
+                    "Time for level {}: {:?}",
+                    level,
+                    start_level.elapsed().as_secs_f64()
+                );
+            }
+            println!(
+                "\nTime for {} levels: {:?}",
+                bit_len,
+                start.elapsed().as_secs_f64()
+            );
+
+            let start_last = Instant::now();
+            run_level_last(&cfg, &mastic, &client_0, &client_1, num_clients).await?;
+            println!(
+                "Time for last level: {:?}",
+                start_last.elapsed().as_secs_f64()
+            );
+        }
+
+        Mode::AttributeBasedMetrics { num_attributes } => {
+            // Synthesize a set of attributes.
+            let attributes = {
+                let mut rng = rand::thread_rng();
+                let zipf =
+                    zipf::ZipfDistribution::new(cfg.unique_buckets, cfg.zipf_exponent).unwrap();
+                let mut unique_inputs = HashSet::with_capacity(num_attributes);
+                for _ in 0..num_attributes {
+                    let client_index = zipf.sample(&mut rng);
+                    unique_inputs.insert(keys[client_index].2.clone());
+                }
+                unique_inputs.into_iter().collect::<Vec<_>>()
+            };
+            println!("Using {} attributes", attributes.len());
+
+            run_aggregate_by_attributes(
+                &cfg,
+                &mastic,
+                &client_0,
+                &client_1,
+                &attributes,
+                num_clients,
+            )
+            .await?;
+        }
+    };
     println!("Total time {:?}", start.elapsed().as_secs_f64());
 
     Ok(())

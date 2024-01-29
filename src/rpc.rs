@@ -59,6 +59,21 @@ pub struct TreePruneRequest {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FinalSharesRequest {}
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AggregateByAttributesValidateRequest {
+    pub attributes: Vec<String>,
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AggregateByAttributesResultRequest {
+    pub rejected: Vec<usize>,
+    pub num_attributes: usize,
+    pub start: usize,
+    pub end: usize,
+}
+
 #[tarpc::service]
 pub trait Collector {
     /// Initialize the tree (single root that has all the clients keys and values).
@@ -95,4 +110,17 @@ pub trait Collector {
 
     /// Get the final paths and secret shared values.
     async fn final_shares(req: FinalSharesRequest) -> Vec<collect::Result>;
+
+    /// For the subset of reports indicated by the caller, evaluate the VIDPF key on the provided set
+    /// of attributes and return the VIDPF proof and FLP verifier share.
+    async fn aggregate_by_attributes_start(
+        req: AggregateByAttributesValidateRequest,
+    ) -> Vec<(Vec<Field128>, [u8; blake3::OUT_LEN])>;
+
+    /// For the subset of reports indicated by the caller, compute the aggregate share, rejecting
+    /// the reports indicated by the caller. This method should be called only after calling
+    /// `aggregate_by_attributes_start` on the same set of reports.
+    async fn aggregate_by_attributes_finish(
+        req: AggregateByAttributesResultRequest,
+    ) -> Vec<Vec<Field128>>;
 }

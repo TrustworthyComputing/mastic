@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use blake3::hash;
 use prio::{
     codec::Encode,
@@ -43,7 +45,7 @@ unsafe impl<Field128> Sync for TreeNode<Field128> {}
 #[derive(Clone)]
 pub struct KeyCollection {
     /// The type of the FLP.
-    mastic: MasticHistogram,
+    pub mastic: MasticHistogram,
 
     /// The ID of the server (0 or 1).
     server_id: i8,
@@ -64,8 +66,8 @@ pub struct KeyCollection {
     /// The joint randomness parts of the clients.
     jr_parts: Vec<[[u8; 16]; 2]>,
 
-    // The FLP proof shares of the clients.
-    all_flp_proof_shares: Vec<Vec<Field128>>,
+    /// The FLP proof shares of the clients.
+    pub all_flp_proof_shares: Vec<Vec<Field128>>,
 
     /// The current evaluations of the tree.
     frontier: Vec<TreeNode<Field128>>,
@@ -75,6 +77,9 @@ pub struct KeyCollection {
 
     /// The final VIDPF proofs of the clients.
     final_proofs: Vec<[u8; HASH_SIZE]>,
+
+    /// Storage the values share for each report.
+    pub aggregate_by_attributes_state: HashMap<usize, Vec<Vec<Field128>>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,6 +111,7 @@ impl KeyCollection {
             frontier: vec![],
             prev_frontier: vec![],
             final_proofs: vec![],
+            aggregate_by_attributes_state: HashMap::default(),
         }
     }
 
@@ -207,37 +213,8 @@ impl KeyCollection {
                 vec_add(&mut beta_share, y_p1);
 
                 let flp_proof_share = &self.all_flp_proof_shares[client_index];
-
-                let query_rand_xof =
-                    XofShake128::init(&self.verify_key, &self.nonces[client_index]);
-                let query_rand: Vec<Field128> = query_rand_xof
-                    .clone()
-                    .into_seed_stream()
-                    .into_field_vec(self.mastic.query_rand_len());
-
-                let mut jr_parts = self.jr_parts[client_index];
-                if self.server_id == 0 {
-                    let mut jr_part_xof = XofShake128::init(
-                        &self.keys[client_index].1.get_root_seed().key,
-                        &[0u8; 16],
-                    );
-                    jr_part_xof.update(&[0]); // Aggregator ID
-                    jr_part_xof.update(&self.nonces[client_index]);
-                    jr_part_xof.into_seed_stream().fill_bytes(&mut jr_parts[0]);
-                } else {
-                    let mut jr_part_xof = XofShake128::init(
-                        &self.keys[client_index].1.get_root_seed().key,
-                        &[0u8; 16],
-                    );
-                    jr_part_xof.update(&[1]); // Aggregator ID
-                    jr_part_xof.update(&self.nonces[client_index]);
-                    jr_part_xof.into_seed_stream().fill_bytes(&mut jr_parts[1]);
-                }
-
-                let joint_rand_xof = XofShake128::init(&jr_parts[0], &jr_parts[1]);
-                let joint_rand: Vec<Field128> = joint_rand_xof
-                    .into_seed_stream()
-                    .into_field_vec(self.mastic.joint_rand_len());
+                let query_rand = self.flp_joint_rand(client_index);
+                let joint_rand = self.flp_joint_rand(client_index);
 
                 // Compute the flp_verifier_share.
                 self.mastic
@@ -245,6 +222,46 @@ impl KeyCollection {
                     .unwrap()
             })
             .collect::<Vec<_>>()
+    }
+
+    /// Compute joint randomness for FLP evaluation.
+    ///
+    /// NOTE(cjpatton) This does not match the spec and is not secure. In particular, a malicious
+    /// client can pick joint randomness that it knows the circuit will verify. Preventing this
+    /// requires a bit more computation and communication overhead: each aggregator is supposed to
+    /// derive the correct joint randomness part from its input share and send it to the other so
+    /// that they can check if the advertised parts were actually computed correctly.
+    pub fn flp_joint_rand(&self, client_index: usize) -> Vec<Field128> {
+        let mut jr_parts = self.jr_parts[client_index];
+        if self.server_id == 0 {
+            let mut jr_part_xof =
+                XofShake128::init(&self.keys[client_index].1.get_root_seed().key, &[0u8; 16]);
+            jr_part_xof.update(&[0]); // Aggregator ID
+            jr_part_xof.update(&self.nonces[client_index]);
+            jr_part_xof.into_seed_stream().fill_bytes(&mut jr_parts[0]);
+        } else {
+            let mut jr_part_xof =
+                XofShake128::init(&self.keys[client_index].1.get_root_seed().key, &[0u8; 16]);
+            jr_part_xof.update(&[1]); // Aggregator ID
+            jr_part_xof.update(&self.nonces[client_index]);
+            jr_part_xof.into_seed_stream().fill_bytes(&mut jr_parts[1]);
+        }
+
+        let joint_rand_xof = XofShake128::init(&jr_parts[0], &jr_parts[1]);
+        let joint_rand: Vec<Field128> = joint_rand_xof
+            .into_seed_stream()
+            .into_field_vec(self.mastic.joint_rand_len());
+        joint_rand
+    }
+
+    /// Compute the query randomness for FLP evaluation.
+    pub fn flp_query_rand(&self, client_index: usize) -> Vec<Field128> {
+        let query_rand_xof = XofShake128::init(&self.verify_key, &self.nonces[client_index]);
+        let query_rand: Vec<Field128> = query_rand_xof
+            .clone()
+            .into_seed_stream()
+            .into_field_vec(self.mastic.query_rand_len());
+        query_rand
     }
 
     pub fn tree_crawl(

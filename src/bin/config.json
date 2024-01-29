@@ -2,8 +2,8 @@
     "data_bytes": 1,
     "hist_buckets": 4,
     "mode": {
-        "weighted_heavy_hitters": {
-            "threshold": 0.01
+        "attribute_based_metrics": {
+            "num_attributes": 20
         }
     },
     "server_0": "0.0.0.0:8000",

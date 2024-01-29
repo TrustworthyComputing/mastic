@@ -8,13 +8,15 @@ use futures::{future, prelude::*};
 use mastic::{
     collect, config, prg,
     rpc::{
-        AddFLPsRequest, AddKeysRequest, ApplyFLPResultsRequest, Collector, FinalSharesRequest,
-        GetProofsRequest, ResetRequest, RunFlpQueriesRequest, TreeCrawlLastRequest,
-        TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
+        AddFLPsRequest, AddKeysRequest, AggregateByAttributesResultRequest,
+        AggregateByAttributesValidateRequest, ApplyFLPResultsRequest, Collector,
+        FinalSharesRequest, GetProofsRequest, ResetRequest, RunFlpQueriesRequest,
+        TreeCrawlLastRequest, TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
     },
-    Mastic, HASH_SIZE,
+    string_to_bits, vec_add, Mastic, HASH_SIZE,
 };
-use prio::field::Field128;
+use prio::field::{Field128, FieldElement};
+use rayon::iter::{IntoParallelIterator, ParallelExtend, ParallelIterator};
 use tarpc::{
     context,
     serde_transport::tcp,
@@ -149,6 +151,82 @@ impl Collector for CollectorServer {
     ) -> Vec<collect::Result> {
         let coll = self.arc.lock().unwrap();
         coll.final_shares()
+    }
+
+    async fn aggregate_by_attributes_start(
+        self,
+        _: context::Context,
+        req: AggregateByAttributesValidateRequest,
+    ) -> Vec<(Vec<Field128>, [u8; blake3::OUT_LEN])> {
+        debug_assert!(req.start < req.end);
+        let mut coll = self.arc.lock().unwrap();
+        let mut results = Vec::with_capacity(req.end - req.start);
+
+        results.par_extend((req.start..req.end).into_par_iter().map(|client_index| {
+            let mut eval_proof = blake3::Hasher::new();
+            let (values_share, beta_share) = coll.keys[client_index].1.eval_tree(
+                req.attributes
+                    .iter()
+                    .map(|attribute| string_to_bits(attribute)),
+                coll.mastic.input_len(),
+                &mut eval_proof,
+            );
+
+            let joint_rand = coll.flp_joint_rand(client_index);
+            let query_rand = coll.flp_query_rand(client_index);
+            let verifier_share = coll
+                .mastic
+                .query(
+                    &beta_share,
+                    &coll.all_flp_proof_shares[client_index],
+                    &query_rand,
+                    &joint_rand,
+                    2,
+                )
+                .unwrap();
+
+            (
+                client_index,
+                values_share,
+                verifier_share,
+                eval_proof.finalize().as_bytes().clone(),
+            )
+        }));
+
+        let mut resp = Vec::with_capacity(req.end - req.start);
+        for (client_index, values_share, verifier_share, eval_proof) in results.into_iter() {
+            resp.push((verifier_share, eval_proof));
+            coll.aggregate_by_attributes_state
+                .insert(client_index, values_share);
+        }
+
+        resp
+    }
+
+    async fn aggregate_by_attributes_finish(
+        self,
+        _: context::Context,
+        req: AggregateByAttributesResultRequest,
+    ) -> Vec<Vec<Field128>> {
+        debug_assert!(req.start < req.end);
+        let mut coll = self.arc.lock().unwrap();
+
+        for rejected_client_index in req.rejected {
+            debug_assert!(coll
+                .aggregate_by_attributes_state
+                .remove(&rejected_client_index)
+                .is_some());
+        }
+
+        let mut agg_share =
+            vec![vec![Field128::zero(); coll.mastic.input_len()]; req.num_attributes];
+        for (_clinet_index, values_share) in coll.aggregate_by_attributes_state.iter() {
+            for (a, v) in agg_share.iter_mut().zip(values_share.iter()) {
+                vec_add(a, v);
+            }
+        }
+
+        agg_share
     }
 }
 
