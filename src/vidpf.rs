@@ -1,5 +1,5 @@
 use blake3::Hasher;
-use prio::field::Field128;
+use prio::{codec::Encode, field::Field128};
 use serde::{Deserialize, Serialize};
 
 use crate::{prg, vec_add, vec_neg, vec_sub, xor_three_vecs, xor_vec, HASH_SIZE};
@@ -39,6 +39,107 @@ pub struct EvalState {
 
     /// The VIDPF proof.
     pub proof: [u8; HASH_SIZE],
+}
+
+pub(crate) struct VidpfEvalNode {
+    /// String representation of the path to this node.
+    bit_str: String,
+
+    /// The word for this node. Set for every node except the root.
+    word_share: Option<Vec<Field128>>,
+
+    /// The patch check component for this node. Set for every node except the root and the leaves.
+    path_check: Option<Vec<Field128>>,
+
+    /// The node state.
+    state: EvalState,
+
+    /// Left child.
+    l: Option<Box<VidpfEvalNode>>,
+
+    /// Right child.
+    r: Option<Box<VidpfEvalNode>>,
+}
+
+impl VidpfEvalNode {
+    pub(crate) fn new_root_from_key(key: &VidpfKey) -> Self {
+        Self {
+            bit_str: "".into(),
+            word_share: None,
+            path_check: None,
+            state: key.eval_init(),
+            l: None,
+            r: None,
+        }
+    }
+
+    fn next(&mut self, bit: bool, key: &VidpfKey, input_len: usize) -> Self {
+        let bit_str = self.bit_str.clone() + if bit { "1" } else { "0" };
+        let (state, word_share) = key.eval_bit(&self.state, bit, &bit_str, input_len);
+        Self {
+            bit_str,
+            word_share: Some(word_share),
+            path_check: None,
+            state,
+            l: None,
+            r: None,
+        }
+    }
+
+    pub(crate) fn traverse(
+        &mut self,
+        path: &[bool],
+        key: &VidpfKey,
+        input_len: usize,
+        eval_proof: &mut blake3::Hasher,
+    ) -> &mut VidpfEvalNode {
+        if path.len() == 0 {
+            return self;
+        }
+
+        // If this is not the root node, then ensure the node check is initialized.
+        let mut p = if self.word_share.is_some() && self.path_check.is_none() {
+            Some(self.word_share.as_ref().unwrap().clone())
+        } else {
+            None
+        };
+
+        // Compute the left child node and update the node check.
+        if self.l.is_none() {
+            let l = self.next(false, key, input_len);
+            if let (Some(ref mut path_check), Some(ref word_share_l)) = (&mut p, &l.word_share) {
+                vec_sub(path_check, &word_share_l);
+            }
+            self.l = Some(Box::new(l));
+        }
+
+        // Compute the right child node and update the node check.
+        if self.r.is_none() {
+            let r = self.next(true, key, input_len);
+            if let (Some(ref mut path_check), Some(ref word_share_r)) = (&mut p, &r.word_share) {
+                vec_sub(path_check, &word_share_r);
+            }
+            self.r = Some(Box::new(r));
+        }
+
+        // Finish path check.
+        if let Some(mut path_check) = p {
+            if key.key_idx {
+                vec_neg(&mut path_check)
+            }
+            for x in &path_check {
+                eval_proof.update(&x.get_encoded());
+            }
+            self.path_check = Some(path_check);
+        }
+
+        if !path[0] {
+            self.l.as_deref_mut().unwrap()
+        } else {
+            self.r.as_deref_mut().unwrap()
+        }
+        .traverse(&path[1..], key, input_len, eval_proof)
+    }
 }
 
 trait TupleMapToExt<T, U> {
@@ -311,6 +412,64 @@ impl VidpfKey {
         (out, last)
     }
 
+    /// Evaluate the prefix tree, appending the path and onehot checks to `eval_proof`. Use `root`
+    /// as the evaluation cache. Return the value share for each path traversed, as well as the
+    /// share of `beta`.
+    pub fn eval_tree<I: AsRef<[bool]>>(
+        &self,
+        paths: impl Iterator<Item = I>,
+        input_len: usize,
+        eval_proof: &mut blake3::Hasher,
+    ) -> (Vec<Vec<Field128>>, Vec<Field128>) {
+        let key_idx = Field128::from(if self.key_idx { 1 } else { 0 });
+        let mut values_share = Vec::new();
+        let mut root = VidpfEvalNode::new_root_from_key(self);
+
+        // Traverse each indicated path of the subtree, appending the path checks and onehot checks
+        // to the evaluation proof.
+        //
+        // NOTE(cjpatton) The order in which we traverse the tree and the computation of the
+        // evaluation proof differ from the draft. The onehot proofs in particular need careful
+        // consideration, as we don't daisy-chain them directly to compute a unified onehot proof
+        // fo the entire traversal. Instead we interleave the components with the path checks.
+        for path in paths {
+            assert_ne!(path.as_ref().len(), 0);
+            let node = root.traverse(path.as_ref(), self, input_len, eval_proof);
+            eval_proof.update(&node.state.proof);
+            values_share.push(node.word_share.as_ref().unwrap().clone());
+        }
+
+        // Compute the counter and our share of beta.
+        let (counter, beta_share) = {
+            let mut y = root
+                .traverse(&[false], self, input_len, eval_proof)
+                .word_share
+                .as_ref()
+                .unwrap()
+                .clone();
+
+            vec_add(
+                &mut y,
+                root.traverse(&[true], self, input_len, eval_proof)
+                    .word_share
+                    .as_ref()
+                    .unwrap(),
+            );
+
+            let mut counter = y[input_len];
+            if self.key_idx {
+                counter = -counter;
+            }
+            counter += key_idx;
+
+            y.truncate(input_len); // beta_share
+            (counter, y)
+        };
+        eval_proof.update(&counter.get_encoded());
+
+        (values_share, beta_share)
+    }
+
     pub fn gen_from_str(s: &str, beta: &Vec<Field128>) -> (Self, Self) {
         let bits = crate::string_to_bits(s);
         VidpfKey::gen(&bits, beta)
@@ -318,5 +477,69 @@ impl VidpfKey {
 
     pub fn domain_size(&self) -> usize {
         self.cor_words.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::string_to_bits;
+    use prio::field::FieldElement;
+
+    use super::*;
+
+    /// Test the VIDPF functionality required for the attribute-based metrics use case.
+    #[test]
+    fn mode_attribute_based_metrics() {
+        let input_len = 1;
+        let expected_beta = vec![Field128::from(1337); input_len];
+        let (key_0, key_1) = VidpfKey::gen_from_str("h", &expected_beta);
+        assert_eq!(key_0.key_idx, false);
+        assert_eq!(key_1.key_idx, true);
+
+        let attributes = ["h", "s", "b", "c"];
+
+        let mut eval_proof_0 = blake3::Hasher::new();
+        let mut eval_proof_1 = blake3::Hasher::new();
+
+        let (values_0, beta_0) = key_0.eval_tree(
+            attributes.iter().map(|attribute| string_to_bits(attribute)),
+            1,
+            &mut eval_proof_0,
+        );
+        let (values_1, beta_1) = key_1.eval_tree(
+            attributes.iter().map(|attribute| string_to_bits(attribute)),
+            1,
+            &mut eval_proof_1,
+        );
+        println!("values_0 {values_0:?}");
+        println!("values_1 {values_1:?}");
+        println!("eval_proof_0 {}", eval_proof_0.finalize().to_hex());
+        println!("eval_proof_1 {}", eval_proof_1.finalize().to_hex());
+        assert_eq!(values_0.len(), attributes.len());
+        assert_eq!(values_1.len(), attributes.len());
+        assert_eq!(beta_0.len(), input_len);
+        assert_eq!(beta_1.len(), input_len);
+
+        let mut values = values_0.clone();
+        for (v, s1) in values.iter_mut().zip(values_1.iter()) {
+            vec_add(v, s1);
+        }
+
+        let mut beta = beta_0.clone();
+        vec_add(&mut beta, &beta_1);
+        assert_eq!(beta, expected_beta);
+
+        for (value, expected_value) in values.iter().zip(
+            [
+                [Field128::from(1337), Field128::one()],
+                [Field128::zero(), Field128::zero()],
+                [Field128::zero(), Field128::zero()],
+                [Field128::zero(), Field128::zero()],
+            ]
+            .iter(),
+        ) {
+            assert_eq!(value, expected_value);
+        }
+        assert_eq!(eval_proof_0.finalize(), eval_proof_1.finalize());
     }
 }
