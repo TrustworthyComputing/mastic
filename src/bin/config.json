@@ -1,7 +1,11 @@
 {
     "data_bytes": 1,
     "hist_buckets": 4,
-    "threshold": 0.01,
+    "mode": {
+        "weighted_heavy_hitters": {
+            "threshold": 0.01
+        }
+    },
     "server_0": "0.0.0.0:8000",
     "server_1": "0.0.0.0:8001",
     "add_key_batch_size": 1000,

@@ -4,6 +4,20 @@ use clap::{App, Arg};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mode {
+    WeightedHeavyHitters {
+        /// The servers will output the collection of strings that more than a `threshold` of
+        /// clients hold.
+        threshold: f64,
+    },
+    AttributedBasedMetrics {
+        /// The set of attributes used by the servers to group metrics.
+        attributes: Vec<()>,
+    },
+}
+
+#[derive(Deserialize)]
 pub struct Config {
     /// Number of bytes of each string (x8 for bits).
     pub data_bytes: usize,
@@ -21,9 +35,8 @@ pub struct Config {
     /// Number of distinct strings.
     pub unique_buckets: usize,
 
-    /// The servers will output the collection of strings that more than a `threshold` of clients
-    /// hold.
-    pub threshold: f64,
+    /// Mode of operation in which to use Mastic.
+    pub mode: Mode,
 
     /// Each simulated client samples its private string from a Zipf distribution over strings with
     /// parameter `zipf_exponent`

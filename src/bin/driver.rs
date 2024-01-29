@@ -1,11 +1,12 @@
 use std::{
-    io,
+    io::{self, Error},
     time::{Duration, Instant, SystemTime},
 };
 
 use futures::try_join;
 use mastic::{
-    collect, config,
+    collect,
+    config::{self, Mode},
     rpc::{
         AddFLPsRequest, AddKeysRequest, ApplyFLPResultsRequest, FinalSharesRequest,
         GetProofsRequest, ResetRequest, RunFlpQueriesRequest, TreeCrawlLastRequest,
@@ -292,7 +293,13 @@ async fn run_level(
     client_1: &CollectorClient,
     num_clients: usize,
 ) -> io::Result<()> {
-    let threshold = core::cmp::max(1, (cfg.threshold * (num_clients as f64)) as u64);
+    let threshold = if let Mode::WeightedHeavyHitters { threshold } = cfg.mode {
+        core::cmp::max(1, (threshold * (num_clients as f64)) as u64)
+    } else {
+        return Err(Error::other(
+            "invoked server in an unexpected mode of operation",
+        ));
+    };
     let mut keep;
     let mut split = 1usize;
     let mut malicious = Vec::<usize>::new();
@@ -364,7 +371,13 @@ async fn run_level_last(
     client_1: &CollectorClient,
     num_clients: usize,
 ) -> io::Result<()> {
-    let threshold = core::cmp::max(1, (cfg.threshold * (num_clients as f64)) as u64);
+    let threshold = if let Mode::WeightedHeavyHitters { threshold } = cfg.mode {
+        core::cmp::max(1, (threshold * (num_clients as f64)) as u64)
+    } else {
+        return Err(Error::other(
+            "invoked server in an unexpected mode of operation",
+        ));
+    };
 
     let req = TreeCrawlLastRequest {};
     let resp_0 = client_0.tree_crawl_last(long_context(), req.clone());
