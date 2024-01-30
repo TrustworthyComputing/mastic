@@ -67,7 +67,8 @@ fn generate_keys(
 fn generate_randomness(
     keys: (&Vec<VidpfKey>, &Vec<VidpfKey>),
 ) -> (Vec<[u8; 16]>, Vec<[[u8; 16]; 2]>) {
-    keys.0
+    let (nonces, jr_parts): (Vec<[u8; 16]>, Vec<[[u8; 16]; 2]>) = keys
+        .0
         .par_iter()
         .zip(keys.1.par_iter())
         .map(|(key_0, key_1)| {
@@ -91,7 +92,14 @@ fn generate_randomness(
 
             (nonce, jr_parts)
         })
-        .unzip()
+        .unzip();
+
+    let encoded: Vec<u8> = bincode::serialize(&nonces[0]).unwrap();
+    println!("Nonce size: {:?} bytes", encoded.len());
+    let encoded: Vec<u8> = bincode::serialize(&jr_parts[0]).unwrap();
+    println!("JR size: {:?} bytes", encoded.len());
+
+    (nonces, jr_parts)
 }
 
 fn generate_proofs(
@@ -99,7 +107,7 @@ fn generate_proofs(
     beta_values: &Vec<Vec<Field128>>,
     all_jr_parts: &Vec<[[u8; 16]; 2]>,
 ) -> (Vec<Vec<Field128>>, Vec<Vec<Field128>>) {
-    all_jr_parts
+    let (proofs_0, proofs_1): (Vec<Vec<Field128>>, Vec<Vec<Field128>>) = all_jr_parts
         .par_iter()
         .zip_eq(beta_values.par_iter())
         .map(|(jr_parts, input_beta)| {
@@ -123,7 +131,12 @@ fn generate_proofs(
 
             (proof_0, proof_1)
         })
-        .unzip()
+        .unzip();
+
+    let encoded: Vec<u8> = bincode::serialize(&proofs_0[0]).unwrap();
+    println!("FLP proof size: {:?} bytes", encoded.len());
+
+    (proofs_0, proofs_1)
 }
 
 async fn reset_servers(
