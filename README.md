@@ -1,4 +1,4 @@
-<h1 align="center">Mastic: Private Aggregated Statistics through Fully Linear Proofs
+<h1 align="center">Mastic: Private Weighted Heavy-Hitters and Attribute-Based Metrics
   <a href="https://github.com/jimouris/mastic/actions/workflows/ci-build.yml"><img src="https://github.com/jimouris/mastic/workflows/ci-build/badge.svg"></a>
   <a href="https://github.com/jimouris/mastic/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
 </h1>
