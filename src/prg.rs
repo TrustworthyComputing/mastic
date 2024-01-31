@@ -113,8 +113,8 @@ impl PrgSeed {
             s.fill_bytes(&mut out.seed.key);
             unsafe {
                 let sp = s_in.as_ptr();
-                for i in 0..input_len {
-                    out.word[i].from_rng(&mut *sp);
+                for x in out.word.iter_mut() {
+                    x.from_rng(&mut *sp);
                 }
             }
         });
