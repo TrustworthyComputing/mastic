@@ -6,10 +6,10 @@ use std::{
 
 use futures::try_join;
 use mastic::{
-    collect,
+    collect::{self, ReportShare},
     config::{self, Mode},
     rpc::{
-        AddFLPsRequest, AddKeysRequest, AggregateByAttributesResultRequest,
+        AddReportSharesRequest, AggregateByAttributesResultRequest,
         AggregateByAttributesValidateRequest, ApplyFLPResultsRequest, FinalSharesRequest,
         GetProofsRequest, ResetRequest, RunFlpQueriesRequest, TreeCrawlLastRequest,
         TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
@@ -19,8 +19,12 @@ use mastic::{
     CollectorClient, Mastic, MasticHistogram,
 };
 use prio::{
+    codec::Encode,
     field::{random_vector, Field128},
-    vdaf::xof::{IntoFieldVec, Xof, XofShake128},
+    vdaf::{
+        prio3::{Prio3InputShare, Prio3PublicShare},
+        xof::{IntoFieldVec, Xof, XofShake128},
+    },
 };
 use rand::{
     distributions::{Alphanumeric, Distribution},
@@ -46,102 +50,185 @@ fn sample_string(len: usize) -> String {
         .collect()
 }
 
-fn generate_keys(
-    cfg: &config::Config,
-    mastic: &MasticHistogram,
-) -> Vec<(VidpfKey, VidpfKey, String, Vec<Field128>)> {
-    let keys = rayon::iter::repeat(0)
-        .take(cfg.unique_buckets)
+enum PlaintextReport {
+    /// A plaintext report for Mastic. This report type is used for weighted heavy hitters and
+    /// attribute-based metrics.
+    Mastic {
+        nonce: [u8; 16],
+        vidpf_keys: [VidpfKey; 2],
+        flp_proof_shares: [Vec<Field128>; 2],
+        flp_joint_rand_parts: [[u8; 16]; 2],
+        alpha: String,
+    },
+
+    /// A plaintext report for Prio3. This report type is used for plain (non-attribute-based)
+    /// metrics.
+    #[allow(dead_code)]
+    Prio3 {
+        nonce: [u8; 16],
+        public_share: Prio3PublicShare<16>,
+        input_shares: [Prio3InputShare<Field128, 16>; 2],
+    },
+}
+
+impl PlaintextReport {
+    /// Panics unless the type is `Mastic`.
+    fn unwrap_alpha(&self) -> String {
+        match self {
+            Self::Mastic {
+                nonce: _,
+                vidpf_keys: _,
+                flp_proof_shares: _,
+                flp_joint_rand_parts: _,
+                alpha,
+            } => alpha.to_string(),
+            Self::Prio3 { .. } => panic!("Prio3 reports don't have an alpha"),
+        }
+    }
+
+    fn to_shares(&self) -> [ReportShare; 2] {
+        match self {
+            Self::Mastic {
+                nonce,
+                vidpf_keys,
+                flp_proof_shares,
+                flp_joint_rand_parts,
+                ..
+            } => [
+                ReportShare::Mastic {
+                    nonce: nonce.clone(),
+                    vidpf_key: vidpf_keys[0].clone(),
+                    flp_proof_share: flp_proof_shares[0].clone(),
+                    flp_joint_rand_parts: flp_joint_rand_parts.clone(),
+                },
+                ReportShare::Mastic {
+                    nonce: nonce.clone(),
+                    vidpf_key: vidpf_keys[1].clone(),
+                    flp_proof_share: flp_proof_shares[1].clone(),
+                    flp_joint_rand_parts: flp_joint_rand_parts.clone(),
+                },
+            ],
+            Self::Prio3 {
+                nonce,
+                public_share,
+                input_shares,
+            } => [
+                ReportShare::Prio3 {
+                    nonce: nonce.clone(),
+                    public_share_bytes: public_share.get_encoded(),
+                    input_share_bytes: input_shares[0].get_encoded(),
+                },
+                ReportShare::Prio3 {
+                    nonce: nonce.clone(),
+                    public_share_bytes: public_share.get_encoded(),
+                    input_share_bytes: input_shares[1].get_encoded(),
+                },
+            ],
+        }
+    }
+}
+
+fn generate_reports(cfg: &config::Config, mastic: &MasticHistogram) -> Vec<PlaintextReport> {
+    assert!(cfg.unique_buckets > 0);
+
+    let reports = (0..cfg.unique_buckets)
+        .into_par_iter()
         .map(|_| {
-            // Generate a random number in the specified range
-            let alpha = sample_string(cfg.data_bytes * 8);
-            let beta = rand::thread_rng().gen_range(0..cfg.hist_buckets);
-            let input_beta = mastic.encode_measurement(&beta).unwrap();
-            let (key_0, key_1) = VidpfKey::gen_from_str(&alpha, &input_beta);
-            (key_0, key_1, alpha, input_beta)
+            let mut rng = thread_rng();
+            let nonce = rng.gen::<[u8; 16]>();
+
+            // Synthesize a fake weight.
+            let beta = mastic
+                .encode_measurement(&rand::thread_rng().gen_range(0..cfg.hist_buckets))
+                .unwrap();
+
+            match cfg.mode {
+                Mode::WeightedHeavyHitters { .. } | Mode::AttributeBasedMetrics { .. } => {
+                    // Synthesize a fake input.
+                    let alpha = sample_string(cfg.data_bytes * 8);
+
+                    let (key_0, key_1) = VidpfKey::gen_from_str(&alpha, &beta);
+
+                    let jr_parts = {
+                        let vidpf_seeds = (key_0.get_root_seed().key, key_1.get_root_seed().key);
+                        let mut jr_parts = [[0u8; 16]; 2];
+                        let mut jr_part_0_xof = XofShake128::init(&vidpf_seeds.0, &[0u8; 16]);
+                        jr_part_0_xof.update(&[0]); // Aggregator ID
+                        jr_part_0_xof.update(&nonce);
+                        jr_part_0_xof
+                            .into_seed_stream()
+                            .fill_bytes(&mut jr_parts[0]);
+
+                        let mut jr_part_1_xof = XofShake128::init(&vidpf_seeds.1, &[0u8; 16]);
+                        jr_part_1_xof.update(&[1]); // Aggregator ID
+                        jr_part_1_xof.update(&nonce);
+                        jr_part_1_xof
+                            .into_seed_stream()
+                            .fill_bytes(&mut jr_parts[1]);
+                        jr_parts
+                    };
+
+                    let (proof_0, proof_1) = {
+                        let joint_rand_xof = XofShake128::init(&jr_parts[0], &jr_parts[1]);
+                        let joint_rand: Vec<Field128> = joint_rand_xof
+                            .into_seed_stream()
+                            .into_field_vec(mastic.joint_rand_len());
+
+                        let prove_rand = random_vector(mastic.prove_rand_len()).unwrap();
+                        let proof = mastic.prove(&beta, &prove_rand, &joint_rand).unwrap();
+
+                        let proof_0 = proof
+                            .iter()
+                            .map(|_| Field128::from(rand::thread_rng().gen::<u128>()))
+                            .collect::<Vec<_>>();
+                        let proof_1 = proof
+                            .par_iter()
+                            .zip(proof_0.par_iter())
+                            .map(|(p_0, p_1)| p_0 - p_1)
+                            .collect::<Vec<_>>();
+
+                        (proof_0, proof_1)
+                    };
+
+                    PlaintextReport::Mastic {
+                        nonce,
+                        vidpf_keys: [key_0, key_1],
+                        flp_proof_shares: [proof_0, proof_1],
+                        flp_joint_rand_parts: jr_parts,
+                        alpha,
+                    }
+                }
+                Mode::PlainMetrics => todo!(),
+            }
         })
         .collect::<Vec<_>>();
 
-    let encoded: Vec<u8> = bincode::serialize(&keys[0].0).unwrap();
-    println!("VIDPFKey size: {:?} bytes", encoded.len());
+    match &reports[0] {
+        PlaintextReport::Mastic {
+            nonce,
+            vidpf_keys,
+            flp_proof_shares,
+            flp_joint_rand_parts,
+            ..
+        } => {
+            let encoded: Vec<u8> = bincode::serialize(nonce).unwrap();
+            println!("Nonce size: {:?} bytes", encoded.len());
 
-    keys
-}
+            let encoded: Vec<u8> = bincode::serialize(&flp_joint_rand_parts[0]).unwrap();
+            println!("JR size: {:?} bytes", encoded.len());
 
-fn generate_randomness(
-    keys: &[(VidpfKey, VidpfKey, String, Vec<Field128>)],
-) -> (Vec<[u8; 16]>, Vec<[[u8; 16]; 2]>) {
-    let (nonces, jr_parts): (Vec<[u8; 16]>, Vec<[[u8; 16]; 2]>) = keys
-        .par_iter()
-        .map(|(key_0, key_1, _, _)| {
-            let nonce = rand::thread_rng().gen::<u128>().to_le_bytes();
-            let vidpf_seeds = (key_0.get_root_seed().key, key_1.get_root_seed().key);
+            let encoded: Vec<u8> = bincode::serialize(&vidpf_keys[0]).unwrap();
+            println!("VIDPFKey size: {:?} bytes", encoded.len());
 
-            let mut jr_parts = [[0u8; 16]; 2];
-            let mut jr_part_0_xof = XofShake128::init(&vidpf_seeds.0, &[0u8; 16]);
-            jr_part_0_xof.update(&[0]); // Aggregator ID
-            jr_part_0_xof.update(&nonce);
-            jr_part_0_xof
-                .into_seed_stream()
-                .fill_bytes(&mut jr_parts[0]);
+            let encoded: Vec<u8> = bincode::serialize(&flp_proof_shares[0]).unwrap();
+            println!("FLP proof size: {:?} bytes", encoded.len());
+        }
+        PlaintextReport::Prio3 { .. } => {
+            todo!();
+        }
+    }
 
-            let mut jr_part_1_xof = XofShake128::init(&vidpf_seeds.1, &[0u8; 16]);
-            jr_part_1_xof.update(&[1]); // Aggregator ID
-            jr_part_1_xof.update(&nonce);
-            jr_part_1_xof
-                .into_seed_stream()
-                .fill_bytes(&mut jr_parts[1]);
-
-            (nonce, jr_parts)
-        })
-        .unzip();
-
-    let encoded: Vec<u8> = bincode::serialize(&nonces[0]).unwrap();
-    println!("Nonce size: {:?} bytes", encoded.len());
-    let encoded: Vec<u8> = bincode::serialize(&jr_parts[0]).unwrap();
-    println!("JR size: {:?} bytes", encoded.len());
-
-    (nonces, jr_parts)
-}
-
-fn generate_proofs(
-    mastic: &MasticHistogram,
-    keys: &[(VidpfKey, VidpfKey, String, Vec<Field128>)],
-    all_jr_parts: &Vec<[[u8; 16]; 2]>,
-) -> (Vec<Vec<Field128>>, Vec<Vec<Field128>>) {
-    let (proofs_0, proofs_1): (Vec<Vec<Field128>>, Vec<Vec<Field128>>) = all_jr_parts
-        .par_iter()
-        .zip_eq(
-            keys.par_iter()
-                .map(|(_key_0, _key_1, _alpha, input_beta)| input_beta),
-        )
-        .map(|(jr_parts, input_beta)| {
-            let joint_rand_xof = XofShake128::init(&jr_parts[0], &jr_parts[1]);
-            let joint_rand: Vec<Field128> = joint_rand_xof
-                .into_seed_stream()
-                .into_field_vec(mastic.joint_rand_len());
-
-            let prove_rand = random_vector(mastic.prove_rand_len()).unwrap();
-            let proof = mastic.prove(input_beta, &prove_rand, &joint_rand).unwrap();
-
-            let proof_0 = proof
-                .iter()
-                .map(|_| Field128::from(rand::thread_rng().gen::<u128>()))
-                .collect::<Vec<_>>();
-            let proof_1 = proof
-                .par_iter()
-                .zip(proof_0.par_iter())
-                .map(|(p_0, p_1)| p_0 - p_1)
-                .collect::<Vec<_>>();
-
-            (proof_0, proof_1)
-        })
-        .unzip();
-
-    let encoded: Vec<u8> = bincode::serialize(&proofs_0[0]).unwrap();
-    println!("FLP proof size: {:?} bytes", encoded.len());
-
-    (proofs_0, proofs_1)
+    reports
 }
 
 async fn reset_servers(
@@ -170,73 +257,62 @@ async fn tree_init(client_0: &CollectorClient, client_1: &CollectorClient) -> io
     Ok(())
 }
 
-async fn add_keys(
+async fn add_reports(
     cfg: &config::Config,
     clients: (&CollectorClient, &CollectorClient),
-    all_keys: &[(VidpfKey, VidpfKey, String, Vec<Field128>)],
-    all_proofs: (&[Vec<Field128>], &[Vec<Field128>]),
-    all_nonces: &[[u8; 16]],
-    all_jr_parts: &[[[u8; 16]; 2]],
+    all_reports: &[PlaintextReport],
     num_clients: usize,
     malicious_percentage: f32,
 ) -> io::Result<()> {
     let mut rng = rand::thread_rng();
     let zipf = zipf::ZipfDistribution::new(cfg.unique_buckets, cfg.zipf_exponent).unwrap();
 
-    let mut add_keys_0 = Vec::with_capacity(num_clients);
-    let mut add_keys_1 = Vec::with_capacity(num_clients);
-    let mut flp_proof_shares_0 = Vec::with_capacity(num_clients);
-    let mut flp_proof_shares_1 = Vec::with_capacity(num_clients);
-    let mut nonces = Vec::with_capacity(num_clients);
-    let mut jr_parts = Vec::with_capacity(num_clients);
+    let mut report_shares_0 = Vec::with_capacity(num_clients);
+    let mut report_shares_1 = Vec::with_capacity(num_clients);
     for r in 0..num_clients {
         let idx_1 = zipf.sample(&mut rng) - 1;
-        let mut idx_2 = idx_1;
-        let mut idx_3 = idx_1;
-        if rng.gen_range(0.0..1.0) < malicious_percentage {
-            if rng.gen() {
-                // Malicious key.
-                idx_2 += 1;
-            } else {
-                // Malicious FLP.
-                idx_3 += 1;
+        let [report_share_0, mut report_share_1] = all_reports[idx_1].to_shares();
+
+        match report_share_1 {
+            ReportShare::Mastic {
+                nonce: _,
+                ref mut vidpf_key,
+                ref mut flp_proof_share,
+                flp_joint_rand_parts: _,
+            } => {
+                if rng.gen_range(0.0..1.0) < malicious_percentage {
+                    if rng.gen() {
+                        // Malicious key. Tweaking the root seed is sufficient to cause VIDPF
+                        // verification to fail.
+                        vidpf_key.get_root_seed().key[0] ^= 1;
+                    } else {
+                        // Malicious FLP. Tweaking the proof is sufficient to cause FLP verification to
+                        // fail.
+                        flp_proof_share[0] += Field128::from(1337);
+                    }
+                    println!("Malicious {}", r);
+                }
             }
-            println!("Malicious {}", r);
+            ReportShare::Prio3 { .. } => todo!(),
         }
-        add_keys_0.push(all_keys[idx_1].0.clone());
-        add_keys_1.push(all_keys[idx_2 % cfg.unique_buckets].1.clone());
 
-        flp_proof_shares_0.push(all_proofs.0[idx_1].clone());
-        flp_proof_shares_1.push(all_proofs.1[idx_3 % cfg.unique_buckets].clone());
-
-        nonces.push(all_nonces[idx_1]);
-        jr_parts.push(all_jr_parts[idx_1]);
+        report_shares_0.push(report_share_0);
+        report_shares_1.push(report_share_1);
     }
 
-    let resp_0 = clients
-        .0
-        .add_keys(long_context(), AddKeysRequest { keys: add_keys_0 });
-    let resp_1 = clients
-        .1
-        .add_keys(long_context(), AddKeysRequest { keys: add_keys_1 });
-    try_join!(resp_0, resp_1).unwrap();
+    let resp_0 = clients.0.add_report_shares(
+        long_context(),
+        AddReportSharesRequest {
+            report_shares: report_shares_0,
+        },
+    );
+    let resp_1 = clients.1.add_report_shares(
+        long_context(),
+        AddReportSharesRequest {
+            report_shares: report_shares_1,
+        },
+    );
 
-    let resp_0 = clients.0.add_all_flp_proof_shares(
-        long_context(),
-        AddFLPsRequest {
-            flp_proof_shares: flp_proof_shares_0,
-            nonces: nonces.clone(),
-            jr_parts: jr_parts.clone(),
-        },
-    );
-    let resp_1 = clients.1.add_all_flp_proof_shares(
-        long_context(),
-        AddFLPsRequest {
-            flp_proof_shares: flp_proof_shares_1,
-            nonces: nonces.clone(),
-            jr_parts: jr_parts.clone(),
-        },
-    );
     try_join!(resp_0, resp_1).unwrap();
 
     Ok(())
@@ -529,16 +605,14 @@ async fn main() -> io::Result<()> {
     let mastic = Mastic::new_histogram(cfg.hist_buckets, 2).unwrap();
 
     let start = Instant::now();
-    println!("Generating keys...");
-    let keys = generate_keys(&cfg, &mastic);
+    println!("Generating reports...");
+    let reports = generate_reports(&cfg, &mastic);
     let delta = start.elapsed().as_secs_f64();
-    let (nonces, jr_parts) = generate_randomness(&keys);
-    let (proofs_0, proofs_1) = generate_proofs(&mastic, &keys, &jr_parts);
     println!(
         "Generated {:?} keys in {:?} seconds ({:?} sec/key)",
-        keys.len(),
+        reports.len(),
         delta,
-        delta / (keys.len() as f64)
+        delta / (reports.len() as f64)
     );
 
     let mut verify_key = [0; 16];
@@ -556,13 +630,10 @@ async fn main() -> io::Result<()> {
             left_to_go -= this_batch;
 
             if this_batch > 0 {
-                responses.push(add_keys(
+                responses.push(add_reports(
                     &cfg,
                     (&client_0, &client_1),
-                    &keys,
-                    (&proofs_0, &proofs_1),
-                    &nonces,
-                    &jr_parts,
+                    &reports,
                     this_batch,
                     malicious,
                 ));
@@ -615,7 +686,7 @@ async fn main() -> io::Result<()> {
                 let mut unique_inputs = HashSet::with_capacity(num_attributes);
                 for _ in 0..num_attributes {
                     let client_index = zipf.sample(&mut rng);
-                    unique_inputs.insert(keys[client_index].2.clone());
+                    unique_inputs.insert(reports[client_index].unwrap_alpha());
                 }
                 unique_inputs.into_iter().collect::<Vec<_>>()
             };
@@ -631,6 +702,7 @@ async fn main() -> io::Result<()> {
             )
             .await?;
         }
+        Mode::PlainMetrics => todo!(),
     };
     println!("Total time {:?}", start.elapsed().as_secs_f64());
 

@@ -21,8 +21,18 @@ fn collect_test_eval_groups() {
     for cstr in &client_strings {
         let input_beta = mastic.encode_measurement(&2).unwrap();
         let (keys_0, keys_1) = vidpf::VidpfKey::gen_from_str(&cstr, &input_beta);
-        col_0.add_key(keys_0);
-        col_1.add_key(keys_1);
+        col_0.add_report_share(ReportShare::Mastic {
+            nonce: Default::default(), // ignored by test
+            vidpf_key: keys_0,
+            flp_proof_share: Default::default(), // ignored by test
+            flp_joint_rand_parts: Default::default(), // ignored by test
+        });
+        col_1.add_report_share(ReportShare::Mastic {
+            nonce: Default::default(), // ignored by test
+            vidpf_key: keys_1,
+            flp_proof_share: Default::default(), // ignored by test
+            flp_joint_rand_parts: Default::default(), // ignored by test
+        });
     }
 
     col_0.tree_init();
@@ -113,8 +123,18 @@ fn collect_test_eval_full_groups() {
     for i in 0..num_clients {
         let copy_0 = keys[i % keys.len()].0.clone();
         let copy_1 = keys[i % keys.len()].1.clone();
-        col_0.add_key(copy_0);
-        col_1.add_key(copy_1);
+        col_0.add_report_share(ReportShare::Mastic {
+            nonce: Default::default(), // ignored by test
+            vidpf_key: copy_0,
+            flp_proof_share: Default::default(), // ignored by test
+            flp_joint_rand_parts: Default::default(), // ignored by test
+        });
+        col_1.add_report_share(ReportShare::Mastic {
+            nonce: Default::default(), // ignored by test
+            vidpf_key: copy_1,
+            flp_proof_share: Default::default(), // ignored by test
+            flp_joint_rand_parts: Default::default(), // ignored by test
+        });
         if i % 50 == 0 {
             println!("  VIDPFKey {:?}", i);
         }

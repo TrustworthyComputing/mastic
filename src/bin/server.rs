@@ -8,7 +8,7 @@ use futures::{future, prelude::*};
 use mastic::{
     collect, config, prg,
     rpc::{
-        AddFLPsRequest, AddKeysRequest, AggregateByAttributesResultRequest,
+        AddReportSharesRequest, AggregateByAttributesResultRequest,
         AggregateByAttributesValidateRequest, ApplyFLPResultsRequest, Collector,
         FinalSharesRequest, GetProofsRequest, ResetRequest, RunFlpQueriesRequest,
         TreeCrawlLastRequest, TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
@@ -48,29 +48,13 @@ impl Collector for CollectorServer {
         "Done".to_string()
     }
 
-    async fn add_keys(self, _: context::Context, req: AddKeysRequest) -> String {
+    async fn add_report_shares(self, _: context::Context, req: AddReportSharesRequest) -> String {
         let mut coll = self.arc.lock().unwrap();
-        for k in req.keys {
-            coll.add_key(k);
+        for report_share in req.report_shares.into_iter() {
+            coll.add_report_share(report_share);
         }
-        if coll.keys.len() % 10000 == 0 {
-            println!("Number of keys: {:?}", coll.keys.len());
-        }
-        "Done".to_string()
-    }
-
-    async fn add_all_flp_proof_shares(self, _: context::Context, req: AddFLPsRequest) -> String {
-        let mut coll = self.arc.lock().unwrap();
-        for ((flp_proof_share, nonce), jr_parts) in req
-            .flp_proof_shares
-            .into_iter()
-            .zip(req.nonces)
-            .zip(req.jr_parts)
-        {
-            coll.add_flp_proof_share(flp_proof_share, nonce, jr_parts);
-        }
-        if coll.keys.len() % 10000 == 0 {
-            println!("Number of keys: {:?}", coll.keys.len());
+        if coll.report_shares.len() % 10000 == 0 {
+            println!("Number of report shares: {:?}", coll.report_shares.len());
         }
         "Done".to_string()
     }
@@ -164,13 +148,16 @@ impl Collector for CollectorServer {
 
         results.par_extend((req.start..req.end).into_par_iter().map(|client_index| {
             let mut eval_proof = blake3::Hasher::new();
-            let (values_share, beta_share) = coll.keys[client_index].1.eval_tree(
-                req.attributes
-                    .iter()
-                    .map(|attribute| string_to_bits(attribute)),
-                coll.mastic.input_len(),
-                &mut eval_proof,
-            );
+            let (values_share, beta_share) = coll.report_shares[client_index]
+                .1
+                .unwrap_vidpf_key()
+                .eval_tree(
+                    req.attributes
+                        .iter()
+                        .map(|attribute| string_to_bits(attribute)),
+                    coll.mastic.input_len(),
+                    &mut eval_proof,
+                );
 
             let joint_rand = coll.flp_joint_rand(client_index);
             let query_rand = coll.flp_query_rand(client_index);
@@ -178,7 +165,7 @@ impl Collector for CollectorServer {
                 .mastic
                 .query(
                     &beta_share,
-                    &coll.all_flp_proof_shares[client_index],
+                    &coll.report_shares[client_index].1.unwrap_flp_proof_share(),
                     &query_rand,
                     &joint_rand,
                     2,
