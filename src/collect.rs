@@ -11,7 +11,11 @@ use rayon::prelude::*;
 use rs_merkle::{Hasher, MerkleTree};
 use serde::{Deserialize, Serialize};
 
-use crate::{prg, vec_add, vec_sub, vidpf, xor_in_place, xor_vec, MasticHistogram, HASH_SIZE};
+use crate::{
+    prg, vec_add, vec_sub,
+    vidpf::{self, VidpfKey},
+    xor_in_place, xor_vec, MasticHistogram, HASH_SIZE,
+};
 
 #[derive(Clone)]
 pub struct HashAlg {}
@@ -42,6 +46,71 @@ struct TreeNode<Field128> {
 unsafe impl<Field128> Send for TreeNode<Field128> {}
 unsafe impl<Field128> Sync for TreeNode<Field128> {}
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ReportShare {
+    Mastic {
+        nonce: [u8; 16],
+        vidpf_key: VidpfKey,
+        flp_proof_share: Vec<Field128>,
+        flp_joint_rand_parts: [[u8; 16]; 2],
+    },
+    Prio3 {
+        nonce: [u8; 16],
+        public_share_bytes: Vec<u8>,
+        input_share_bytes: Vec<u8>,
+    },
+}
+
+impl ReportShare {
+    /// Panics if the report share is not for Mastic.
+    pub fn unwrap_vidpf_key(&self) -> &VidpfKey {
+        match self {
+            Self::Mastic {
+                nonce: _,
+                ref vidpf_key,
+                flp_proof_share: _,
+                flp_joint_rand_parts: _,
+            } => vidpf_key,
+            Self::Prio3 { .. } => panic!("tried to get VIDPF key from Prio3 report share"),
+        }
+    }
+
+    /// Panics if the report share is not for Mastic.
+    fn unwrap_flp_joint_rand_parts(&self) -> &[[u8; 16]; 2] {
+        match self {
+            Self::Mastic {
+                nonce: _,
+                vidpf_key: _,
+                flp_proof_share: _,
+                ref flp_joint_rand_parts,
+            } => flp_joint_rand_parts,
+            Self::Prio3 { .. } => {
+                panic!("tried to get Mastic FLP joint rand parts from Prio3 report share")
+            }
+        }
+    }
+
+    /// Panics if the report share is not for Mastic.
+    pub fn unwrap_flp_proof_share(&self) -> &[Field128] {
+        match self {
+            Self::Mastic {
+                nonce: _,
+                vidpf_key: _,
+                ref flp_proof_share,
+                flp_joint_rand_parts: _,
+            } => flp_proof_share,
+            Self::Prio3 { .. } => panic!("tried to get Mastic FLP share from Prio3 report share"),
+        }
+    }
+
+    fn nonce(&self) -> &[u8; 16] {
+        match self {
+            Self::Mastic { nonce, .. } => &nonce,
+            Self::Prio3 { nonce, .. } => &nonce,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct KeyCollection {
     /// The type of the FLP.
@@ -56,18 +125,9 @@ pub struct KeyCollection {
     /// The depth of the tree.
     depth: usize,
 
-    /// The keys of the clients. The first element of the tuple is whether the client is honest or
+    /// The report shares of the clients. The first element of the tuple is whether the client is honest or
     /// not.
-    pub keys: Vec<(bool, vidpf::VidpfKey)>,
-
-    /// The nonces of the clients.
-    nonces: Vec<[u8; 16]>,
-
-    /// The joint randomness parts of the clients.
-    jr_parts: Vec<[[u8; 16]; 2]>,
-
-    /// The FLP proof shares of the clients.
-    pub all_flp_proof_shares: Vec<Vec<Field128>>,
+    pub report_shares: Vec<(bool, ReportShare)>,
 
     /// The current evaluations of the tree.
     frontier: Vec<TreeNode<Field128>>,
@@ -104,10 +164,7 @@ impl KeyCollection {
             server_id,
             verify_key,
             depth,
-            keys: vec![],
-            nonces: vec![],
-            jr_parts: vec![],
-            all_flp_proof_shares: vec![],
+            report_shares: vec![],
             frontier: vec![],
             prev_frontier: vec![],
             final_proofs: vec![],
@@ -115,19 +172,8 @@ impl KeyCollection {
         }
     }
 
-    pub fn add_key(&mut self, key: vidpf::VidpfKey) {
-        self.keys.push((true, key));
-    }
-
-    pub fn add_flp_proof_share(
-        &mut self,
-        flp_proof_share: Vec<Field128>,
-        nonce: [u8; 16],
-        jr_parts: [[u8; 16]; 2],
-    ) {
-        self.all_flp_proof_shares.push(flp_proof_share);
-        self.nonces.push(nonce);
-        self.jr_parts.push(jr_parts);
+    pub fn add_report_share(&mut self, report_share: ReportShare) {
+        self.report_shares.push((true, report_share));
     }
 
     pub fn tree_init(&mut self) {
@@ -138,8 +184,9 @@ impl KeyCollection {
             key_values: vec![],
         };
 
-        for k in &self.keys {
-            root.key_states.push(k.1.eval_init());
+        for (_honest, report_share) in &self.report_shares {
+            root.key_states
+                .push(report_share.unwrap_vidpf_key().eval_init());
             root.key_values.push(vec![Field128::from(0)]);
         }
 
@@ -152,11 +199,11 @@ impl KeyCollection {
         bit_str.push(if dir { '1' } else { '0' });
 
         let (key_states, key_values): (Vec<vidpf::EvalState>, Vec<Vec<Field128>>) = self
-            .keys
+            .report_shares
             .par_iter()
             .enumerate()
-            .map(|(i, key)| {
-                key.1.eval_bit(
+            .map(|(i, report_share)| {
+                report_share.1.unwrap_vidpf_key().eval_bit(
                     &parent.key_states[i],
                     dir,
                     &bit_str,
@@ -168,8 +215,8 @@ impl KeyCollection {
         let mut child_val = vec![Field128::from(0); &self.mastic.input_len() + 1];
         key_values
             .iter()
-            .zip(&self.keys)
-            .filter(|&(_, key)| key.0)
+            .zip(&self.report_shares)
+            .filter(|&(_, report_share)| report_share.0)
             .for_each(|(v, _)| vec_add(&mut child_val, v));
 
         let mut child = TreeNode::<Field128> {
@@ -212,8 +259,8 @@ impl KeyCollection {
                 vec_add(&mut beta_share, y_p0);
                 vec_add(&mut beta_share, y_p1);
 
-                let flp_proof_share = &self.all_flp_proof_shares[client_index];
-                let query_rand = self.flp_joint_rand(client_index);
+                let flp_proof_share = &self.report_shares[client_index].1.unwrap_flp_proof_share();
+                let query_rand = self.flp_query_rand(client_index);
                 let joint_rand = self.flp_joint_rand(client_index);
 
                 // Compute the flp_verifier_share.
@@ -232,18 +279,33 @@ impl KeyCollection {
     /// derive the correct joint randomness part from its input share and send it to the other so
     /// that they can check if the advertised parts were actually computed correctly.
     pub fn flp_joint_rand(&self, client_index: usize) -> Vec<Field128> {
-        let mut jr_parts = self.jr_parts[client_index];
+        let mut jr_parts = self.report_shares[client_index]
+            .1
+            .unwrap_flp_joint_rand_parts()
+            .clone();
         if self.server_id == 0 {
-            let mut jr_part_xof =
-                XofShake128::init(&self.keys[client_index].1.get_root_seed().key, &[0u8; 16]);
+            let mut jr_part_xof = XofShake128::init(
+                &self.report_shares[client_index]
+                    .1
+                    .unwrap_vidpf_key()
+                    .get_root_seed()
+                    .key,
+                &[0u8; 16],
+            );
             jr_part_xof.update(&[0]); // Aggregator ID
-            jr_part_xof.update(&self.nonces[client_index]);
+            jr_part_xof.update(self.report_shares[client_index].1.nonce());
             jr_part_xof.into_seed_stream().fill_bytes(&mut jr_parts[0]);
         } else {
-            let mut jr_part_xof =
-                XofShake128::init(&self.keys[client_index].1.get_root_seed().key, &[0u8; 16]);
+            let mut jr_part_xof = XofShake128::init(
+                &self.report_shares[client_index]
+                    .1
+                    .unwrap_vidpf_key()
+                    .get_root_seed()
+                    .key,
+                &[0u8; 16],
+            );
             jr_part_xof.update(&[1]); // Aggregator ID
-            jr_part_xof.update(&self.nonces[client_index]);
+            jr_part_xof.update(self.report_shares[client_index].1.nonce());
             jr_part_xof.into_seed_stream().fill_bytes(&mut jr_parts[1]);
         }
 
@@ -256,7 +318,8 @@ impl KeyCollection {
 
     /// Compute the query randomness for FLP evaluation.
     pub fn flp_query_rand(&self, client_index: usize) -> Vec<Field128> {
-        let query_rand_xof = XofShake128::init(&self.verify_key, &self.nonces[client_index]);
+        let query_rand_xof =
+            XofShake128::init(&self.verify_key, self.report_shares[client_index].1.nonce());
         let query_rand: Vec<Field128> = query_rand_xof
             .clone()
             .into_seed_stream()
@@ -275,7 +338,7 @@ impl KeyCollection {
 
             if is_last {
                 for &malicious_client in malicious {
-                    self.keys[malicious_client].0 = false;
+                    self.report_shares[malicious_client].0 = false;
                     println!("Removing malicious client {}.", malicious_client);
                 }
             }
@@ -357,10 +420,10 @@ impl KeyCollection {
             .collect::<Vec<_>>();
 
         let combined_hashes = self
-            .keys
+            .report_shares
             .par_iter()
             .enumerate()
-            .filter(|(_, key)| key.0)
+            .filter(|(_, report_share)| report_share.0)
             .map(|(client_index, _)| {
                 // Combine the multiple proofs that each client has for each prefix into a single
                 // proof for each client.
@@ -397,7 +460,10 @@ impl KeyCollection {
             })
             .collect::<Vec<[u8; HASH_SIZE]>>();
         debug_assert_eq!(
-            self.keys.iter().filter(|&key| key.0).count(),
+            self.report_shares
+                .iter()
+                .filter(|&report_share| report_share.0)
+                .count(),
             combined_hashes.len()
         );
 
@@ -455,10 +521,10 @@ impl KeyCollection {
             .collect::<Vec<TreeNode<Field128>>>();
 
         self.final_proofs = self
-            .keys
+            .report_shares
             .par_iter()
             .enumerate()
-            .filter(|(_, key)| key.0) // If the client is honest.
+            .filter(|(_, report_share)| report_share.0) // If the client is honest.
             .map(|(proof_index, _)| {
                 let mut proof = [0u8; HASH_SIZE];
                 next_frontier.iter().for_each(|node| {
@@ -500,12 +566,12 @@ impl KeyCollection {
     /// Remove the malicious clients (i.e., the clients whose the FLP was not successful) from the
     /// key collection.
     pub fn apply_flp_results(&mut self, keep: &[bool]) {
-        assert_eq!(keep.len(), self.keys.len());
+        assert_eq!(keep.len(), self.report_shares.len());
 
         // Remove keys for which the FLP did not verify successfully.
         for (i, alive) in keep.iter().enumerate() {
             if !alive {
-                self.keys[i].0 = false;
+                self.report_shares[i].0 = false;
                 println!("Removing malicious client {}.", i);
             }
         }

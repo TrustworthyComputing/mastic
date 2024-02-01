@@ -1,7 +1,10 @@
 use prio::field::Field128;
 use serde::{Deserialize, Serialize};
 
-use crate::{collect, vidpf, HASH_SIZE};
+use crate::{
+    collect::{self, ReportShare},
+    HASH_SIZE,
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ResetRequest {
@@ -10,15 +13,8 @@ pub struct ResetRequest {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AddKeysRequest {
-    pub keys: Vec<vidpf::VidpfKey>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AddFLPsRequest {
-    pub flp_proof_shares: Vec<Vec<Field128>>,
-    pub nonces: Vec<[u8; 16]>,
-    pub jr_parts: Vec<[[u8; 16]; 2]>,
+pub struct AddReportSharesRequest {
+    pub report_shares: Vec<ReportShare>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -82,11 +78,8 @@ pub trait Collector {
     /// Reset the collector to its initial state.
     async fn reset(req: ResetRequest) -> String;
 
-    /// Add a batch of keys to the collector.
-    async fn add_keys(req: AddKeysRequest) -> String;
-
-    /// Add a batch of FLP proof shares to the collector.
-    async fn add_all_flp_proof_shares(req: AddFLPsRequest) -> String;
+    /// Add a batch of report shares to the collector.
+    async fn add_report_shares(req: AddReportSharesRequest) -> String;
 
     /// Run FLP proof queries.
     async fn run_flp_queries(req: RunFlpQueriesRequest) -> Vec<Vec<Field128>>;

@@ -21,6 +21,9 @@ pub enum Mode {
         /// distribution as the clients.
         num_attributes: usize,
     },
+
+    /// Simulate plain metrics, aggregated using Prio3 instead of Mastic.
+    PlainMetrics,
 }
 
 #[derive(Deserialize)]
