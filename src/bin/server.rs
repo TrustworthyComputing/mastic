@@ -5,17 +5,26 @@ use std::{
 };
 
 use futures::{future, prelude::*};
+use itertools::Itertools;
 use mastic::{
-    collect, config, prg,
+    collect::{self, ReportShare},
+    config, prg,
     rpc::{
-        AddReportSharesRequest, AggregateByAttributesResultRequest,
-        AggregateByAttributesValidateRequest, ApplyFLPResultsRequest, Collector,
-        FinalSharesRequest, GetProofsRequest, ResetRequest, RunFlpQueriesRequest,
+        AddReportSharesRequest, ApplyFLPResultsRequest, AttributeBasedMetricsResultRequest,
+        AttributeBasedMetricsValidateRequest, Collector, FinalSharesRequest, GetProofsRequest,
+        PlainMetricsResultRequest, PlainMetricsValidateRequest, ResetRequest, RunFlpQueriesRequest,
         TreeCrawlLastRequest, TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
     },
     string_to_bits, vec_add, Mastic, HASH_SIZE,
 };
-use prio::field::{Field128, FieldElement};
+use prio::{
+    codec::{Encode, ParameterizedDecode},
+    field::{Field128, FieldElement},
+    vdaf::{
+        prio3::{Prio3, Prio3InputShare, Prio3PrepareShare, Prio3PublicShare},
+        AggregateShare, Aggregator, PrepareTransition,
+    },
+};
 use rayon::iter::{IntoParallelIterator, ParallelExtend, ParallelIterator};
 use tarpc::{
     context,
@@ -137,10 +146,10 @@ impl Collector for CollectorServer {
         coll.final_shares()
     }
 
-    async fn aggregate_by_attributes_start(
+    async fn attribute_based_metrics_validate(
         self,
         _: context::Context,
-        req: AggregateByAttributesValidateRequest,
+        req: AttributeBasedMetricsValidateRequest,
     ) -> Vec<(Vec<Field128>, [u8; blake3::OUT_LEN])> {
         debug_assert!(req.start < req.end);
         let mut coll = self.arc.lock().unwrap();
@@ -183,37 +192,131 @@ impl Collector for CollectorServer {
         let mut resp = Vec::with_capacity(req.end - req.start);
         for (client_index, values_share, verifier_share, eval_proof) in results.into_iter() {
             resp.push((verifier_share, eval_proof));
-            coll.aggregate_by_attributes_state
+            coll.attribute_based_metrics_state
                 .insert(client_index, values_share);
         }
 
         resp
     }
 
-    async fn aggregate_by_attributes_finish(
+    async fn attribute_based_metrics_result(
         self,
         _: context::Context,
-        req: AggregateByAttributesResultRequest,
+        req: AttributeBasedMetricsResultRequest,
     ) -> Vec<Vec<Field128>> {
         debug_assert!(req.start < req.end);
         let mut coll = self.arc.lock().unwrap();
 
         for rejected_client_index in req.rejected {
             debug_assert!(coll
-                .aggregate_by_attributes_state
+                .attribute_based_metrics_state
                 .remove(&rejected_client_index)
                 .is_some());
         }
 
         let mut agg_share =
             vec![vec![Field128::zero(); coll.mastic.input_len()]; req.num_attributes];
-        for (_clinet_index, values_share) in coll.aggregate_by_attributes_state.iter() {
+        for (_clinet_index, values_share) in coll.attribute_based_metrics_state.iter() {
             for (a, v) in agg_share.iter_mut().zip(values_share.iter()) {
                 vec_add(a, v);
             }
         }
 
         agg_share
+    }
+
+    async fn plain_metrics_validate(
+        self,
+        _: context::Context,
+        req: PlainMetricsValidateRequest,
+    ) -> Vec<Vec<u8>> {
+        debug_assert!(req.start < req.end);
+        let mut coll = self.arc.lock().unwrap();
+        let mut results = Vec::with_capacity(req.end - req.start);
+        let agg_id = self.server_id.try_into().unwrap();
+        let chunk_length = (coll.mastic.input_len() as f64).sqrt() as usize;
+        let prio3 = Prio3::new_histogram(2, coll.mastic.input_len(), chunk_length).unwrap();
+
+        results.par_extend((req.start..req.end).into_par_iter().map(|client_index| {
+            let ReportShare::Prio3 {
+                nonce,
+                public_share_bytes,
+                input_share_bytes,
+            } = &coll.report_shares[client_index].1
+            else {
+                panic!("tried to call plain_metrics_validate() on report of incorrect type");
+            };
+
+            let public_share =
+                Prio3PublicShare::get_decoded_with_param(&prio3, &public_share_bytes).unwrap();
+            let input_share =
+                Prio3InputShare::get_decoded_with_param(&(&prio3, agg_id), &input_share_bytes)
+                    .unwrap();
+
+            let (prep_state, prep_share) = prio3
+                .prepare_init(
+                    &coll.verify_key,
+                    agg_id,
+                    &(),
+                    nonce,
+                    &public_share,
+                    &input_share,
+                )
+                .unwrap();
+
+            (client_index, prep_state, prep_share)
+        }));
+
+        let mut resp = Vec::with_capacity(req.end - req.start);
+        for (client_index, prep_state, prep_share) in results.into_iter() {
+            resp.push(prep_share.get_encoded());
+            coll.plain_metrics_state
+                .insert(client_index, (prep_state, prep_share));
+        }
+
+        resp
+    }
+
+    async fn plain_metrics_result(
+        self,
+        _: context::Context,
+        req: PlainMetricsResultRequest,
+    ) -> (AggregateShare<Field128>, usize) {
+        debug_assert!(req.start < req.end);
+        let mut coll = self.arc.lock().unwrap();
+        let chunk_length = (coll.mastic.input_len() as f64).sqrt() as usize;
+        let prio3 = Prio3::new_histogram(2, coll.mastic.input_len(), chunk_length).unwrap();
+
+        let out_shares = (req.start..req.end)
+            .zip(req.peer_prep_shares.into_iter())
+            .filter_map(|(client_index, peer_prep_share)| {
+                let (prep_state, prep_share) =
+                    coll.plain_metrics_state.remove(&client_index).unwrap();
+                let peer_prep_share =
+                    Prio3PrepareShare::get_decoded_with_param(&prep_state, &peer_prep_share)
+                        .unwrap();
+                let prep_shares = if self.server_id == 0 {
+                    [prep_share, peer_prep_share]
+                } else {
+                    [peer_prep_share, prep_share]
+                };
+
+                let Ok(prep_msg) = prio3.prepare_shares_to_prepare_message(&(), prep_shares) else {
+                    return None; // rejected
+                };
+
+                match prio3.prepare_next(prep_state, prep_msg) {
+                    Ok(PrepareTransition::Finish(out_share)) => Some(out_share),
+                    Ok(..) => panic!("unexpected transition"),
+                    Err(_) => None, // rejected
+                }
+            })
+            .collect_vec();
+
+        let rejected = req.end - req.start - out_shares.len();
+        let agg_share = prio3.aggregate(&(), out_shares).unwrap();
+
+        (agg_share, rejected)
     }
 }
 

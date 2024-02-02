@@ -1,4 +1,4 @@
-use prio::field::Field128;
+use prio::{field::Field128, vdaf::AggregateShare};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -56,16 +56,29 @@ pub struct TreePruneRequest {
 pub struct FinalSharesRequest {}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AggregateByAttributesValidateRequest {
+pub struct AttributeBasedMetricsValidateRequest {
     pub attributes: Vec<String>,
     pub start: usize,
     pub end: usize,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AggregateByAttributesResultRequest {
+pub struct AttributeBasedMetricsResultRequest {
     pub rejected: Vec<usize>,
     pub num_attributes: usize,
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PlainMetricsValidateRequest {
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PlainMetricsResultRequest {
+    pub peer_prep_shares: Vec<Vec<u8>>,
     pub start: usize,
     pub end: usize,
 }
@@ -106,14 +119,25 @@ pub trait Collector {
 
     /// For the subset of reports indicated by the caller, evaluate the VIDPF key on the provided set
     /// of attributes and return the VIDPF proof and FLP verifier share.
-    async fn aggregate_by_attributes_start(
-        req: AggregateByAttributesValidateRequest,
+    async fn attribute_based_metrics_validate(
+        req: AttributeBasedMetricsValidateRequest,
     ) -> Vec<(Vec<Field128>, [u8; blake3::OUT_LEN])>;
 
     /// For the subset of reports indicated by the caller, compute the aggregate share, rejecting
     /// the reports indicated by the caller. This method should be called only after calling
-    /// `aggregate_by_attributes_start` on the same set of reports.
-    async fn aggregate_by_attributes_finish(
-        req: AggregateByAttributesResultRequest,
+    /// `attribute_based_metrics_validate` on the same set of reports.
+    async fn attribute_based_metrics_result(
+        req: AttributeBasedMetricsResultRequest,
     ) -> Vec<Vec<Field128>>;
+
+    /// For the subset of reports indicated by the caller, compute the aggregator's Prio3 prep share.
+    async fn plain_metrics_validate(req: PlainMetricsValidateRequest) -> Vec<Vec<u8>>;
+
+    /// For the subset of reports indicated by the caller, process the peer's Prio3 prep share and
+    /// compute the aggregate share, rejecting invalid reports. Return the aggregate share and the
+    /// number of reports rejected. This method should be called only after calling
+    /// `plain_metrics_validate` on the same set of reports.
+    async fn plain_metrics_result(
+        req: PlainMetricsResultRequest,
+    ) -> (AggregateShare<Field128>, usize);
 }
