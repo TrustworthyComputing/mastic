@@ -20,8 +20,10 @@ pub use crate::rpc::CollectorClient;
 
 pub const HASH_SIZE: usize = 16;
 
-pub fn histogram_chunk_length(num_buckets: usize) -> usize {
-    (num_buckets as f64).sqrt() as usize
+pub fn histogram_chunk_length(_num_buckets: usize) -> usize {
+    // NOTE(cjpatton) The "asymptotically optimal" chunk length is `(num_buckets as f64).sqrt() as
+    // usize`. However our histograms are so small that a constant size seems to perform better.
+    2
 }
 
 #[derive(Clone, Debug)]
