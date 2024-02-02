@@ -1,11 +1,7 @@
 {
     "data_bytes": 1,
     "hist_buckets": 4,
-    "mode": {
-        "attribute_based_metrics": {
-            "num_attributes": 20
-        }
-    },
+    "mode": "plain_metrics",
     "server_0": "0.0.0.0:8000",
     "server_1": "0.0.0.0:8001",
     "add_key_batch_size": 1000,

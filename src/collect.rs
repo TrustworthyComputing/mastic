@@ -4,7 +4,10 @@ use blake3::hash;
 use prio::{
     codec::Encode,
     field::Field128,
-    vdaf::xof::{IntoFieldVec, Xof, XofShake128},
+    vdaf::{
+        prio3::{Prio3PrepareShare, Prio3PrepareState},
+        xof::{IntoFieldVec, Xof, XofShake128},
+    },
 };
 use rand_core::RngCore;
 use rayon::prelude::*;
@@ -119,8 +122,8 @@ pub struct KeyCollection {
     /// The ID of the server (0 or 1).
     server_id: i8,
 
-    ///
-    verify_key: [u8; 16],
+    /// FLP verification key.
+    pub verify_key: [u8; 16],
 
     /// The depth of the tree.
     depth: usize,
@@ -138,8 +141,14 @@ pub struct KeyCollection {
     /// The final VIDPF proofs of the clients.
     final_proofs: Vec<[u8; HASH_SIZE]>,
 
-    /// Storage the values share for each report.
-    pub aggregate_by_attributes_state: HashMap<usize, Vec<Vec<Field128>>>,
+    pub attribute_based_metrics_state: HashMap<usize, Vec<Vec<Field128>>>,
+    pub plain_metrics_state: HashMap<
+        usize,
+        (
+            Prio3PrepareState<Field128, 16>,
+            Prio3PrepareShare<Field128, 16>,
+        ),
+    >,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -168,7 +177,8 @@ impl KeyCollection {
             frontier: vec![],
             prev_frontier: vec![],
             final_proofs: vec![],
-            aggregate_by_attributes_state: HashMap::default(),
+            attribute_based_metrics_state: HashMap::default(),
+            plain_metrics_state: HashMap::default(),
         }
     }
 

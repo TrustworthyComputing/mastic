@@ -9,10 +9,10 @@ use mastic::{
     collect::{self, ReportShare},
     config::{self, Mode},
     rpc::{
-        AddReportSharesRequest, AggregateByAttributesResultRequest,
-        AggregateByAttributesValidateRequest, ApplyFLPResultsRequest, FinalSharesRequest,
-        GetProofsRequest, ResetRequest, RunFlpQueriesRequest, TreeCrawlLastRequest,
-        TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
+        AddReportSharesRequest, ApplyFLPResultsRequest, AttributeBasedMetricsResultRequest,
+        AttributeBasedMetricsValidateRequest, FinalSharesRequest, GetProofsRequest,
+        PlainMetricsResultRequest, PlainMetricsValidateRequest, ResetRequest, RunFlpQueriesRequest,
+        TreeCrawlLastRequest, TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
     },
     vec_add,
     vidpf::VidpfKey,
@@ -22,8 +22,9 @@ use prio::{
     codec::Encode,
     field::{random_vector, Field128},
     vdaf::{
-        prio3::{Prio3InputShare, Prio3PublicShare},
+        prio3::{Prio3, Prio3InputShare, Prio3PublicShare},
         xof::{IntoFieldVec, Xof, XofShake128},
+        Client, Collector,
     },
 };
 use rand::{
@@ -63,7 +64,6 @@ enum PlaintextReport {
 
     /// A plaintext report for Prio3. This report type is used for plain (non-attribute-based)
     /// metrics.
-    #[allow(dead_code)]
     Prio3 {
         nonce: [u8; 16],
         public_share: Prio3PublicShare<16>,
@@ -137,15 +137,14 @@ fn generate_reports(cfg: &config::Config, mastic: &MasticHistogram) -> Vec<Plain
             let mut rng = thread_rng();
             let nonce = rng.gen::<[u8; 16]>();
 
-            // Synthesize a fake weight.
-            let beta = mastic
-                .encode_measurement(&rand::thread_rng().gen_range(0..cfg.hist_buckets))
-                .unwrap();
+            // Synthesize a fake histogram contribution.
+            let bucket = rng.gen_range(0..cfg.hist_buckets);
 
             match cfg.mode {
                 Mode::WeightedHeavyHitters { .. } | Mode::AttributeBasedMetrics { .. } => {
-                    // Synthesize a fake input.
+                    // Synthesize a fake input and weight.
                     let alpha = sample_string(cfg.data_bytes * 8);
+                    let beta = mastic.encode_measurement(&bucket).unwrap();
 
                     let (key_0, key_1) = VidpfKey::gen_from_str(&alpha, &beta);
 
@@ -198,7 +197,17 @@ fn generate_reports(cfg: &config::Config, mastic: &MasticHistogram) -> Vec<Plain
                         alpha,
                     }
                 }
-                Mode::PlainMetrics => todo!(),
+                Mode::PlainMetrics => {
+                    let chunk_length = (mastic.input_len() as f64).sqrt() as usize;
+                    let prio3 = Prio3::new_histogram(2, mastic.input_len(), chunk_length).unwrap();
+                    let (public_share, input_shares) = prio3.shard(&bucket, &nonce).unwrap();
+
+                    PlaintextReport::Prio3 {
+                        nonce,
+                        public_share,
+                        input_shares: input_shares.try_into().unwrap(),
+                    }
+                }
             }
         })
         .collect::<Vec<_>>();
@@ -223,8 +232,14 @@ fn generate_reports(cfg: &config::Config, mastic: &MasticHistogram) -> Vec<Plain
             let encoded: Vec<u8> = bincode::serialize(&flp_proof_shares[0]).unwrap();
             println!("FLP proof size: {:?} bytes", encoded.len());
         }
-        PlaintextReport::Prio3 { .. } => {
-            todo!();
+        r @ PlaintextReport::Prio3 { .. } => {
+            let [report_share_0, report_share_1] = r.to_shares();
+
+            let encoded: Vec<u8> = bincode::serialize(&report_share_0).unwrap();
+            println!("leader report share size: {:?} bytes", encoded.len());
+
+            let encoded: Vec<u8> = bincode::serialize(&report_share_1).unwrap();
+            println!("helper report share size: {:?} bytes", encoded.len());
         }
     }
 
@@ -273,14 +288,14 @@ async fn add_reports(
         let idx_1 = zipf.sample(&mut rng) - 1;
         let [report_share_0, mut report_share_1] = all_reports[idx_1].to_shares();
 
-        match report_share_1 {
-            ReportShare::Mastic {
-                nonce: _,
-                ref mut vidpf_key,
-                ref mut flp_proof_share,
-                flp_joint_rand_parts: _,
-            } => {
-                if rng.gen_range(0.0..1.0) < malicious_percentage {
+        if rng.gen_range(0.0..1.0) < malicious_percentage {
+            match report_share_1 {
+                ReportShare::Mastic {
+                    nonce: _,
+                    ref mut vidpf_key,
+                    ref mut flp_proof_share,
+                    flp_joint_rand_parts: _,
+                } => {
                     if rng.gen() {
                         // Malicious key. Tweaking the root seed is sufficient to cause VIDPF
                         // verification to fail.
@@ -290,10 +305,17 @@ async fn add_reports(
                         // fail.
                         flp_proof_share[0] += Field128::from(1337);
                     }
-                    println!("Malicious {}", r);
+                }
+                ReportShare::Prio3 {
+                    nonce: _,
+                    public_share_bytes: _,
+                    ref mut input_share_bytes,
+                } => {
+                    // Tweaking the input share is sufficient to cause FLP verification to fail.
+                    input_share_bytes[0] ^= 1;
                 }
             }
-            ReportShare::Prio3 { .. } => todo!(),
+            println!("Malicious {}", r);
         }
 
         report_shares_0.push(report_share_0);
@@ -511,7 +533,7 @@ async fn run_level_last(
     Ok(())
 }
 
-async fn run_aggregate_by_attributes(
+async fn run_attribute_based_metrics(
     cfg: &config::Config,
     mastic: &MasticHistogram,
     client_0: &CollectorClient,
@@ -521,7 +543,7 @@ async fn run_aggregate_by_attributes(
 ) -> io::Result<()> {
     for start in (0..num_clients).step_by(cfg.flp_batch_size) {
         let end = std::cmp::min(num_clients, start + cfg.flp_batch_size);
-        let req = AggregateByAttributesValidateRequest {
+        let req = AttributeBasedMetricsValidateRequest {
             attributes: attributes.to_vec(),
             start,
             end,
@@ -530,8 +552,8 @@ async fn run_aggregate_by_attributes(
         // For each report, each aggregator evaluates the VIDPF on each of the attributes and returns
         // the VIDPF proof and its FLP verifier share.
         let t = Instant::now();
-        let resp_0 = client_0.aggregate_by_attributes_start(long_context(), req.clone());
-        let resp_1 = client_1.aggregate_by_attributes_start(long_context(), req.clone());
+        let resp_0 = client_0.attribute_based_metrics_validate(long_context(), req.clone());
+        let resp_1 = client_1.attribute_based_metrics_validate(long_context(), req.clone());
         let (results_0, results_1) = try_join!(resp_0, resp_1).unwrap();
         assert_eq!(results_0.len(), req.end - req.start);
         assert_eq!(results_1.len(), req.end - req.start);
@@ -559,15 +581,15 @@ async fn run_aggregate_by_attributes(
         );
 
         let t = Instant::now();
-        let req = AggregateByAttributesResultRequest {
+        let req = AttributeBasedMetricsResultRequest {
             rejected,
             num_attributes: attributes.len(),
             start,
             end,
         };
 
-        let resp_0 = client_0.aggregate_by_attributes_finish(long_context(), req.clone());
-        let resp_1 = client_1.aggregate_by_attributes_finish(long_context(), req.clone());
+        let resp_0 = client_0.attribute_based_metrics_result(long_context(), req.clone());
+        let resp_1 = client_1.attribute_based_metrics_result(long_context(), req.clone());
         let (mut results, results_share_1) = try_join!(resp_0, resp_1).unwrap();
         for (r, s1) in results.iter_mut().zip(results_share_1.iter()) {
             vec_add(r, s1);
@@ -581,6 +603,81 @@ async fn run_aggregate_by_attributes(
         for (attribute, result) in attributes.iter().zip(results.iter()) {
             println!("{attribute}: {result:?}");
         }
+    }
+
+    Ok(())
+}
+
+async fn run_plain_metrics(
+    cfg: &config::Config,
+    mastic: &MasticHistogram,
+    client_0: &CollectorClient,
+    client_1: &CollectorClient,
+    num_clients: usize,
+) -> io::Result<()> {
+    let chunk_length = (mastic.input_len() as f64).sqrt() as usize;
+    let prio3 = Prio3::new_histogram(2, mastic.input_len(), chunk_length).unwrap();
+
+    for start in (0..num_clients).step_by(cfg.flp_batch_size) {
+        let end = std::cmp::min(num_clients, start + cfg.flp_batch_size);
+        let req = PlainMetricsValidateRequest { start, end };
+
+        // For each report, each aggregator evaluates the VIDPF on each of the attributes and returns
+        // the VIDPF proof and its FLP verifier share.
+        let t = Instant::now();
+        let resp_0 = client_0.plain_metrics_validate(long_context(), req.clone());
+        let resp_1 = client_1.plain_metrics_validate(long_context(), req.clone());
+        let (results_0, results_1) = try_join!(resp_0, resp_1).unwrap();
+        assert_eq!(results_0.len(), req.end - req.start);
+        assert_eq!(results_1.len(), req.end - req.start);
+        println!(
+            "{start}..{end}: report validation initialized in {:?}",
+            t.elapsed(),
+        );
+
+        // Relay each aggregator's prep shares to its peer.
+        //
+        // NOTE(cjpatton) To validate the report, each aggregator combines the prep shares,
+        // then uses the combined prep message and its state to compute its output share. Thus
+        // it is necessary to relay each aggregator's prep share to its peer. We could save
+        // communication here by having the driver compute the prep message at this point,
+        // however the libprio-rs API currently doesn't allow this. See
+        // https://github.com/divviup/libprio-rs/issues/912.
+        let t = Instant::now();
+        let resp_0 = client_0.plain_metrics_result(
+            long_context(),
+            PlainMetricsResultRequest {
+                peer_prep_shares: results_1,
+                start,
+                end,
+            },
+        );
+        let resp_1 = client_1.plain_metrics_result(
+            long_context(),
+            PlainMetricsResultRequest {
+                peer_prep_shares: results_0,
+                start,
+                end,
+            },
+        );
+        let ((agg_share_0, rejected_count), (agg_share_1, rejected_count_1)) =
+            try_join!(resp_0, resp_1).unwrap();
+        assert_eq!(rejected_count, rejected_count_1);
+        let result = prio3
+            .unshard(
+                &(),
+                [agg_share_0, agg_share_1],
+                end - start - rejected_count,
+            )
+            .unwrap();
+
+        println!(
+            "{start}..{end}: report validation and aggregation completed in {:?}: rejected {} reports",
+            t.elapsed(),
+            rejected_count,
+        );
+
+        println!("{result:?}");
     }
 
     Ok(())
@@ -692,7 +789,7 @@ async fn main() -> io::Result<()> {
             };
             println!("Using {} attributes", attributes.len());
 
-            run_aggregate_by_attributes(
+            run_attribute_based_metrics(
                 &cfg,
                 &mastic,
                 &client_0,
@@ -702,7 +799,9 @@ async fn main() -> io::Result<()> {
             )
             .await?;
         }
-        Mode::PlainMetrics => todo!(),
+        Mode::PlainMetrics => {
+            run_plain_metrics(&cfg, &mastic, &client_0, &client_1, num_clients).await?
+        }
     };
     println!("Total time {:?}", start.elapsed().as_secs_f64());
 
