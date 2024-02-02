@@ -14,7 +14,7 @@ fn collect_test_eval_groups() {
     let mut verify_key = [0; 16];
     thread_rng().fill(&mut verify_key);
 
-    let mastic = Mastic::new_histogram(4, 2).unwrap();
+    let mastic = Mastic::new_histogram(4).unwrap();
     let mut col_0 = KeyCollection::new(mastic.clone(), 0, &seed, strlen, verify_key);
     let mut col_1 = KeyCollection::new(mastic.clone(), 1, &seed, strlen, verify_key);
 
@@ -108,7 +108,7 @@ fn collect_test_eval_full_groups() {
     let seed = prg::PrgSeed::random();
     let mut verify_key = [0; 16];
     thread_rng().fill(&mut verify_key);
-    let mastic = Mastic::new_histogram(4, 2).unwrap();
+    let mastic = Mastic::new_histogram(4).unwrap();
     let mut col_0 = KeyCollection::new(mastic.clone(), 0, &seed, strlen, verify_key);
     let mut col_1 = KeyCollection::new(mastic.clone(), 1, &seed, strlen, verify_key);
 

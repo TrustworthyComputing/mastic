@@ -20,6 +20,10 @@ pub use crate::rpc::CollectorClient;
 
 pub const HASH_SIZE: usize = 16;
 
+pub fn histogram_chunk_length(num_buckets: usize) -> usize {
+    (num_buckets as f64).sqrt() as usize
+}
+
 #[derive(Clone, Debug)]
 pub struct Mastic<T>
 where
@@ -106,8 +110,8 @@ pub type MasticHistogram = Mastic<Histogram<Field128, ParallelSum<Field128, Mul<
 impl MasticHistogram {
     /// Constructs an instance of MasticHistogram with the given number of aggregators,
     /// number of buckets, and parallel sum gadget chunk length.
-    pub fn new_histogram(length: usize, chunk_length: usize) -> Result<Self, VdafError> {
-        Mastic::new(Histogram::new(length, chunk_length)?)
+    pub fn new_histogram(length: usize) -> Result<Self, VdafError> {
+        Mastic::new(Histogram::new(length, histogram_chunk_length(length))?)
     }
 }
 

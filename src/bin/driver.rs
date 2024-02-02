@@ -8,6 +8,7 @@ use futures::try_join;
 use mastic::{
     collect::{self, ReportShare},
     config::{self, Mode},
+    histogram_chunk_length,
     rpc::{
         AddReportSharesRequest, ApplyFLPResultsRequest, AttributeBasedMetricsResultRequest,
         AttributeBasedMetricsValidateRequest, FinalSharesRequest, GetProofsRequest,
@@ -198,7 +199,7 @@ fn generate_reports(cfg: &config::Config, mastic: &MasticHistogram) -> Vec<Plain
                     }
                 }
                 Mode::PlainMetrics => {
-                    let chunk_length = (mastic.input_len() as f64).sqrt() as usize;
+                    let chunk_length = histogram_chunk_length(mastic.input_len());
                     let prio3 = Prio3::new_histogram(2, mastic.input_len(), chunk_length).unwrap();
                     let (public_share, input_shares) = prio3.shard(&bucket, &nonce).unwrap();
 
@@ -615,7 +616,7 @@ async fn run_plain_metrics(
     client_1: &CollectorClient,
     num_clients: usize,
 ) -> io::Result<()> {
-    let chunk_length = (mastic.input_len() as f64).sqrt() as usize;
+    let chunk_length = histogram_chunk_length(mastic.input_len());
     let prio3 = Prio3::new_histogram(2, mastic.input_len(), chunk_length).unwrap();
 
     for start in (0..num_clients).step_by(cfg.flp_batch_size) {
@@ -699,7 +700,7 @@ async fn main() -> io::Result<()> {
     )
     .spawn();
 
-    let mastic = Mastic::new_histogram(cfg.hist_buckets, 2).unwrap();
+    let mastic = Mastic::new_histogram(cfg.hist_buckets).unwrap();
 
     let start = Instant::now();
     println!("Generating reports...");
