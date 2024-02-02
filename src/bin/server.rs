@@ -8,7 +8,7 @@ use futures::{future, prelude::*};
 use itertools::Itertools;
 use mastic::{
     collect::{self, ReportShare},
-    config, prg,
+    config, histogram_chunk_length, prg,
     rpc::{
         AddReportSharesRequest, ApplyFLPResultsRequest, AttributeBasedMetricsResultRequest,
         AttributeBasedMetricsValidateRequest, Collector, FinalSharesRequest, GetProofsRequest,
@@ -48,7 +48,7 @@ impl Collector for CollectorServer {
     async fn reset(self, _: context::Context, req: ResetRequest) -> String {
         let mut coll = self.arc.lock().unwrap();
         *coll = collect::KeyCollection::new(
-            Mastic::new_histogram(req.hist_buckets, 2).unwrap(),
+            Mastic::new_histogram(req.hist_buckets).unwrap(),
             self.server_id,
             &self.seed,
             self.data_bytes,
@@ -234,7 +234,7 @@ impl Collector for CollectorServer {
         let mut coll = self.arc.lock().unwrap();
         let mut results = Vec::with_capacity(req.end - req.start);
         let agg_id = self.server_id.try_into().unwrap();
-        let chunk_length = (coll.mastic.input_len() as f64).sqrt() as usize;
+        let chunk_length = histogram_chunk_length(coll.mastic.input_len());
         let prio3 = Prio3::new_histogram(2, coll.mastic.input_len(), chunk_length).unwrap();
 
         results.par_extend((req.start..req.end).into_par_iter().map(|client_index| {
@@ -284,7 +284,7 @@ impl Collector for CollectorServer {
     ) -> (AggregateShare<Field128>, usize) {
         debug_assert!(req.start < req.end);
         let mut coll = self.arc.lock().unwrap();
-        let chunk_length = (coll.mastic.input_len() as f64).sqrt() as usize;
+        let chunk_length = histogram_chunk_length(coll.mastic.input_len());
         let prio3 = Prio3::new_histogram(2, coll.mastic.input_len(), chunk_length).unwrap();
 
         let out_shares = (req.start..req.end)
@@ -330,7 +330,7 @@ async fn main() -> io::Result<()> {
     };
 
     let seed = prg::PrgSeed { key: [1u8; 16] };
-    let mastic = Mastic::new_histogram(cfg.hist_buckets, 2).unwrap();
+    let mastic = Mastic::new_histogram(cfg.hist_buckets).unwrap();
 
     let coll = collect::KeyCollection::new(
         mastic.clone(),

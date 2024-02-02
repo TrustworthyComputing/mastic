@@ -11,13 +11,12 @@ use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelI
 #[test]
 fn histograms() {
     let buckets = 10;
-    let chunk_length = 2;
 
     // The same verify_key for the Aggregators. Needs to be random for different sessions.
     let mut verify_key = [0; 16];
     thread_rng().fill(&mut verify_key);
 
-    let mastic = Mastic::new_histogram(buckets, chunk_length).unwrap();
+    let mastic = Mastic::new_histogram(buckets).unwrap();
 
     assert!(run_flp_with_input(&verify_key, &mastic, 0).unwrap());
     assert!(run_flp_with_input(&verify_key, &mastic, 1).unwrap());
