@@ -97,16 +97,16 @@ impl PlaintextReport {
                 ..
             } => [
                 ReportShare::Mastic {
-                    nonce: nonce.clone(),
+                    nonce: *nonce,
                     vidpf_key: vidpf_keys[0].clone(),
                     flp_proof_share: flp_proof_shares[0].clone(),
-                    flp_joint_rand_parts: flp_joint_rand_parts.clone(),
+                    flp_joint_rand_parts: *flp_joint_rand_parts,
                 },
                 ReportShare::Mastic {
-                    nonce: nonce.clone(),
+                    nonce: *nonce,
                     vidpf_key: vidpf_keys[1].clone(),
                     flp_proof_share: flp_proof_shares[1].clone(),
-                    flp_joint_rand_parts: flp_joint_rand_parts.clone(),
+                    flp_joint_rand_parts: *flp_joint_rand_parts,
                 },
             ],
             Self::Prio3 {
@@ -115,12 +115,12 @@ impl PlaintextReport {
                 input_shares,
             } => [
                 ReportShare::Prio3 {
-                    nonce: nonce.clone(),
+                    nonce: *nonce,
                     public_share_bytes: public_share.get_encoded(),
                     input_share_bytes: input_shares[0].get_encoded(),
                 },
                 ReportShare::Prio3 {
-                    nonce: nonce.clone(),
+                    nonce: *nonce,
                     public_share_bytes: public_share.get_encoded(),
                     input_share_bytes: input_shares[1].get_encoded(),
                 },
@@ -199,7 +199,8 @@ fn generate_reports(cfg: &config::Config, mastic: &MasticHistogram) -> Vec<Plain
                     }
                 }
                 Mode::PlainMetrics => {
-                    let chunk_length = histogram_chunk_length(mastic.input_len());
+                    let chunk_length =
+                        histogram_chunk_length(mastic.input_len(), Mode::PlainMetrics);
                     let prio3 = Prio3::new_histogram(2, mastic.input_len(), chunk_length).unwrap();
                     let (public_share, input_shares) = prio3.shard(&bucket, &nonce).unwrap();
 
@@ -616,7 +617,7 @@ async fn run_plain_metrics(
     client_1: &CollectorClient,
     num_clients: usize,
 ) -> io::Result<()> {
-    let chunk_length = histogram_chunk_length(mastic.input_len());
+    let chunk_length = histogram_chunk_length(mastic.input_len(), Mode::PlainMetrics);
     let prio3 = Prio3::new_histogram(2, mastic.input_len(), chunk_length).unwrap();
 
     for start in (0..num_clients).step_by(cfg.flp_batch_size) {

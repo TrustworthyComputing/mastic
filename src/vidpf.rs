@@ -93,7 +93,7 @@ impl VidpfEvalNode {
         input_len: usize,
         eval_proof: &mut blake3::Hasher,
     ) -> &mut VidpfEvalNode {
-        if path.len() == 0 {
+        if path.is_empty() {
             return self;
         }
 
@@ -108,7 +108,7 @@ impl VidpfEvalNode {
         if self.l.is_none() {
             let l = self.next(false, key, input_len);
             if let (Some(ref mut path_check), Some(ref word_share_l)) = (&mut p, &l.word_share) {
-                vec_sub(path_check, &word_share_l);
+                vec_sub(path_check, word_share_l);
             }
             self.l = Some(Box::new(l));
         }
@@ -117,7 +117,7 @@ impl VidpfEvalNode {
         if self.r.is_none() {
             let r = self.next(true, key, input_len);
             if let (Some(ref mut path_check), Some(ref word_share_r)) = (&mut p, &r.word_share) {
-                vec_sub(path_check, &word_share_r);
+                vec_sub(path_check, word_share_r);
             }
             self.r = Some(Box::new(r));
         }
@@ -482,10 +482,10 @@ impl VidpfKey {
 
 #[cfg(test)]
 mod tests {
-    use crate::string_to_bits;
     use prio::field::FieldElement;
 
     use super::*;
+    use crate::string_to_bits;
 
     /// Test the VIDPF functionality required for the attribute-based metrics use case.
     #[test]
