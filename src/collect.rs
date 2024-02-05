@@ -108,8 +108,8 @@ impl ReportShare {
 
     fn nonce(&self) -> &[u8; 16] {
         match self {
-            Self::Mastic { nonce, .. } => &nonce,
-            Self::Prio3 { nonce, .. } => &nonce,
+            Self::Mastic { nonce, .. } => nonce,
+            Self::Prio3 { nonce, .. } => nonce,
         }
     }
 }
@@ -289,10 +289,9 @@ impl KeyCollection {
     /// derive the correct joint randomness part from its input share and send it to the other so
     /// that they can check if the advertised parts were actually computed correctly.
     pub fn flp_joint_rand(&self, client_index: usize) -> Vec<Field128> {
-        let mut jr_parts = self.report_shares[client_index]
+        let mut jr_parts = *self.report_shares[client_index]
             .1
-            .unwrap_flp_joint_rand_parts()
-            .clone();
+            .unwrap_flp_joint_rand_parts();
         if self.server_id == 0 {
             let mut jr_part_xof = XofShake128::init(
                 &self.report_shares[client_index]

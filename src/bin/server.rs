@@ -8,7 +8,8 @@ use futures::{future, prelude::*};
 use itertools::Itertools;
 use mastic::{
     collect::{self, ReportShare},
-    config, histogram_chunk_length, prg,
+    config::{self, Mode},
+    histogram_chunk_length, prg,
     rpc::{
         AddReportSharesRequest, ApplyFLPResultsRequest, AttributeBasedMetricsResultRequest,
         AttributeBasedMetricsValidateRequest, Collector, FinalSharesRequest, GetProofsRequest,
@@ -174,7 +175,7 @@ impl Collector for CollectorServer {
                 .mastic
                 .query(
                     &beta_share,
-                    &coll.report_shares[client_index].1.unwrap_flp_proof_share(),
+                    coll.report_shares[client_index].1.unwrap_flp_proof_share(),
                     &query_rand,
                     &joint_rand,
                     2,
@@ -185,7 +186,7 @@ impl Collector for CollectorServer {
                 client_index,
                 values_share,
                 verifier_share,
-                eval_proof.finalize().as_bytes().clone(),
+                *eval_proof.finalize().as_bytes(),
             )
         }));
 
@@ -208,10 +209,11 @@ impl Collector for CollectorServer {
         let mut coll = self.arc.lock().unwrap();
 
         for rejected_client_index in req.rejected {
-            debug_assert!(coll
-                .attribute_based_metrics_state
-                .remove(&rejected_client_index)
-                .is_some());
+            debug_assert!(
+                coll.attribute_based_metrics_state
+                    .remove(&rejected_client_index)
+                    .is_some()
+            );
         }
 
         let mut agg_share =
@@ -234,7 +236,7 @@ impl Collector for CollectorServer {
         let mut coll = self.arc.lock().unwrap();
         let mut results = Vec::with_capacity(req.end - req.start);
         let agg_id = self.server_id.try_into().unwrap();
-        let chunk_length = histogram_chunk_length(coll.mastic.input_len());
+        let chunk_length = histogram_chunk_length(coll.mastic.input_len(), Mode::PlainMetrics);
         let prio3 = Prio3::new_histogram(2, coll.mastic.input_len(), chunk_length).unwrap();
 
         results.par_extend((req.start..req.end).into_par_iter().map(|client_index| {
@@ -248,9 +250,9 @@ impl Collector for CollectorServer {
             };
 
             let public_share =
-                Prio3PublicShare::get_decoded_with_param(&prio3, &public_share_bytes).unwrap();
+                Prio3PublicShare::get_decoded_with_param(&prio3, public_share_bytes).unwrap();
             let input_share =
-                Prio3InputShare::get_decoded_with_param(&(&prio3, agg_id), &input_share_bytes)
+                Prio3InputShare::get_decoded_with_param(&(&prio3, agg_id), input_share_bytes)
                     .unwrap();
 
             let (prep_state, prep_share) = prio3
@@ -284,7 +286,7 @@ impl Collector for CollectorServer {
     ) -> (AggregateShare<Field128>, usize) {
         debug_assert!(req.start < req.end);
         let mut coll = self.arc.lock().unwrap();
-        let chunk_length = histogram_chunk_length(coll.mastic.input_len());
+        let chunk_length = histogram_chunk_length(coll.mastic.input_len(), Mode::PlainMetrics);
         let prio3 = Prio3::new_histogram(2, coll.mastic.input_len(), chunk_length).unwrap();
 
         let out_shares = (req.start..req.end)
