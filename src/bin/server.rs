@@ -40,7 +40,7 @@ use tarpc::{
 struct CollectorServer {
     server_id: i8,
     seed: prg::PrgSeed,
-    data_bytes: usize,
+    data_bits: usize,
     arc: Arc<Mutex<collect::KeyCollection>>,
 }
 
@@ -52,7 +52,7 @@ impl Collector for CollectorServer {
             Mastic::new_histogram(req.hist_buckets).unwrap(),
             self.server_id,
             &self.seed,
-            self.data_bytes,
+            self.data_bits,
             req.verify_key,
         );
         "Done".to_string()
@@ -334,13 +334,8 @@ async fn main() -> io::Result<()> {
     let seed = prg::PrgSeed { key: [1u8; 16] };
     let mastic = Mastic::new_histogram(cfg.hist_buckets).unwrap();
 
-    let coll = collect::KeyCollection::new(
-        mastic.clone(),
-        server_id,
-        &seed,
-        cfg.data_bytes * 8,
-        [0u8; 16],
-    );
+    let coll =
+        collect::KeyCollection::new(mastic.clone(), server_id, &seed, cfg.data_bits, [0u8; 16]);
     let arc = Arc::new(Mutex::new(coll));
 
     println!("Server {} running at {:?}", server_id, server_addr);
@@ -354,7 +349,7 @@ async fn main() -> io::Result<()> {
             let server = CollectorServer {
                 server_id,
                 seed: seed.clone(),
-                data_bytes: cfg.data_bytes * 8,
+                data_bits: cfg.data_bits,
                 arc: arc.clone(),
             };
 

@@ -1,5 +1,5 @@
 {
-  "data_bytes": 1,
+  "data_bits": 8,
   "hist_buckets": 4,
   "mode": {
     "weighted_heavy_hitters": {
