@@ -1,5 +1,5 @@
 {
-  "data_bytes": 0,
+  "data_bits": 0,
   "hist_buckets": 4,
   "mode": "plain_metrics",
   "server_0": "0.0.0.0:8000",

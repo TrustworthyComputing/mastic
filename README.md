@@ -30,7 +30,7 @@ all the config files are shown below:
 
 ```bash
 {
-  "data_bytes": 1,            # Number of bytes of each string (x8 for bits).
+  "data_bits": 8,             # Number of bits of each string.
   "hist_buckets": 2,          # Number of each histogram buckets
   "mode": ...,                # See below.
   "server_0": "0.0.0.0:8000", # The `IP:port` for server 0.
@@ -112,7 +112,7 @@ cargo run --release --bin driver -- --config src/bin/config-attributes.json -n 1
 [Config-plain.json](./src/bin/config-plain.json)
 ```bash
   ...
-  "data_bytes": 0, # This is unused in this use-case
+  "data_bits": 0, # This is unused in this use-case
   "mode": "plain_metrics",
   ...
 ```

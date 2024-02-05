@@ -1,9 +1,9 @@
 {
-  "data_bytes": 1,
+  "data_bits": 8,
   "hist_buckets": 4,
   "mode": {
     "attribute_based_metrics": {
-      "threshold": 10
+      "num_attributes": 10
     }
   },
   "server_0": "0.0.0.0:8000",

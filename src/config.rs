@@ -28,8 +28,8 @@ pub enum Mode {
 
 #[derive(Deserialize)]
 pub struct Config {
-    /// Number of bytes of each string (x8 for bits).
-    pub data_bytes: usize,
+    /// Number of bits of each string.
+    pub data_bits: usize,
 
     /// Number of histogram buckets for the FLP range check.
     pub hist_buckets: usize,
