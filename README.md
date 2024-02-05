@@ -1,23 +1,16 @@
-<h1 align="center">Mastic: Private Aggregated Statistics through Fully Linear Proofs
+<h1 align="center">Mastic: Private Weighted Heavy-Hitters and Attribute-Based Metrics
   <a href="https://github.com/jimouris/mastic/actions/workflows/ci-build.yml"><img src="https://github.com/jimouris/mastic/workflows/ci-build/badge.svg"></a>
   <a href="https://github.com/jimouris/mastic/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
 </h1>
 
-
-This is a Rust implementation of the ideas presented in the Mastic Verifiable Distributed
-Aggregation Function (VDAF) individual Internet-Draft. You can read the draft on the [Datatracker
-Page](https://datatracker.ietf.org/doc/draft-mouris-cfrg-mastic/).
-
-
 ## Building
 
-Please note that this repository relies on `x86_64` specific instructions in [prg.rs](src/prg.rs).
 First, make sure that you have a working Rust installation:
 ```bash
 ❯❯ rustc --version
-rustc 1.73.0
+rustc 1.74.0
 ❯❯ cargo --version
-cargo 1.73.0
+cargo 1.74.0
 ```
 
 Next, build from sources using:
@@ -27,62 +20,123 @@ Next, build from sources using:
 
 ## Running
 
-#### Server 0:
+### The config file
+The client and servers use a common configuration file, which contains the
+parameters for the system. The config file is also used to choose between the
+different modes of operation. Here, we show the basic structure of the config
+file. Each mode (Weighted Heavy Hitters, Attribute-Based Metrics, and Plain
+Metrics with Prio) uses a different config. The contents that are shared between
+all the config files are shown below:
+
 ```bash
-cargo run --release --bin server -- --config src/bin/config.json --server_id 0
+{
+  "data_bytes": 1,            # Number of bytes of each string (x8 for bits).
+  "hist_buckets": 2,          # Number of each histogram buckets
+  "mode": ...,                # See below.
+  "server_0": "0.0.0.0:8000", # The `IP:port` for server 0.
+  "server_1": "0.0.0.0:8001", # The `IP:port` for server 1.
+  "add_key_batch_size": 1000, # Size of RPC requests for transmitting keys.
+  "flp_batch_size": 100000,   # Size of RPC requests for transmitting FLPs.
+  "unique_buckets": 1000,     # Zipf parameter
+  "zipf_exponent": 1.03       # Zipf exponent
+}
 ```
 
-#### Server 1:
+### 1. Weighted Heavy Hitters
+[Config-weights.json](./src/bin/config-weights.json)
 ```bash
-cargo run --release --bin server -- --config src/bin/config.json --server_id 1
+  ...
+  "mode": {
+    "weighted_heavy_hitters": {
+      "threshold": 0.01
+    }
+  },
+  ...
 ```
-Now, the servers should be ready to process client requests.
 
-#### Clients:
-In another shell, run the following command to send 100 client requests to the servers.
+#### Weighted Heavy Hitters: Aggregators
+Run the aggregators in two separate shells. They will wait and be ready to
+process client requests.
 ```bash
-cargo run --release --bin driver -- --config src/bin/config.json -n 100
+cargo run --release --bin server -- --config src/bin/config-weights.json --server_id 0
+cargo run --release --bin server -- --config src/bin/config-weights.json --server_id 1
+```
+
+#### Weighted Heavy Hitters: Clients
+In another shell, send 100 client requests to the Aggregators:
+```bash
+cargo run --release --bin driver -- --config src/bin/config-weights.json -n 100
 ```
 
 To run with the presence of malicious clients include the `--malicious` flag followed by the
 percentage of malicious clients to generate ([0.0, 0.9]). For instance, to run with 5% malicious
 clients use:
 ```bash
-cargo run --release --bin driver -- --config src/bin/config.json -n 100 --malicious 0.05
+cargo run --release --bin driver -- --config src/bin/config-weights.json -n 100 --malicious 0.05
 ```
 
-
-#### The config file
-The client and servers use a common configuration file, which contains the parameters for the
-system. An example of one such file is in `src/bin/config.json`. The contents of that file are here:
-
+### 2. Attribute-Based Metrics
+[Config-attributes.json](./src/bin/config-attributes.json)
 ```bash
-{
-  "data_bytes": 4,
-  "hist_buckets": 2,
-  "threshold": 0.01,
-  "server_0": "0.0.0.0:8000",
-  "server_1": "0.0.0.0:8001",
-  "add_key_batch_size": 1000,
-  "flp_batch_size": 100000,
-  "unique_buckets": 1000,
-  "zipf_exponent": 1.03
-}
+  ...
+  "mode": {
+    "attribute_based_metrics": {
+      "threshold": 10
+    }
+  },
+  ...
 ```
 
-The parameters are:
-* `data_bytes`: Number of bytes of each string (x8 for bits).
-* `hist_buckets`: Number of histogram buckets for the FLP range check.
-* `threshold`: The servers will output the collection of strings that more than a `threshold` of
-  clients hold.
-* `server0` and  `server1`: The `IP:port` of tuple for the two servers. The servers can run on
-  different IP addresses, but these IPs must be publicly addressable.
-* `add_key_batch_size`: The number of each type of RPC request to bundle together. The underlying RPC
-  library has an annoying limit on the size of each RPC request, so you cannot set these values too
-  large.
-* `flp_batch_size`: Similar to `add_key_batch_size` but with a greater threshold.
-* `unique_buckets` and `zipf_exponent`: Each simulated client samples its private string from a Zipf
-  distribution over strings with parameter `zipf_exponent` and support `unique_buckets`.
+#### Attribute-Based Metrics: Aggregators
+Run the aggregators in two separate shells. They will wait and be ready to
+process client requests.
+```bash
+cargo run --release --bin server -- --config src/bin/config-attributes.json --server_id 0
+cargo run --release --bin server -- --config src/bin/config-attributes.json --server_id 1
+```
+
+#### Attribute-Based Metrics: Clients
+In another shell, send 100 client requests to the Aggregators:
+```bash
+cargo run --release --bin driver -- --config src/bin/config-attributes.json -n 100
+```
+
+To run with the presence of malicious clients include the `--malicious` flag followed by the
+percentage of malicious clients to generate ([0.0, 0.9]). For instance, to run with 5% malicious
+clients use:
+```bash
+cargo run --release --bin driver -- --config src/bin/config-attributes.json -n 100 --malicious 0.05
+```
+
+### 3. Plain Metrics with Prio
+[Config-plain.json](./src/bin/config-plain.json)
+```bash
+  ...
+  "data_bytes": 0, # This is unused in this use-case
+  "mode": "plain_metrics",
+  ...
+```
+
+#### Plain Metrics with Prios: Aggregators
+Run the aggregators in two separate shells. They will wait and be ready to
+process client requests.
+```bash
+cargo run --release --bin server -- --config src/bin/config-plain.json --server_id 0
+cargo run --release --bin server -- --config src/bin/config-plain.json --server_id 1
+```
+
+#### Plain Metrics with Prio: Clients
+In another shell, send 100 client requests to the servers:
+```bash
+cargo run --release --bin driver -- --config src/bin/config-plain.json -n 100
+```
+
+To run with the presence of malicious clients include the `--malicious` flag followed by the
+percentage of malicious clients to generate ([0.0, 0.9]). For instance, to run with 5% malicious
+clients use:
+```bash
+cargo run --release --bin driver -- --config src/bin/config-plain.json -n 100 --malicious 0.05
+```
 
 
 ## Disclaimer
@@ -92,6 +146,9 @@ This is software for a research prototype and not production-ready code. This re
 [heavy-hitters](https://github.com/henrycg/heavyhitters), and
 [libprio-rs](https://github.com/divviup/libprio-rs/tree/main).
 
+This is a Rust implementation of the ideas presented in Mastic Verifiable
+Distributed Aggregation Function (VDAF) individual Internet-Draft. You can read
+the draft on the [Datatracker Page](https://datatracker.ietf.org/doc/draft-mouris-cfrg-mastic/).
 
 <p align="center">
   <img src="./logos/twc.png" height="20%" width="20%">
