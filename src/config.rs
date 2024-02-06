@@ -4,7 +4,7 @@ use clap::{App, Arg};
 use serde::Deserialize;
 
 /// Parameters used by the driver program to generate test data.
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
     /// Simulate weighted heavy hitters. In this mode, the aggregators compute the subset of inputs
