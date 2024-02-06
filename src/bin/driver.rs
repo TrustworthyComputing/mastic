@@ -6,6 +6,7 @@ use std::{
 
 use futures::try_join;
 use mastic::{
+    bits_to_bitstring,
     collect::{self, ReportShare},
     config::{self, Mode},
     histogram_chunk_length,
@@ -28,10 +29,7 @@ use prio::{
         Client, Collector,
     },
 };
-use rand::{
-    distributions::{Alphanumeric, Distribution},
-    thread_rng, Rng,
-};
+use rand::{distributions::Distribution, thread_rng, Rng};
 use rand_core::RngCore;
 use rayon::prelude::*;
 use tarpc::{client, context, serde_transport::tcp, tokio_serde::formats::Bincode};
@@ -44,12 +42,9 @@ fn long_context() -> context::Context {
     ctx
 }
 
-fn sample_string(len: usize) -> String {
+fn sample_bits(len: usize) -> Vec<bool> {
     let mut rng = rand::thread_rng();
-    std::iter::repeat(())
-        .map(|()| rng.sample(Alphanumeric) as char)
-        .take(len)
-        .collect()
+    (0..len).map(|_| rng.gen::<bool>()).collect()
 }
 
 enum PlaintextReport {
@@ -60,7 +55,7 @@ enum PlaintextReport {
         vidpf_keys: [VidpfKey; 2],
         flp_proof_shares: [Vec<Field128>; 2],
         flp_joint_rand_parts: [[u8; 16]; 2],
-        alpha: String,
+        alpha: Vec<bool>,
     },
 
     /// A plaintext report for Prio3. This report type is used for plain (non-attribute-based)
@@ -74,7 +69,7 @@ enum PlaintextReport {
 
 impl PlaintextReport {
     /// Panics unless the type is `Mastic`.
-    fn unwrap_alpha(&self) -> String {
+    fn unwrap_alpha(&self) -> Vec<bool> {
         match self {
             Self::Mastic {
                 nonce: _,
@@ -82,7 +77,7 @@ impl PlaintextReport {
                 flp_proof_shares: _,
                 flp_joint_rand_parts: _,
                 alpha,
-            } => alpha.to_string(),
+            } => alpha.clone(),
             Self::Prio3 { .. } => panic!("Prio3 reports don't have an alpha"),
         }
     }
@@ -144,10 +139,10 @@ fn generate_reports(cfg: &config::Config, mastic: &MasticHistogram) -> Vec<Plain
             match cfg.mode {
                 Mode::WeightedHeavyHitters { .. } | Mode::AttributeBasedMetrics { .. } => {
                     // Synthesize a fake input and weight.
-                    let alpha = sample_string(cfg.data_bits);
+                    let alpha = sample_bits(cfg.data_bits);
                     let beta = mastic.encode_measurement(&bucket).unwrap();
 
-                    let (key_0, key_1) = VidpfKey::gen_from_str(&alpha, &beta);
+                    let (key_0, key_1) = VidpfKey::gen(&alpha, &beta);
 
                     let jr_parts = {
                         let vidpf_seeds = (key_0.get_root_seed().key, key_1.get_root_seed().key);
@@ -223,25 +218,25 @@ fn generate_reports(cfg: &config::Config, mastic: &MasticHistogram) -> Vec<Plain
             ..
         } => {
             let encoded: Vec<u8> = bincode::serialize(nonce).unwrap();
-            println!("Nonce size: {:?} bytes", encoded.len());
+            println!("\t- Nonce size: {:?} bytes", encoded.len());
 
             let encoded: Vec<u8> = bincode::serialize(&flp_joint_rand_parts[0]).unwrap();
-            println!("JR size: {:?} bytes", encoded.len());
+            println!("\t- JR size: {:?} bytes", encoded.len());
 
             let encoded: Vec<u8> = bincode::serialize(&vidpf_keys[0]).unwrap();
-            println!("VIDPFKey size: {:?} bytes", encoded.len());
+            println!("\t- VIDPFKey size: {:?} bytes", encoded.len());
 
             let encoded: Vec<u8> = bincode::serialize(&flp_proof_shares[0]).unwrap();
-            println!("FLP proof size: {:?} bytes", encoded.len());
+            println!("\t- FLP proof size: {:?} bytes", encoded.len());
         }
         r @ PlaintextReport::Prio3 { .. } => {
             let [report_share_0, report_share_1] = r.to_shares();
 
             let encoded: Vec<u8> = bincode::serialize(&report_share_0).unwrap();
-            println!("leader report share size: {:?} bytes", encoded.len());
+            println!("\t- leader report share size: {:?} bytes", encoded.len());
 
             let encoded: Vec<u8> = bincode::serialize(&report_share_1).unwrap();
-            println!("helper report share size: {:?} bytes", encoded.len());
+            println!("\t- helper report share size: {:?} bytes", encoded.len());
         }
     }
 
@@ -474,6 +469,7 @@ async fn run_level_last(
     client_1: &CollectorClient,
     num_clients: usize,
 ) -> io::Result<()> {
+    let start_last = Instant::now();
     let threshold = if let Mode::WeightedHeavyHitters { threshold } = cfg.mode {
         core::cmp::max(1, (threshold * (num_clients as f64)) as u64)
     } else {
@@ -525,6 +521,11 @@ async fn run_level_last(
     let resp_0 = client_0.final_shares(long_context(), req.clone());
     let resp_1 = client_1.final_shares(long_context(), req);
     let (shares_0, shares_1) = try_join!(resp_0, resp_1).unwrap();
+    println!(
+        "- Time for level {}: {:?}\n",
+        cfg.data_bits,
+        start_last.elapsed().as_secs_f64()
+    );
     for res in &collect::KeyCollection::final_values(mastic.input_len(), &shares_0, &shares_1) {
         let bits = mastic::bits_to_bitstring(&res.path);
         if res.value[mastic.input_len() - 1] > Field128::from(0) {
@@ -540,7 +541,7 @@ async fn run_attribute_based_metrics(
     mastic: &MasticHistogram,
     client_0: &CollectorClient,
     client_1: &CollectorClient,
-    attributes: &[String],
+    attributes: &[Vec<bool>],
     num_clients: usize,
 ) -> io::Result<()> {
     for start in (0..num_clients).step_by(cfg.flp_batch_size) {
@@ -603,7 +604,7 @@ async fn run_attribute_based_metrics(
         );
 
         for (attribute, result) in attributes.iter().zip(results.iter()) {
-            println!("{attribute}: {result:?}");
+            println!("{}: {result:?}", bits_to_bitstring(attribute));
         }
     }
 
@@ -701,8 +702,11 @@ async fn main() -> io::Result<()> {
     )
     .spawn();
 
-    let mastic = Mastic::new_histogram(cfg.hist_buckets).unwrap();
+    println!("- Mode: {:?}", cfg.mode);
+    println!("- Using {:?} histogram buckets", cfg.hist_buckets);
+    println!("- Using {:?} bits", cfg.data_bits);
 
+    let mastic = Mastic::new_histogram(cfg.hist_buckets).unwrap();
     let start = Instant::now();
     println!("Generating reports...");
     let reports = generate_reports(&cfg, &mastic);
@@ -756,23 +760,12 @@ async fn main() -> io::Result<()> {
                 }
                 run_level(&cfg, &mastic, &client_0, &client_1, num_clients).await?;
                 println!(
-                    "Time for level {}: {:?}",
-                    level,
+                    "- Time for level {}: {:?}",
+                    level + 1,
                     start_level.elapsed().as_secs_f64()
                 );
             }
-            println!(
-                "\nTime for {} levels: {:?}",
-                cfg.data_bits,
-                start.elapsed().as_secs_f64()
-            );
-
-            let start_last = Instant::now();
             run_level_last(&cfg, &mastic, &client_0, &client_1, num_clients).await?;
-            println!(
-                "Time for last level: {:?}",
-                start_last.elapsed().as_secs_f64()
-            );
         }
 
         Mode::AttributeBasedMetrics { num_attributes } => {
