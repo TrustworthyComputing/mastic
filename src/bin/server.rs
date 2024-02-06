@@ -16,7 +16,7 @@ use mastic::{
         PlainMetricsResultRequest, PlainMetricsValidateRequest, ResetRequest, RunFlpQueriesRequest,
         TreeCrawlLastRequest, TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
     },
-    string_to_bits, vec_add, Mastic, HASH_SIZE,
+    vec_add, Mastic, HASH_SIZE,
 };
 use prio::{
     codec::{Encode, ParameterizedDecode},
@@ -162,9 +162,7 @@ impl Collector for CollectorServer {
                 .1
                 .unwrap_vidpf_key()
                 .eval_tree(
-                    req.attributes
-                        .iter()
-                        .map(|attribute| string_to_bits(attribute)),
+                    req.attributes.iter(),
                     coll.mastic.input_len(),
                     &mut eval_proof,
                 );
@@ -209,11 +207,10 @@ impl Collector for CollectorServer {
         let mut coll = self.arc.lock().unwrap();
 
         for rejected_client_index in req.rejected {
-            debug_assert!(
-                coll.attribute_based_metrics_state
-                    .remove(&rejected_client_index)
-                    .is_some()
-            );
+            debug_assert!(coll
+                .attribute_based_metrics_state
+                .remove(&rejected_client_index)
+                .is_some());
         }
 
         let mut agg_share =

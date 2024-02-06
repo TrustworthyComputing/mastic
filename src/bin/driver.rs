@@ -69,7 +69,7 @@ enum PlaintextReport {
 
 impl PlaintextReport {
     /// Panics unless the type is `Mastic`.
-    fn unwrap_alpha(&self) -> String {
+    fn unwrap_alpha(&self) -> Vec<bool> {
         match self {
             Self::Mastic {
                 nonce: _,
@@ -77,7 +77,7 @@ impl PlaintextReport {
                 flp_proof_shares: _,
                 flp_joint_rand_parts: _,
                 alpha,
-            } => bits_to_bitstring(alpha),
+            } => alpha.clone(),
             Self::Prio3 { .. } => panic!("Prio3 reports don't have an alpha"),
         }
     }
@@ -541,7 +541,7 @@ async fn run_attribute_based_metrics(
     mastic: &MasticHistogram,
     client_0: &CollectorClient,
     client_1: &CollectorClient,
-    attributes: &[String],
+    attributes: &[Vec<bool>],
     num_clients: usize,
 ) -> io::Result<()> {
     for start in (0..num_clients).step_by(cfg.flp_batch_size) {
@@ -604,7 +604,7 @@ async fn run_attribute_based_metrics(
         );
 
         for (attribute, result) in attributes.iter().zip(results.iter()) {
-            println!("{attribute}: {result:?}");
+            println!("{}: {result:?}", bits_to_bitstring(attribute));
         }
     }
 

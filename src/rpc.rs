@@ -57,7 +57,7 @@ pub struct FinalSharesRequest {}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AttributeBasedMetricsValidateRequest {
-    pub attributes: Vec<String>,
+    pub attributes: Vec<Vec<bool>>,
     pub start: usize,
     pub end: usize,
 }
