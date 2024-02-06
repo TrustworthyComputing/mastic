@@ -307,8 +307,8 @@ impl FixedKeyPrgStream {
             } else {
                 let Counter(mut block) = v;
 
-                // NOTE(cjpatton) This might produce a different counter than for x86_64. It
-                // depends on the endianness of _mm_set_epi64x, which I haven't checked.
+                // NOTE This might produce a different counter than for x86_64. It depends on the
+                // endianness of _mm_set_epi64x, which I haven't checked.
                 let mut carry = true;
                 for byte in block.as_mut_slice().iter_mut().take(8) {
                     (*byte, carry) = (*byte).overflowing_add(u8::from(carry));

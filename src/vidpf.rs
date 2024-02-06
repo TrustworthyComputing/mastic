@@ -428,10 +428,10 @@ impl VidpfKey {
         // Traverse each indicated path of the subtree, appending the path checks and onehot checks
         // to the evaluation proof.
         //
-        // NOTE(cjpatton) The order in which we traverse the tree and the computation of the
-        // evaluation proof differ from the draft. The onehot proofs in particular need careful
-        // consideration, as we don't daisy-chain them directly to compute a unified onehot proof
-        // fo the entire traversal. Instead we interleave the components with the path checks.
+        // NOTE The order in which we traverse the tree and the computation of the evaluation proof
+        // differ from the draft. The onehot proofs in particular need careful consideration, as we
+        // don't daisy-chain them directly to compute a unified onehot proof for the entire
+        // traversal. Instead we interleave the components with the path checks.
         for path in paths {
             assert_ne!(path.as_ref().len(), 0);
             let node = root.traverse(path.as_ref(), self, input_len, eval_proof);
