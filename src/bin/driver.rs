@@ -48,7 +48,7 @@ fn sample_string(len: usize) -> String {
     let mut rng = rand::thread_rng();
     std::iter::repeat(())
         .map(|()| rng.sample(Alphanumeric) as char)
-        .take(len / 8)
+        .take(len)
         .collect()
 }
 
