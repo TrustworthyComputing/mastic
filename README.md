@@ -29,30 +29,30 @@ Metrics with Prio) uses a different config. The contents that are shared between
 all the config files are shown below:
 
 ```toml
-data_bits = 8               # Number of bits of each string.
-hist_buckets = 2            # Number of each histogram buckets
+data_bits = 8                       # Number of bits of each string.
+hist_buckets = 2                    # Number of each histogram buckets
 
-# [mode]                    # Mode of operation, one of:
+# [mode]                            # Mode of operation, one of:
 # mode.weighted_heavy_hitters.threshold = 0.01
 # mode.attribute_based_metrics.num_attributes = 10
 # mode = "plain_metrics"
 
-server_0 = "0.0.0.0:8000"   # The `IP:port` for server 0.
-server_1 = "0.0.0.0:8001"   # The `IP:port` for server 1.
+server_0 = "0.0.0.0:8000"           # The `IP:port` for server 0.
+server_1 = "0.0.0.0:8001"           # The `IP:port` for server 1.
 
-add_key_batch_size = 1000   # Size of RPC requests for transmitting keys.
-flp_batch_size = 100000     # Size of RPC requests for transmitting FLPs.
+add_report_share_batch_size = 1000  # Size of RPC requests for transmitting keys.
+query_flp_batch_size = 100000       # Size of RPC requests for transmitting FLPs.
 
-unique_buckets = 1000       # Zipf parameter
-zipf_exponent = 1.03         # Zipf exponent
+zipf_unique_buckets = 1000          # Zipf parameter
+zipf_exponent = 1.03                # Zipf exponent
 ```
 
 ### 1. Weighted Heavy Hitters
 [weighted-heavy-hitters.toml](./src/configs/weighted-heavy-hitters.toml)
-```bash
-...
+```toml
+# ...
 mode.weighted_heavy_hitters.threshold = 0.01
-...
+# ...
 ```
 
 #### Weighted Heavy Hitters: Aggregators
@@ -79,9 +79,9 @@ cargo run --release --bin driver -- --config src/configs/weighted-heavy-hitters.
 ### 2. Attribute-Based Metrics
 [attribute-based-metrics.toml](./src/configs/attribute-based-metrics.toml)
 ```toml
-...
+# ...
 mode.attribute_based_metrics.num_attributes = 10
-...
+# ...
 ```
 
 #### Attribute-Based Metrics: Aggregators
@@ -108,9 +108,9 @@ cargo run --release --bin driver -- --config src/configs/attribute-based-metrics
 ### 3. Plain Metrics with Prio
 [plain-metrics.toml](./src/configs/plain-metrics.toml)
 ```toml
-...
+# ...
 mode = "plain_metrics"
-...
+# ...
 ```
 
 #### Plain Metrics with Prios: Aggregators

@@ -125,9 +125,9 @@ impl PlaintextReport {
 }
 
 fn generate_reports(cfg: &config::Config, mastic: &MasticHistogram) -> Vec<PlaintextReport> {
-    assert!(cfg.unique_buckets > 0);
+    assert!(cfg.zipf_unique_buckets > 0);
 
-    let reports = (0..cfg.unique_buckets)
+    let reports = (0..cfg.zipf_unique_buckets)
         .into_par_iter()
         .map(|_| {
             let mut rng = thread_rng();
@@ -277,7 +277,7 @@ async fn add_reports(
     malicious_percentage: f32,
 ) -> io::Result<()> {
     let mut rng = rand::thread_rng();
-    let zipf = zipf::ZipfDistribution::new(cfg.unique_buckets, cfg.zipf_exponent).unwrap();
+    let zipf = zipf::ZipfDistribution::new(cfg.zipf_unique_buckets, cfg.zipf_exponent).unwrap();
 
     let mut report_shares_0 = Vec::with_capacity(num_clients);
     let mut report_shares_1 = Vec::with_capacity(num_clients);
@@ -344,11 +344,11 @@ async fn run_flp_queries(
     client_1: &CollectorClient,
     num_clients: usize,
 ) -> io::Result<()> {
-    // Receive FLP query responses in chunks of cfg.flp_batch_size to avoid having huge RPC messages.
+    // Receive FLP query responses in chunks of cfg.query_flp_batch_size to avoid having huge RPC messages.
     let mut keep = vec![];
     let mut start = 0;
     while start < num_clients {
-        let end = std::cmp::min(num_clients, start + cfg.flp_batch_size);
+        let end = std::cmp::min(num_clients, start + cfg.query_flp_batch_size);
 
         let req = RunFlpQueriesRequest { start, end };
         let resp_0 = client_0.run_flp_queries(long_context(), req.clone());
@@ -372,7 +372,7 @@ async fn run_flp_queries(
                 .collect::<Vec<_>>(),
         );
 
-        start += cfg.flp_batch_size;
+        start += cfg.query_flp_batch_size;
     }
 
     // Tree prune
@@ -493,7 +493,7 @@ async fn run_level_last(
     // Receive counters in chunks to avoid having huge RPC messages.
     let mut start = 0;
     while start < num_clients {
-        let end = std::cmp::min(num_clients, start + cfg.flp_batch_size);
+        let end = std::cmp::min(num_clients, start + cfg.query_flp_batch_size);
 
         let req = GetProofsRequest { start, end };
         let resp_0 = client_0.get_proofs(long_context(), req.clone());
@@ -508,7 +508,7 @@ async fn run_level_last(
             .all(|(&h0, &h1)| h0 == h1);
         assert!(verified);
 
-        start += cfg.flp_batch_size;
+        start += cfg.query_flp_batch_size;
     }
 
     // Tree prune
@@ -544,8 +544,8 @@ async fn run_attribute_based_metrics(
     attributes: &[Vec<bool>],
     num_clients: usize,
 ) -> io::Result<()> {
-    for start in (0..num_clients).step_by(cfg.flp_batch_size) {
-        let end = std::cmp::min(num_clients, start + cfg.flp_batch_size);
+    for start in (0..num_clients).step_by(cfg.query_flp_batch_size) {
+        let end = std::cmp::min(num_clients, start + cfg.query_flp_batch_size);
         let req = AttributeBasedMetricsValidateRequest {
             attributes: attributes.to_vec(),
             start,
@@ -621,8 +621,8 @@ async fn run_plain_metrics(
     let chunk_length = histogram_chunk_length(mastic.input_len(), Mode::PlainMetrics);
     let prio3 = Prio3::new_histogram(2, mastic.input_len(), chunk_length).unwrap();
 
-    for start in (0..num_clients).step_by(cfg.flp_batch_size) {
-        let end = std::cmp::min(num_clients, start + cfg.flp_batch_size);
+    for start in (0..num_clients).step_by(cfg.query_flp_batch_size) {
+        let end = std::cmp::min(num_clients, start + cfg.query_flp_batch_size);
         let req = PlainMetricsValidateRequest { start, end };
 
         // For each report, each aggregator evaluates the VIDPF on each of the attributes and returns
@@ -728,7 +728,7 @@ async fn main() -> io::Result<()> {
         let mut responses = vec![];
 
         for _ in 0..reqs_in_flight {
-            let this_batch = std::cmp::min(left_to_go, cfg.add_key_batch_size);
+            let this_batch = std::cmp::min(left_to_go, cfg.add_report_share_batch_size);
             left_to_go -= this_batch;
 
             if this_batch > 0 {
@@ -771,8 +771,8 @@ async fn main() -> io::Result<()> {
             // Synthesize a set of attributes.
             let attributes = {
                 let mut rng = rand::thread_rng();
-                let zipf =
-                    zipf::ZipfDistribution::new(cfg.unique_buckets, cfg.zipf_exponent).unwrap();
+                let zipf = zipf::ZipfDistribution::new(cfg.zipf_unique_buckets, cfg.zipf_exponent)
+                    .unwrap();
                 let mut unique_inputs = HashSet::with_capacity(num_attributes);
                 for _ in 0..num_attributes {
                     let client_index = zipf.sample(&mut rng);

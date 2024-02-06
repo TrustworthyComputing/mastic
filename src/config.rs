@@ -36,13 +36,13 @@ pub struct Config {
 
     /// The servers will output the collection of strings that more than a `threshold` of clients
     /// hold.
-    pub add_key_batch_size: usize,
+    pub add_report_share_batch_size: usize,
 
-    /// Similar to `add_key_batch_size` but with a greater threshold.
-    pub flp_batch_size: usize,
+    /// Similar to `add_report_share_batch_size` but with a greater threshold.
+    pub query_flp_batch_size: usize,
 
     /// Zipf parameter: Number of distinct strings.
-    pub unique_buckets: usize,
+    pub zipf_unique_buckets: usize,
 
     /// Mode of operation in which to test Mastic.
     pub mode: Mode,
