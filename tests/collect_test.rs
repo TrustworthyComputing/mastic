@@ -15,8 +15,8 @@ fn collect_test_eval_groups() {
     thread_rng().fill(&mut verify_key);
 
     let mastic = Mastic::new_histogram(4).unwrap();
-    let mut col_0 = KeyCollection::new(mastic.clone(), 0, &seed, strlen, verify_key);
-    let mut col_1 = KeyCollection::new(mastic.clone(), 1, &seed, strlen, verify_key);
+    let mut col_0 = KeyCollection::new(mastic.clone(), 0, &seed, Some(strlen), verify_key);
+    let mut col_1 = KeyCollection::new(mastic.clone(), 1, &seed, Some(strlen), verify_key);
 
     for cstr in &client_strings {
         let input_beta = mastic.encode_measurement(&2).unwrap();
@@ -109,8 +109,8 @@ fn collect_test_eval_full_groups() {
     let mut verify_key = [0; 16];
     thread_rng().fill(&mut verify_key);
     let mastic = Mastic::new_histogram(4).unwrap();
-    let mut col_0 = KeyCollection::new(mastic.clone(), 0, &seed, strlen, verify_key);
-    let mut col_1 = KeyCollection::new(mastic.clone(), 1, &seed, strlen, verify_key);
+    let mut col_0 = KeyCollection::new(mastic.clone(), 0, &seed, Some(strlen), verify_key);
+    let mut col_1 = KeyCollection::new(mastic.clone(), 1, &seed, Some(strlen), verify_key);
 
     let mut keys = vec![];
     println!("Starting to generate keys");

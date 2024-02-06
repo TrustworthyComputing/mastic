@@ -40,7 +40,7 @@ use tarpc::{
 struct CollectorServer {
     server_id: i8,
     seed: prg::PrgSeed,
-    data_bits: usize,
+    data_bits: Option<usize>,
     arc: Arc<Mutex<collect::KeyCollection>>,
 }
 

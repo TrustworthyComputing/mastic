@@ -139,7 +139,7 @@ fn generate_reports(cfg: &config::Config, mastic: &MasticHistogram) -> Vec<Plain
             match cfg.mode {
                 Mode::WeightedHeavyHitters { .. } | Mode::AttributeBasedMetrics { .. } => {
                     // Synthesize a fake input and weight.
-                    let alpha = sample_bits(cfg.data_bits);
+                    let alpha = sample_bits(cfg.data_bits.unwrap());
                     let beta = mastic.encode_measurement(&bucket).unwrap();
 
                     let (key_0, key_1) = VidpfKey::gen(&alpha, &beta);
@@ -523,7 +523,7 @@ async fn run_level_last(
     let (shares_0, shares_1) = try_join!(resp_0, resp_1).unwrap();
     println!(
         "- Time for level {}: {:?}\n",
-        cfg.data_bits,
+        cfg.data_bits.unwrap(),
         start_last.elapsed().as_secs_f64()
     );
     for res in &collect::KeyCollection::final_values(mastic.input_len(), &shares_0, &shares_1) {
@@ -753,7 +753,7 @@ async fn main() -> io::Result<()> {
         Mode::WeightedHeavyHitters { .. } => {
             tree_init(&client_0, &client_1).await?;
 
-            for level in 0..cfg.data_bits - 1 {
+            for level in 0..cfg.data_bits.unwrap() - 1 {
                 let start_level = Instant::now();
                 if level == 0 {
                     run_flp_queries(&cfg, &mastic, &client_0, &client_1, num_clients).await?;

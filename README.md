@@ -28,114 +28,110 @@ file. Each mode (Weighted Heavy Hitters, Attribute-Based Metrics, and Plain
 Metrics with Prio) uses a different config. The contents that are shared between
 all the config files are shown below:
 
-```bash
-{
-  "data_bits": 8,             # Number of bits of each string.
-  "hist_buckets": 2,          # Number of each histogram buckets
-  "mode": ...,                # See below.
-  "server_0": "0.0.0.0:8000", # The `IP:port` for server 0.
-  "server_1": "0.0.0.0:8001", # The `IP:port` for server 1.
-  "add_key_batch_size": 1000, # Size of RPC requests for transmitting keys.
-  "flp_batch_size": 100000,   # Size of RPC requests for transmitting FLPs.
-  "unique_buckets": 1000,     # Zipf parameter
-  "zipf_exponent": 1.03       # Zipf exponent
-}
+```toml
+data_bits = 8               # Number of bits of each string.
+hist_buckets = 2            # Number of each histogram buckets
+
+# [mode]                    # Mode of operation, one of:
+# mode.weighted_heavy_hitters.threshold = 0.01
+# mode.attribute_based_metrics.num_attributes = 10
+# mode = "plain_metrics"
+
+server_0 = "0.0.0.0:8000"   # The `IP:port` for server 0.
+server_1 = "0.0.0.0:8001"   # The `IP:port` for server 1.
+
+add_key_batch_size = 1000   # Size of RPC requests for transmitting keys.
+flp_batch_size = 100000     # Size of RPC requests for transmitting FLPs.
+
+unique_buckets = 1000       # Zipf parameter
+zipf_exponent = 1.03         # Zipf exponent
 ```
 
 ### 1. Weighted Heavy Hitters
-[Config-weights.json](./src/bin/config-weights.json)
+[weighted-heavy-hitters.toml](./src/configs/weighted-heavy-hitters.toml)
 ```bash
-  ...
-  "mode": {
-    "weighted_heavy_hitters": {
-      "threshold": 0.01
-    }
-  },
-  ...
+...
+mode.weighted_heavy_hitters.threshold = 0.01
+...
 ```
 
 #### Weighted Heavy Hitters: Aggregators
 Run the aggregators in two separate shells. They will wait and be ready to
 process client requests.
 ```bash
-cargo run --release --bin server -- --config src/bin/config-weights.json --server_id 0
-cargo run --release --bin server -- --config src/bin/config-weights.json --server_id 1
+cargo run --release --bin server -- --config src/configs/weighted-heavy-hitters.toml --server_id 0
+cargo run --release --bin server -- --config src/configs/weighted-heavy-hitters.toml --server_id 1
 ```
 
 #### Weighted Heavy Hitters: Clients
 In another shell, send 100 client requests to the Aggregators:
 ```bash
-cargo run --release --bin driver -- --config src/bin/config-weights.json -n 100
+cargo run --release --bin driver -- --config src/configs/weighted-heavy-hitters.toml -n 100
 ```
 
 To run with the presence of malicious clients include the `--malicious` flag followed by the
 percentage of malicious clients to generate ([0.0, 0.9]). For instance, to run with 5% malicious
 clients use:
 ```bash
-cargo run --release --bin driver -- --config src/bin/config-weights.json -n 100 --malicious 0.05
+cargo run --release --bin driver -- --config src/configs/weighted-heavy-hitters.toml -n 100 --malicious 0.05
 ```
 
 ### 2. Attribute-Based Metrics
-[Config-attributes.json](./src/bin/config-attributes.json)
-```bash
-  ...
-  "mode": {
-    "attribute_based_metrics": {
-      "threshold": 10
-    }
-  },
-  ...
+[attribute-based-metrics.toml](./src/configs/attribute-based-metrics.toml)
+```toml
+...
+mode.attribute_based_metrics.num_attributes = 10
+...
 ```
 
 #### Attribute-Based Metrics: Aggregators
 Run the aggregators in two separate shells. They will wait and be ready to
 process client requests.
 ```bash
-cargo run --release --bin server -- --config src/bin/config-attributes.json --server_id 0
-cargo run --release --bin server -- --config src/bin/config-attributes.json --server_id 1
+cargo run --release --bin server -- --config src/configs/attribute-based-metrics.toml --server_id 0
+cargo run --release --bin server -- --config src/configs/attribute-based-metrics.toml --server_id 1
 ```
 
 #### Attribute-Based Metrics: Clients
 In another shell, send 100 client requests to the Aggregators:
 ```bash
-cargo run --release --bin driver -- --config src/bin/config-attributes.json -n 100
+cargo run --release --bin driver -- --config src/configs/attribute-based-metrics.toml -n 100
 ```
 
 To run with the presence of malicious clients include the `--malicious` flag followed by the
 percentage of malicious clients to generate ([0.0, 0.9]). For instance, to run with 5% malicious
 clients use:
 ```bash
-cargo run --release --bin driver -- --config src/bin/config-attributes.json -n 100 --malicious 0.05
+cargo run --release --bin driver -- --config src/configs/attribute-based-metrics.toml -n 100 --malicious 0.05
 ```
 
 ### 3. Plain Metrics with Prio
-[Config-plain.json](./src/bin/config-plain.json)
-```bash
-  ...
-  "data_bits": 0, # This is unused in this use-case
-  "mode": "plain_metrics",
-  ...
+[plain-metrics.toml](./src/configs/plain-metrics.toml)
+```toml
+...
+mode = "plain_metrics"
+...
 ```
 
 #### Plain Metrics with Prios: Aggregators
 Run the aggregators in two separate shells. They will wait and be ready to
 process client requests.
 ```bash
-cargo run --release --bin server -- --config src/bin/config-plain.json --server_id 0
-cargo run --release --bin server -- --config src/bin/config-plain.json --server_id 1
+cargo run --release --bin server -- --config src/configs/plain-metrics.toml --server_id 0
+cargo run --release --bin server -- --config src/configs/plain-metrics.toml --server_id 1
 ```
 
 #### Plain Metrics with Prio: Clients
 In another shell, send 100 client requests to the servers:
 ```bash
-cargo run --release --bin driver -- --config src/bin/config-plain.json -n 100
+cargo run --release --bin driver -- --config src/configs/plain-metrics.toml -n 100
 ```
 
 To run with the presence of malicious clients include the `--malicious` flag followed by the
 percentage of malicious clients to generate ([0.0, 0.9]). For instance, to run with 5% malicious
 clients use:
 ```bash
-cargo run --release --bin driver -- --config src/bin/config-plain.json -n 100 --malicious 0.05
+cargo run --release --bin driver -- --config src/configs/plain-metrics.toml -n 100 --malicious 0.05
 ```
 
 

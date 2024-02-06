@@ -126,7 +126,7 @@ pub struct KeyCollection {
     pub verify_key: [u8; 16],
 
     /// The depth of the tree.
-    depth: usize,
+    depth: Option<usize>,
 
     /// The report shares of the clients. The first element of the tuple is whether the client is honest or
     /// not.
@@ -165,7 +165,7 @@ impl KeyCollection {
         mastic: MasticHistogram,
         server_id: i8,
         _seed: &prg::PrgSeed,
-        depth: usize,
+        depth: Option<usize>,
         verify_key: [u8; 16],
     ) -> KeyCollection {
         KeyCollection {
@@ -355,13 +355,13 @@ impl KeyCollection {
         }
 
         let level = self.frontier[0].path.len();
-        debug_assert!(level < self.depth);
+        debug_assert!(level < self.depth.unwrap());
 
         let next_frontier = self
             .frontier
             .par_iter()
             .flat_map(|node| {
-                assert!(node.path.len() <= self.depth);
+                assert!(node.path.len() <= self.depth.unwrap());
                 let child_0 = self.make_tree_node(node, false);
                 let child_1 = self.make_tree_node(node, true);
 
