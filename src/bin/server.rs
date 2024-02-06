@@ -207,10 +207,11 @@ impl Collector for CollectorServer {
         let mut coll = self.arc.lock().unwrap();
 
         for rejected_client_index in req.rejected {
-            debug_assert!(coll
-                .attribute_based_metrics_state
-                .remove(&rejected_client_index)
-                .is_some());
+            debug_assert!(
+                coll.attribute_based_metrics_state
+                    .remove(&rejected_client_index)
+                    .is_some()
+            );
         }
 
         let mut agg_share =
