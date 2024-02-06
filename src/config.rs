@@ -29,7 +29,7 @@ pub enum Mode {
 #[derive(Deserialize)]
 pub struct Config {
     /// Number of bits of each string.
-    pub data_bits: usize,
+    pub data_bits: Option<usize>,
 
     /// Number of histogram buckets for the FLP range check.
     pub hist_buckets: usize,
@@ -58,8 +58,8 @@ pub struct Config {
 }
 
 pub fn get_config(filename: &str) -> Config {
-    let json_data = &fs::read_to_string(filename).expect("Cannot open JSON file");
-    serde_json::from_str(json_data).expect("Cannot parse JSON config")
+    let toml_data = &fs::read_to_string(filename).expect("Cannot open TOML file");
+    toml::from_str(toml_data).expect("Cannot parse TOML config")
 }
 
 pub fn get_args(
