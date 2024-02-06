@@ -640,12 +640,11 @@ async fn run_plain_metrics(
 
         // Relay each aggregator's prep shares to its peer.
         //
-        // NOTE(cjpatton) To validate the report, each aggregator combines the prep shares,
-        // then uses the combined prep message and its state to compute its output share. Thus
-        // it is necessary to relay each aggregator's prep share to its peer. We could save
-        // communication here by having the driver compute the prep message at this point,
-        // however the libprio-rs API currently doesn't allow this. See
-        // https://github.com/divviup/libprio-rs/issues/912.
+        // NOTE To validate the report, each aggregator combines the prep shares, then uses the
+        // combined prep message and its state to compute its output share. Thus it is necessary to
+        // relay each aggregator's prep share to its peer. We could save communication here by
+        // having the driver compute the prep message at this point, however the libprio-rs API
+        // currently doesn't allow this. See https://github.com/divviup/libprio-rs/issues/912.
         let t = Instant::now();
         let resp_0 = client_0.plain_metrics_result(
             long_context(),

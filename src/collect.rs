@@ -283,11 +283,11 @@ impl KeyCollection {
 
     /// Compute joint randomness for FLP evaluation.
     ///
-    /// NOTE(cjpatton) This does not match the spec and is not secure. In particular, a malicious
-    /// client can pick joint randomness that it knows the circuit will verify. Preventing this
-    /// requires a bit more computation and communication overhead: each aggregator is supposed to
-    /// derive the correct joint randomness part from its input share and send it to the other so
-    /// that they can check if the advertised parts were actually computed correctly.
+    /// NOTE This does not match the spec and is not secure. In particular, a malicious client can
+    /// pick joint randomness that it knows the circuit will verify. Preventing this requires a bit
+    /// more computation and communication overhead: each aggregator is supposed to derive the
+    /// correct joint randomness part from its input share and send it to the other so that they
+    /// can check if the advertised parts were actually computed correctly.
     pub fn flp_joint_rand(&self, client_index: usize) -> Vec<Field128> {
         let mut jr_parts = *self.report_shares[client_index]
             .1
