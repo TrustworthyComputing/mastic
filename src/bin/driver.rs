@@ -6,12 +6,19 @@ use std::{
 
 use futures::try_join;
 use mastic::{
-    bits_to_bitstring, bits_to_string, collect::{self, ReportShare}, config::{self, Mode}, histogram_chunk_length, rpc::{
+    bits_to_bitstring,
+    collect::{self, ReportShare},
+    config::{self, Mode},
+    histogram_chunk_length,
+    rpc::{
         AddReportSharesRequest, ApplyFLPResultsRequest, AttributeBasedMetricsResultRequest,
         AttributeBasedMetricsValidateRequest, FinalSharesRequest, GetProofsRequest,
         PlainMetricsResultRequest, PlainMetricsValidateRequest, ResetRequest, RunFlpQueriesRequest,
         TreeCrawlLastRequest, TreeCrawlRequest, TreeInitRequest, TreePruneRequest,
-    }, vec_add, vidpf::VidpfKey, CollectorClient, Mastic, MasticHistogram
+    },
+    vec_add,
+    vidpf::VidpfKey,
+    CollectorClient, Mastic, MasticHistogram,
 };
 use prio::{
     codec::Encode,
@@ -22,10 +29,7 @@ use prio::{
         Client, Collector,
     },
 };
-use rand::{
-    distributions::Distribution,
-    thread_rng, Rng,
-};
+use rand::{distributions::Distribution, thread_rng, Rng};
 use rand_core::RngCore;
 use rayon::prelude::*;
 use tarpc::{client, context, serde_transport::tcp, tokio_serde::formats::Bincode};
