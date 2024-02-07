@@ -19,7 +19,7 @@ use prio::{
     flp::{types::Count, Type},
     vdaf::xof::{IntoFieldVec, Xof, XofShake128},
 };
-use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use rand::{distributions::Distribution, thread_rng, Rng};
 use rand_core::RngCore;
 use rayon::prelude::*;
 use tarpc::{client, context, serde_transport::tcp, tokio_serde::formats::Bincode};
@@ -32,12 +32,9 @@ fn long_context() -> context::Context {
     ctx
 }
 
-fn sample_string(len: usize) -> String {
+fn sample_bits(len: usize) -> Vec<bool> {
     let mut rng = rand::thread_rng();
-    std::iter::repeat(())
-        .map(|()| rng.sample(Alphanumeric) as char)
-        .take(len / 8)
-        .collect()
+    (0..len).map(|_| rng.gen::<bool>()).collect()
 }
 
 fn generate_keys(
@@ -53,7 +50,7 @@ fn generate_keys(
                 let input_beta: Vec<Field64> = typ.encode_measurement(&beta).unwrap();
 
                 (
-                    VidpfKey::gen_from_str(&sample_string(cfg.data_bytes * 8), &input_beta),
+                    VidpfKey::gen(&sample_bits(cfg.data_bits), &input_beta),
                     input_beta,
                 )
             })
@@ -174,7 +171,6 @@ async fn add_keys(
     num_clients: usize,
     malicious_percentage: f32,
 ) -> io::Result<()> {
-    use rand::distributions::Distribution;
     let mut rng = rand::thread_rng();
     let zipf = zipf::ZipfDistribution::new(cfg.zipf_unique_buckets, cfg.zipf_exponent).unwrap();
 
@@ -485,8 +481,7 @@ async fn main() -> io::Result<()> {
     tree_init(&client_0, &client_1).await?;
 
     let start = Instant::now();
-    let bit_len = cfg.data_bytes * 8; // bits
-    for level in 0..bit_len - 1 {
+    for level in 0..cfg.data_bits - 1 {
         let start_level = Instant::now();
         if level == 0 {
             run_flp_queries(&cfg, &typ, &client_0, &client_1, num_clients).await?;
@@ -500,7 +495,7 @@ async fn main() -> io::Result<()> {
     }
     println!(
         "\nTime for {} levels: {:?}",
-        bit_len,
+        cfg.data_bits,
         start.elapsed().as_secs_f64()
     );
 

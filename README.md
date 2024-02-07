@@ -1,13 +1,7 @@
 <h1 align="center">Mastic: Private Weighted Heavy-Hitters and Attribute-Based Metrics
-  <a href="https://github.com/jimouris/mastic/actions/workflows/ci-build.yml"><img src="https://github.com/jimouris/mastic/workflows/ci-build/badge.svg"></a>
-  <a href="https://github.com/jimouris/mastic/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <a href="https://github.com/TrustworthyComputing/mastic/actions/workflows/ci-build.yml"><img src="https://github.com/TrustworthyComputing/mastic/workflows/ci-build/badge.svg"></a>
+  <a href="https://github.com/TrustworthyComputing/mastic/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
 </h1>
-
-
-This is a Rust implementation of the ideas presented in the Mastic Verifiable Distributed
-Aggregation Function (VDAF) individual Internet-Draft. You can read the draft on the [Datatracker
-Page](https://datatracker.ietf.org/doc/draft-mouris-cfrg-mastic/).
-
 
 ## Building
 
@@ -57,19 +51,19 @@ The client and servers use a common configuration file, which contains the param
 system. An example of one such file is in `src/configs/config.toml`. The contents of that file are here:
 
 ```toml
-data_bytes = 4              # Number of bytes of each string.
-range_bits = 2              # Number of bits for the range check.
+data_bits = 8                      # Number of bytes of each string.
+range_bits = 2                      # Number of bits for the range check.
 
-threshold = 0.01            # Threshold for weighted heavy hitters.
+threshold = 0.01                    # Threshold for weighted heavy hitters.
 
-server_0 = "0.0.0.0:8000"   # The `IP:port` for server 0.
-server_1 = "0.0.0.0:8001"   # The `IP:port` for server 1.
+server_0 = "0.0.0.0:8000"           # The `IP:port` for server 0.
+server_1 = "0.0.0.0:8001"           # The `IP:port` for server 1.
 
-add_report_share_batch_size = 1000   # Size of RPC requests for transmitting keys.
-query_flp_batch_size = 100000     # Size of RPC requests for transmitting FLPs.
+add_report_share_batch_size = 1000  # Size of RPC requests for transmitting keys.
+query_flp_batch_size = 100000       # Size of RPC requests for transmitting FLPs.
 
-zipf_unique_buckets = 1000       # Zipf parameter
-zipf_exponent = 1.03        # Zipf exponent
+zipf_unique_buckets = 1000          # Zipf parameter
+zipf_exponent = 1.03                # Zipf exponent
 ```
 
 ## Disclaimer
@@ -78,3 +72,7 @@ This is software for a research prototype and not production-ready code. This re
 [plasma](https://github.com/TrustworthyComputing/plasma),
 [heavy-hitters](https://github.com/henrycg/heavyhitters), and
 [libprio-rs](https://github.com/divviup/libprio-rs/tree/main).
+
+This is a Rust implementation of the ideas presented in Mastic Verifiable
+Distributed Aggregation Function (VDAF) individual Internet-Draft. You can read
+the draft on the [Datatracker Page](https://datatracker.ietf.org/doc/draft-mouris-cfrg-mastic/).

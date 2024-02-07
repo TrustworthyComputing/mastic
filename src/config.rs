@@ -6,7 +6,7 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 pub struct Config {
     /// Number of bytes of each string (x8 for bits).
-    pub data_bytes: usize,
+    pub data_bits: usize,
 
     /// The servers will output the collection of strings that more than a `threshold` of clients
     /// hold.

@@ -1,4 +1,4 @@
-data_bytes = 4              # Number of bytes of each string.
+data_bits = 4              # Number of bytes of each string.
 range_bits = 2              # Number of bits for the range check.
 
 threshold = 0.01            # Threshold for weighted heavy hitters.
