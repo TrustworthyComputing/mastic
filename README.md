@@ -134,6 +134,11 @@ clients use:
 cargo run --release --bin driver -- --config src/configs/plain-metrics.toml -n 100 --malicious 0.05
 ```
 
+### 4. Plain Heavy Hitters with Mastic
+This branch can do Plain Heavy Hitters by setting the histogram size to 1, but a
+more efficient implementation uses the `Count` circuit and is in the [`Count`
+branch](https://github.com/TrustworthyComputing/mastic/tree/Count).
+
 
 ## Disclaimer
 
