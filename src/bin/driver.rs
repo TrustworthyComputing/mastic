@@ -46,7 +46,7 @@ fn generate_keys(
 ) -> ((Vec<VidpfKey>, Vec<VidpfKey>), Vec<Vec<Field64>>) {
     let (keys, values): ((Vec<VidpfKey>, Vec<VidpfKey>), Vec<Vec<Field64>>) =
         rayon::iter::repeat(0)
-            .take(cfg.unique_buckets)
+            .take(cfg.zipf_unique_buckets)
             .map(|_| {
                 // Generate a random number in the specified range
                 let beta = rand::thread_rng().gen_range(0..2);
@@ -176,7 +176,7 @@ async fn add_keys(
 ) -> io::Result<()> {
     use rand::distributions::Distribution;
     let mut rng = rand::thread_rng();
-    let zipf = zipf::ZipfDistribution::new(cfg.unique_buckets, cfg.zipf_exponent).unwrap();
+    let zipf = zipf::ZipfDistribution::new(cfg.zipf_unique_buckets, cfg.zipf_exponent).unwrap();
 
     let mut add_keys_0 = Vec::with_capacity(num_clients);
     let mut add_keys_1 = Vec::with_capacity(num_clients);
@@ -199,10 +199,10 @@ async fn add_keys(
             println!("Malicious {}", r);
         }
         add_keys_0.push(all_keys.0[idx_1].clone());
-        add_keys_1.push(all_keys.1[idx_2 % cfg.unique_buckets].clone());
+        add_keys_1.push(all_keys.1[idx_2 % cfg.zipf_unique_buckets].clone());
 
         flp_proof_shares_0.push(all_proofs.0[idx_1].clone());
-        flp_proof_shares_1.push(all_proofs.1[idx_3 % cfg.unique_buckets].clone());
+        flp_proof_shares_1.push(all_proofs.1[idx_3 % cfg.zipf_unique_buckets].clone());
 
         nonces.push(all_nonces[idx_1]);
         jr_parts.push(all_jr_parts[idx_1]);
@@ -244,11 +244,11 @@ async fn run_flp_queries(
     client_1: &CollectorClient,
     num_clients: usize,
 ) -> io::Result<()> {
-    // Receive FLP query responses in chunks of cfg.flp_batch_size to avoid having huge RPC messages.
+    // Receive FLP query responses in chunks of cfg.query_flp_batch_size to avoid having huge RPC messages.
     let mut keep = vec![];
     let mut start = 0;
     while start < num_clients {
-        let end = std::cmp::min(num_clients, start + cfg.flp_batch_size);
+        let end = std::cmp::min(num_clients, start + cfg.query_flp_batch_size);
 
         let req = RunFlpQueriesRequest { start, end };
         let resp_0 = client_0.run_flp_queries(long_context(), req.clone());
@@ -272,7 +272,7 @@ async fn run_flp_queries(
                 .collect::<Vec<_>>(),
         );
 
-        start += cfg.flp_batch_size;
+        start += cfg.query_flp_batch_size;
     }
 
     // Tree prune
@@ -380,7 +380,7 @@ async fn run_level_last(
     // Receive counters in chunks to avoid having huge RPC messages.
     let mut start = 0;
     while start < num_clients {
-        let end = std::cmp::min(num_clients, start + cfg.flp_batch_size);
+        let end = std::cmp::min(num_clients, start + cfg.query_flp_batch_size);
 
         let req = GetProofsRequest { start, end };
         let resp_0 = client_0.get_proofs(long_context(), req.clone());
@@ -395,7 +395,7 @@ async fn run_level_last(
             .all(|(&h0, &h1)| h0 == h1);
         assert!(verified);
 
-        start += cfg.flp_batch_size;
+        start += cfg.query_flp_batch_size;
     }
 
     // Tree prune
@@ -460,7 +460,7 @@ async fn main() -> io::Result<()> {
         let mut responses = vec![];
 
         for _ in 0..reqs_in_flight {
-            let this_batch = std::cmp::min(left_to_go, cfg.add_key_batch_size);
+            let this_batch = std::cmp::min(left_to_go, cfg.add_report_share_batch_size);
             left_to_go -= this_batch;
 
             if this_batch > 0 {

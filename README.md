@@ -15,9 +15,9 @@ Please note that this repository relies on `x86_64` specific instructions in [pr
 First, make sure that you have a working Rust installation:
 ```bash
 ❯❯ rustc --version
-rustc 1.73.0
+rustc 1.74.0
 ❯❯ cargo --version
-cargo 1.73.0
+cargo 1.74.0
 ```
 
 Next, build from sources using:
@@ -29,62 +29,48 @@ Next, build from sources using:
 
 #### Server 0:
 ```bash
-cargo run --release --bin server -- --config src/bin/config.json --server_id 0
+cargo run --release --bin server -- --config src/configs/config.toml --server_id 0
 ```
 
 #### Server 1:
 ```bash
-cargo run --release --bin server -- --config src/bin/config.json --server_id 1
+cargo run --release --bin server -- --config src/configs/config.toml --server_id 1
 ```
 Now, the servers should be ready to process client requests.
 
 #### Clients:
 In another shell, run the following command to send 100 client requests to the servers.
 ```bash
-cargo run --release --bin driver -- --config src/bin/config.json -n 100
+cargo run --release --bin driver -- --config src/configs/config.toml -n 100
 ```
 
 To run with the presence of malicious clients include the `--malicious` flag followed by the
 percentage of malicious clients to generate ([0.0, 0.9]). For instance, to run with 5% malicious
 clients use:
 ```bash
-cargo run --release --bin driver -- --config src/bin/config.json -n 100 --malicious 0.05
+cargo run --release --bin driver -- --config src/configs/config.toml -n 100 --malicious 0.05
 ```
 
 
 #### The config file
 The client and servers use a common configuration file, which contains the parameters for the
-system. An example of one such file is in `src/bin/config.json`. The contents of that file are here:
+system. An example of one such file is in `src/configs/config.toml`. The contents of that file are here:
 
-```bash
-{
-  "data_bytes": 4,
-  "range_bits": 2,
-  "threshold": 0.01,
-  "server_0": "0.0.0.0:8000",
-  "server_1": "0.0.0.0:8001",
-  "add_key_batch_size": 1000,
-  "flp_batch_size": 100000,
-  "unique_buckets": 1000,
-  "zipf_exponent": 1.03
-}
+```toml
+data_bytes = 4              # Number of bytes of each string.
+range_bits = 2              # Number of bits for the range check.
+
+threshold = 0.01            # Threshold for weighted heavy hitters.
+
+server_0 = "0.0.0.0:8000"   # The `IP:port` for server 0.
+server_1 = "0.0.0.0:8001"   # The `IP:port` for server 1.
+
+add_report_share_batch_size = 1000   # Size of RPC requests for transmitting keys.
+query_flp_batch_size = 100000     # Size of RPC requests for transmitting FLPs.
+
+zipf_unique_buckets = 1000       # Zipf parameter
+zipf_exponent = 1.03        # Zipf exponent
 ```
-
-The parameters are:
-* `data_bytes`: Number of bytes of each string (x8 for bits).
-* `range_bits`: Number of bits for the FLP range check (e.g., for `range_bits = 3` the FLP checks
-  that $0 \leq β < 2^3$).
-* `threshold`: The servers will output the collection of strings that more than a `threshold` of
-  clients hold.
-* `server0` and  `server1`: The `IP:port` of tuple for the two servers. The servers can run on
-  different IP addresses, but these IPs must be publicly addressable.
-* `add_key_batch_size`: The number of each type of RPC request to bundle together. The underlying RPC
-  library has an annoying limit on the size of each RPC request, so you cannot set these values too
-  large.
-* `flp_batch_size`: Similar to `add_key_batch_size` but with a greater threshold.
-* `unique_buckets` and `zipf_exponent`: Each simulated client samples its private string from a Zipf
-  distribution over strings with parameter `zipf_exponent` and support `unique_buckets`.
-
 
 ## Disclaimer
 
@@ -92,9 +78,3 @@ This is software for a research prototype and not production-ready code. This re
 [plasma](https://github.com/TrustworthyComputing/plasma),
 [heavy-hitters](https://github.com/henrycg/heavyhitters), and
 [libprio-rs](https://github.com/divviup/libprio-rs/tree/main).
-
-
-<p align="center">
-  <img src="./logos/twc.png" height="20%" width="20%">
-</p>
-<h4 align="center">Trustworthy Computing Group</h4>

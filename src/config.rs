@@ -10,13 +10,13 @@ pub struct Config {
 
     /// The servers will output the collection of strings that more than a `threshold` of clients
     /// hold.
-    pub add_key_batch_size: usize,
+    pub add_report_share_batch_size: usize,
 
-    /// Similar to `add_key_batch_size` but with a greater threshold.
-    pub flp_batch_size: usize,
+    /// Similar to `add_report_share_batch_size` but with a greater threshold.
+    pub query_flp_batch_size: usize,
 
     /// Number of distinct strings.
-    pub unique_buckets: usize,
+    pub zipf_unique_buckets: usize,
 
     /// The servers will output the collection of strings that more than a `threshold` of clients
     /// hold.
@@ -34,8 +34,8 @@ pub struct Config {
 }
 
 pub fn get_config(filename: &str) -> Config {
-    let json_data = &fs::read_to_string(filename).expect("Cannot open JSON file");
-    serde_json::from_str(json_data).expect("Cannot parse JSON config")
+    let toml_data = &fs::read_to_string(filename).expect("Cannot open TOML file");
+    toml::from_str(toml_data).expect("Cannot parse TOML config")
 }
 
 pub fn get_args(

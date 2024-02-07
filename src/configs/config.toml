@@ -1,0 +1,13 @@
+data_bytes = 4              # Number of bytes of each string.
+range_bits = 2              # Number of bits for the range check.
+
+threshold = 0.01            # Threshold for weighted heavy hitters.
+
+server_0 = "0.0.0.0:8000"   # The `IP:port` for server 0.
+server_1 = "0.0.0.0:8001"   # The `IP:port` for server 1.
+
+add_report_share_batch_size = 1000   # Size of RPC requests for transmitting keys.
+query_flp_batch_size = 100000     # Size of RPC requests for transmitting FLPs.
+
+zipf_unique_buckets = 1000       # Zipf parameter
+zipf_exponent = 1.03        # Zipf exponent
