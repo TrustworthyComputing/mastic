@@ -1,6 +1,6 @@
 <h1 align="center">Mastic: Private Weighted Heavy-Hitters and Attribute-Based Metrics
-  <a href="https://github.com/jimouris/mastic/actions/workflows/ci-build.yml"><img src="https://github.com/jimouris/mastic/workflows/ci-build/badge.svg"></a>
-  <a href="https://github.com/jimouris/mastic/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <a href="https://github.com/TrustworthyComputing/mastic/actions/workflows/ci-build.yml"><img src="https://github.com/TrustworthyComputing/mastic/workflows/ci-build/badge.svg"></a>
+  <a href="https://github.com/TrustworthyComputing/mastic/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
 </h1>
 
 ## Building
@@ -145,8 +145,3 @@ This is software for a research prototype and not production-ready code. This re
 This is a Rust implementation of the ideas presented in Mastic Verifiable
 Distributed Aggregation Function (VDAF) individual Internet-Draft. You can read
 the draft on the [Datatracker Page](https://datatracker.ietf.org/doc/draft-mouris-cfrg-mastic/).
-
-<p align="center">
-  <img src="./logos/twc.png" height="20%" width="20%">
-</p>
-<h4 align="center">Trustworthy Computing Group</h4>
