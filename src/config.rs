@@ -1,4 +1,4 @@
-use std::{fs, net::SocketAddr};
+use std::fs;
 
 use clap::{App, Arg};
 use serde::Deserialize;
@@ -51,10 +51,10 @@ pub struct Config {
     pub zipf_exponent: f64,
 
     /// The `IP:port` tuple for server 0.
-    pub server_0: SocketAddr,
+    pub server_0: String,
 
     /// The `IP:port` tuple for server 1.
-    pub server_1: SocketAddr,
+    pub server_1: String,
 }
 
 pub fn get_config(filename: &str) -> Config {
@@ -78,6 +78,24 @@ pub fn get_args(
                 .value_name("FILENAME")
                 .help("Location of JSON config file")
                 .required(true)
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("server0")
+                .short("s0")
+                .long("server-0")
+                .value_name("STRING")
+                .help("Aggregator 0 host path to connect to, e.g., 0.0.0.0:8000")
+                .required(false)
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("server1")
+                .short("s0")
+                .long("server-1")
+                .value_name("STRING")
+                .help("Aggregator 1 host path to connect to, e.g., 0.0.0.0:8001")
+                .required(false)
                 .takes_value(true),
         );
     if get_server_id {
@@ -115,10 +133,19 @@ pub fn get_args(
     }
 
     let flags = flags.get_matches();
+    let mut config = get_config(flags.value_of("config").unwrap());
 
     let mut server_id = -1;
     if get_server_id {
         server_id = flags.value_of("server_id").unwrap().parse().unwrap();
+    } else {
+        // If it's the leader.
+        if flags.is_present("server0") {
+            config.server_0 = flags.value_of("server0").unwrap().parse().unwrap();
+        }
+        if flags.is_present("server1") {
+            config.server_1 = flags.value_of("server1").unwrap().parse().unwrap();
+        }
     }
 
     let mut n_reqs = 0;
@@ -131,10 +158,5 @@ pub fn get_args(
         malicious = flags.value_of("malicious").unwrap().parse::<f32>().unwrap();
     }
 
-    (
-        get_config(flags.value_of("config").unwrap()),
-        server_id,
-        n_reqs,
-        malicious,
-    )
+    (config, server_id, n_reqs, malicious)
 }

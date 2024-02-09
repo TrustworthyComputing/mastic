@@ -3,6 +3,18 @@
   <a href="https://github.com/TrustworthyComputing/mastic/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
 </h1>
 
+## Build & Run With Docker Compose
+The following runs two aggregators and the leader each in a different container
+for weighted heavy hitters:
+```bash
+❯❯ CONFIG=weighted-heavy-hitters.toml docker compose up
+```
+Similarly, for the two other modes that Mastic supports:
+```bash
+❯❯ CONFIG=attribute-based-metrics.toml docker compose up
+❯❯ CONFIG=plain-metrics.toml docker compose up
+```
+
 ## Building
 
 First, make sure that you have a working Rust installation:
