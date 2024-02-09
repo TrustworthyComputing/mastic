@@ -1,0 +1,42 @@
+version: '3.0'
+
+services:
+  aggregator-0:
+    container_name: 'aggregator-0'
+    image: mastic
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: '/opt/mastic/bin/server'
+    command: >-
+      --config bin/${CONFIG}
+      --server_id 0
+
+  aggregator-1:
+    container_name: 'aggregator-1'
+    image: mastic
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: '/opt/mastic/bin/server'
+    command: >-
+      --config bin/${CONFIG}
+      --server_id 1
+
+  driver:
+    container_name: 'driver'
+    depends_on:
+      aggregator-0:
+        condition: service_started
+      aggregator-1:
+        condition: service_started
+    image: mastic
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: '/opt/mastic/bin/driver'
+    command: >-
+      --config bin/${CONFIG}
+      --server-0 aggregator-0:8000
+      --server-1 aggregator-1:8001
+      -n 1000

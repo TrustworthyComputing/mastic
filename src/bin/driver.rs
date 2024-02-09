@@ -692,12 +692,12 @@ async fn main() -> io::Result<()> {
     println!("Running with {}% malicious clients", malicious * 100.0);
     let client_0 = CollectorClient::new(
         client::Config::default(),
-        tcp::connect(cfg.server_0, Bincode::default).await?,
+        tcp::connect(cfg.server_0.clone(), Bincode::default).await?,
     )
     .spawn();
     let client_1 = CollectorClient::new(
         client::Config::default(),
-        tcp::connect(cfg.server_1, Bincode::default).await?,
+        tcp::connect(cfg.server_1.clone(), Bincode::default).await?,
     )
     .spawn();
 
