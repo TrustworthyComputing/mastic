@@ -3,6 +3,23 @@
   <a href="https://github.com/TrustworthyComputing/mastic/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
 </h1>
 
+## How to cite this work
+The preprint can be accessed [here](https://eprint.iacr.org/2024/221); you can
+cite this work as follows:
+```bibtex
+@Misc{EPRINT:MPDST24,
+  author =       "Dimitris Mouris and
+                  Christopher Patton and
+                  Hannah Davis and
+                  Pratik Sarkar and
+                  Nektarios Georgios Tsoutsos",
+  title =        "{Mastic: Private Weighted Heavy-Hitters and Attribute-Based Metrics}",
+  year =         2024,
+  howpublished = "Cryptology ePrint Archive, Report 2024/221",
+  note =         "\url{https://eprint.iacr.org/2024/221}",
+}
+```
+
 ## Build & Run With Docker Compose
 The following runs two aggregators and the leader each in a different container
 for weighted heavy hitters:
