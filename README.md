@@ -179,3 +179,6 @@ This is software for a research prototype and not production-ready code. This re
 This is a Rust implementation of the ideas presented in Mastic Verifiable
 Distributed Aggregation Function (VDAF) individual Internet-Draft. You can read
 the draft on the [Datatracker Page](https://datatracker.ietf.org/doc/draft-mouris-cfrg-mastic/).
+
+## Acknowledgments
+This work was partially supported by the National Science Foundation (Award #2239334).
