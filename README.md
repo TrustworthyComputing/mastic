@@ -4,19 +4,23 @@
 </h1>
 
 ## How to cite this work
+Mastic will appear in [Proceedings on Privacy Enhancing Technologies (PoPETS), 2025](https://petsymposium.org/popets/2025).
 The preprint can be accessed [here](https://eprint.iacr.org/2024/221); you can
 cite this work as follows:
 ```bibtex
-@Misc{EPRINT:MPDST24,
+@Article{PoPETS:MPDST25,
   author =       "Dimitris Mouris and
                   Christopher Patton and
                   Hannah Davis and
                   Pratik Sarkar and
                   Nektarios Georgios Tsoutsos",
   title =        "{Mastic: Private Weighted Heavy-Hitters and Attribute-Based Metrics}",
-  year =         2024,
-  howpublished = "Cryptology ePrint Archive, Report 2024/221",
-  note =         "\url{https://eprint.iacr.org/2024/221}",
+  year =         2025,
+  volume =       2025,
+  month =        July,
+  journal =      "{Proceedings on Privacy Enhancing Technologies}",
+  number =       1,
+  pages =        "1--30",
 }
 ```
 
