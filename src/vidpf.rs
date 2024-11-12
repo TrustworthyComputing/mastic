@@ -151,7 +151,6 @@ type TupleMutIter<'a, T> =
     std::iter::Chain<std::iter::Once<(bool, &'a mut T)>, std::iter::Once<(bool, &'a mut T)>>;
 
 trait TupleExt<T> {
-    fn map_mut<F: Fn(&mut T)>(&mut self, f: F);
     fn get(&self, val: bool) -> &T;
     fn get_mut(&mut self, val: bool) -> &mut T;
     fn iter_mut(&mut self) -> TupleMutIter<T>;
@@ -167,12 +166,6 @@ impl<T, U> TupleMapToExt<T, U> for (T, T) {
 }
 
 impl<T> TupleExt<T> for (T, T) {
-    #[inline(always)]
-    fn map_mut<F: Fn(&mut T)>(&mut self, f: F) {
-        f(&mut self.0);
-        f(&mut self.1);
-    }
-
     #[inline(always)]
     fn get(&self, val: bool) -> &T {
         match val {
@@ -196,7 +189,7 @@ impl<T> TupleExt<T> for (T, T) {
 
 fn gen_cor_word(
     bit: bool,
-    beta: &Vec<Field128>,
+    beta: &[Field128],
     bits: &mut (bool, bool),
     seeds: &mut (prg::PrgSeed, prg::PrgSeed),
 ) -> CorWord {
@@ -215,7 +208,7 @@ fn gen_cor_word(
             data.0.bits.0 ^ data.1.bits.0 ^ bit ^ true,
             data.0.bits.1 ^ data.1.bits.1 ^ bit,
         ),
-        word: beta.clone(),
+        word: beta.to_owned(),
     };
 
     for (b, seed) in seeds.iter_mut() {
@@ -255,7 +248,7 @@ impl VidpfKey {
         self.root_seed.clone()
     }
 
-    pub fn gen(alpha_bits: &[bool], beta: &Vec<Field128>) -> (VidpfKey, VidpfKey) {
+    pub fn gen(alpha_bits: &[bool], beta: &[Field128]) -> (VidpfKey, VidpfKey) {
         let root_seeds = (prg::PrgSeed::random(), prg::PrgSeed::random());
         let root_bits = (false, true);
 
@@ -470,7 +463,7 @@ impl VidpfKey {
         (values_share, beta_share)
     }
 
-    pub fn gen_from_str(s: &str, beta: &Vec<Field128>) -> (Self, Self) {
+    pub fn gen_from_str(s: &str, beta: &[Field128]) -> (Self, Self) {
         let bits = crate::string_to_bits(s);
         VidpfKey::gen(&bits, beta)
     }
