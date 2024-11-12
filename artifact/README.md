@@ -52,7 +52,7 @@ Our artifact is public at *https://github.com/TrustworthyComputing/mastic*.
 
 
 ### Accessibility (All badges)
-https://github.com/TrustworthyComputing/mastic commit id 86b3cbd.
+https://github.com/TrustworthyComputing/mastic commit id [81e0cf7](https://github.com/TrustworthyComputing/mastic/commit/81e0cf7485779f353535ad2a03d8a07f622f4581).
 
 
 ### Set up the environment (Only for Functional and Reproduced badges)
