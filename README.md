@@ -146,7 +146,7 @@ mode = "plain_metrics"
 # ...
 ```
 
-#### Plain Metrics with Prios: Aggregators
+#### Plain Metrics with Prio: Aggregators
 Run the aggregators in two separate shells. They will wait and be ready to
 process client requests.
 ```bash
@@ -172,6 +172,23 @@ This branch can do Plain Heavy Hitters by setting the histogram size to 1, but a
 more efficient implementation uses the `Count` circuit and is in the [`Count`
 branch](https://github.com/TrustworthyComputing/mastic/tree/Count).
 
+## Troubleshooting
+Mastic relies on the [tarpc](https://github.com/google/tarpc) library which has
+a limit on the size of the RPC messages. As such, you might see an error similar
+to the following:
+```shell
+thread 'main' panicked at src/bin/driver.rs:335:
+called `Result::unwrap()` on an `Err` value: Disconnected
+```
+which is caused by the RPC batch sizes.
+
+To fix this reduce the batch sizes of either the reports or the FLPs (or both).
+Note that this does not affect the online running time, but it affects the
+upload time from the `driver` to the Mastic servers.
+```toml
+add_report_share_batch_size = 1000
+query_flp_batch_size = 100000
+```
 
 ## Disclaimer
 

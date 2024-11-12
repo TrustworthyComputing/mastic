@@ -301,3 +301,6 @@ zipf_exponent = 1.03
 ```
 etc. These parameters are sufficient to reproduce all our results -- all our
 experiments in the paper specify the parameters used.
+
+To reproduce our experiments, use the configs from the [configs](./configs/)
+directory and the scripts from the [plots](../plots/) directory.

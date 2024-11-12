@@ -1,0 +1,14 @@
+# For more efficiency, use the "count" branch in case m = 1.
+
+mode.weighted_heavy_hitters.threshold = 0.01
+
+data_bits = 64
+hist_buckets = 1
+
+server_0 = "0.0.0.0:8000"
+server_1 = "0.0.0.0:8001"
+
+add_report_share_batch_size = 100
+query_flp_batch_size = 100000
+zipf_unique_buckets = 1000
+zipf_exponent = 1.03

@@ -15,3 +15,7 @@ Cargo.lock
 
 # Ignore config files
 **/*.json
+
+# Figs
+*.pdf
+*.png
