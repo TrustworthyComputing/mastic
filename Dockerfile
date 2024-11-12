@@ -14,7 +14,5 @@ cp bin/release/driver exec
 # https://hub.docker.com/_/debian/
 FROM debian:stable-slim AS mastic
 COPY --from=build /opt/mastic/exec /opt/mastic/bin
-COPY --from=build /opt/mastic/src/configs/attribute-based-metrics.toml /opt/mastic/bin/
-COPY --from=build /opt/mastic/src/configs/plain-metrics.toml /opt/mastic/bin/
-COPY --from=build /opt/mastic/src/configs/weighted-heavy-hitters.toml /opt/mastic/bin/
+COPY --from=build /opt/mastic/src/configs/*.toml /opt/mastic/bin/
 WORKDIR /opt/mastic
