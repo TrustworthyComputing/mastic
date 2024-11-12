@@ -307,7 +307,7 @@ experiments in the paper specify the parameters used.
 
 ## Reproducing Experiments and Figures
 To reproduce our experiments, use the configs from the [configs](./configs/)
-directory and the scripts from the [plots](../plots/) directory.
+directory and the scripts from the [plots](./plots/) directory.
 
 ## Troubleshooting
 As mentioned in the **Troubleshooting** section of the [README file](../README.md) file,
