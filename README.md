@@ -49,6 +49,9 @@ cargo 1.74.0
 Next, build from sources using:
 ```bash
 ❯❯ cargo build --release
+
+...
+Finished `release` profile [optimized] target(s) in ...s
 ```
 
 ## Running
@@ -182,13 +185,13 @@ called `Result::unwrap()` on an `Err` value: Disconnected
 ```
 which is caused by the RPC batch sizes.
 
-To fix this reduce the batch sizes of either the reports or the FLPs (or both).
-Note that this does not affect the online running time, but it affects the
-upload time from the `driver` to the Mastic servers.
+To fix this, reduce the batch sizes of either the reports or the FLPs (or both).
 ```toml
 add_report_share_batch_size = 1000
 query_flp_batch_size = 100000
 ```
+**Note:** this does not affect the online running time, but it affects the
+upload time from the `driver` to the Mastic servers.
 
 ## Disclaimer
 

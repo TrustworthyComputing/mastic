@@ -5,7 +5,7 @@ hist_buckets = 12800
 server_0 = "0.0.0.0:8000"
 server_1 = "0.0.0.0:8001"
 
-add_report_share_batch_size = 1000
-query_flp_batch_size = 100000
+add_report_share_batch_size = 10
+query_flp_batch_size = 10000
 zipf_unique_buckets = 1000
 zipf_exponent = 1.03
