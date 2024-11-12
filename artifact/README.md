@@ -248,7 +248,10 @@ histogram as in the print message: `4 histogram buckets`. Each string e.g.,
 
 Lastly, you can run both weighted heavy hitters and attribute based metrics with malicious clients by passing the `--malicious` and a percentage.
 
-### Experiments
+
+# Experiments
+
+## Understanding the configuration files
 Our experiments can be reproduced by using our config files: https://github.com/TrustworthyComputing/mastic/tree/main/src/configs and the values provided in the paper.
 
 For instance:
@@ -302,5 +305,30 @@ zipf_exponent = 1.03
 etc. These parameters are sufficient to reproduce all our results -- all our
 experiments in the paper specify the parameters used.
 
+## Reproducing Experiments and Figures
 To reproduce our experiments, use the configs from the [configs](./configs/)
 directory and the scripts from the [plots](../plots/) directory.
+
+## Troubleshooting
+As mentioned in the **Troubleshooting** section of the [README file](../README.md) file,
+Mastic relies on the [tarpc](https://github.com/google/tarpc) library which has
+a limit on the size of the RPC messages. As such, you might see an error similar
+to the following:
+```shell
+thread 'main' panicked at src/bin/driver.rs:335:
+called `Result::unwrap()` on an `Err` value: Disconnected
+```
+which is caused by the RPC batch sizes.
+
+In case you run into this issue, you can fix this easily by reducing the batch
+sizes of either the reports or the FLPs (or both).
+```toml
+add_report_share_batch_size = 1000
+query_flp_batch_size = 100000
+```
+**Note:** this does not affect the online running time, but it affects the
+upload time from the `driver` to the Mastic servers. In other words, this does
+not change the experiments but will make setting up the experiments faster. For
+this reason, most of the provided configs use the default batch sizes, which may
+cause crashes with more clients or bits, but this can be simply resolved by
+reducing the batch sizes.
