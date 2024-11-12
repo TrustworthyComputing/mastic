@@ -150,7 +150,7 @@ impl ops::BitXor for &PrgSeed {
 }
 
 pub trait FromRng {
-    fn from_rng(&mut self, stream: &mut (impl rand::Rng + rand_core::RngCore));
+    fn from_rng(&mut self, stream: &mut impl rand::Rng);
 
     fn randomize(&mut self) {
         self.from_rng(&mut rand::thread_rng());
