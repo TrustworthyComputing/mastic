@@ -4,23 +4,24 @@
 </h1>
 
 ## How to cite this work
-Mastic will appear in [Proceedings on Privacy Enhancing Technologies (PoPETS), 2025](https://petsymposium.org/popets/2025).
+Mastic appears in [Proceedings on Privacy Enhancing Technologies (PoPETS), 2025](https://petsymposium.org/popets/2025/popets-2025-0017.php).
 The preprint can be accessed [here](https://eprint.iacr.org/2024/221); you can
 cite this work as follows:
 ```bibtex
 @Article{PoPETS:MPDST25,
-  author =       "Dimitris Mouris and
-                  Christopher Patton and
-                  Hannah Davis and
-                  Pratik Sarkar and
-                  Nektarios Georgios Tsoutsos",
-  title =        "{Mastic: Private Weighted Heavy-Hitters and Attribute-Based Metrics}",
-  year =         2025,
-  volume =       2025,
-  month =        July,
-  journal =      "{Proceedings on Privacy Enhancing Technologies}",
-  number =       1,
-  pages =        "1--30",
+  author    =   "Dimitris Mouris and
+                 Christopher Patton and
+                 Hannah Davis and
+                 Pratik Sarkar and
+                 Nektarios Georgios Tsoutsos",
+  title     =   "{Mastic: Private Weighted Heavy-Hitters and Attribute-Based Metrics}",
+  year      =   2025,
+  volume    =   2025,
+  month     =   July,
+  journal   =   "{Proceedings on Privacy Enhancing Technologies}",
+  number    =   1,
+  pages     =   "290--319",
+  doi       =   "10.56553/popets-2025-0017"
 }
 ```
 
@@ -38,12 +39,12 @@ Similarly, for the two other modes that Mastic supports:
 
 ## Building
 
-First, make sure that you have a working Rust installation:
+First, make sure that you have a working [Rust installation](https://www.rust-lang.org/tools/install):
 ```bash
 ❯❯ rustc --version
-rustc 1.74.0
+rustc 1.82.0
 ❯❯ cargo --version
-cargo 1.74.0
+cargo 1.82.0
 ```
 
 Next, build from sources using:

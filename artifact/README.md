@@ -309,6 +309,8 @@ experiments in the paper specify the parameters used.
 To reproduce our experiments, use the configs from the [configs](./configs/)
 directory and the scripts from the [plots](./plots/) directory.
 
+Install the Python dependencies with `pip install -r requirements.txt`.
+
 ## Troubleshooting
 As mentioned in the **Troubleshooting** section of the [README file](../README.md) file,
 Mastic relies on the [tarpc](https://github.com/google/tarpc) library which has
@@ -332,3 +334,8 @@ not change the experiments but will make setting up the experiments faster. For
 this reason, most of the provided configs use the default batch sizes, which may
 cause crashes with more clients or bits, but this can be simply resolved by
 reducing the batch sizes.
+
+## Plain Heavy Hitters (`m = 1`)
+For plain heavy hitters, a more efficient implementation exists in the `count`
+branch, which we used for Mastic experiments where `m = 1`. To reproduce our
+exact numbers for `m = 1` use the count branch.
